@@ -21,33 +21,33 @@
 using LidarFramePtr = std::unique_ptr<LidarFrame>;
 
 class LidarFrameQueue {
-public:
-    void push(LidarFramePtr frame) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        queue_.push(std::move(frame));
-        cv_.notify_one();
-    }
+    public:
+        void push(LidarFramePtr frame) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            queue_.push(std::move(frame));
+            cv_.notify_one();
+        }
 
-    LidarFramePtr pop() {
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !queue_.empty() || stopped_; });
-        if (queue_.empty() && stopped_) return nullptr;
-        LidarFramePtr frame = std::move(queue_.front());
-        queue_.pop();
-        return frame;
-    }
+        LidarFramePtr pop() {
+            std::unique_lock<std::mutex> lock(mutex_);
+            cv_.wait(lock, [this] { return !queue_.empty() || stopped_; });
+            if (queue_.empty() && stopped_) return nullptr;
+            LidarFramePtr frame = std::move(queue_.front());
+            queue_.pop();
+            return frame;
+        }
 
-    void stop() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        stopped_ = true;
-        cv_.notify_all();
-    }
+        void stop() {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stopped_ = true;
+            cv_.notify_all();
+        }
 
-private:
-    std::queue<LidarFramePtr> queue_;
-    mutable std::mutex mutex_;
-    std::condition_variable cv_;
-    bool stopped_ = false;
+    private:
+        std::queue<LidarFramePtr> queue_;
+        mutable std::mutex mutex_;
+        std::condition_variable cv_;
+        bool stopped_ = false;
 };
 
 int main() {
@@ -94,18 +94,11 @@ int main() {
     auto socket = UdpSocket::create(io_context, config, data_callback, error_callback);
 
     // In viz_lidar_udp.cpp
-
     auto viz_thread = std::thread([&frame_queue]() {
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("LiDAR Visualizer");
         viewer->setBackgroundColor(0, 0, 0); //
         viewer->addCoordinateSystem(10.0, "coord"); //
         viewer->initCameraParameters(); //
-
-        // --- Filter setup ---
-        // Intensity filter
-        // pcl::PassThrough<pcl::PointXYZI> pass_intensity; //
-        // pass_intensity.setFilterFieldName("intensity"); //
-        // pass_intensity.setFilterLimits(0.0f, 100.0f); //
 
         // Spatial filter
         pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
@@ -127,24 +120,19 @@ int main() {
             if (!frame_ptr) break;
 
             // Create cloud in original NED coordinate system
-            pcl::PointCloud<pcl::PointXYZI> cloud = frame_ptr->toPCLPointCloud(); //
-            cloud.header.stamp = static_cast<std::uint64_t>(frame_ptr->timestamp * 1e9); //
+            PCLPointCloud structcloud = frame_ptr->toPCLPointCloud(); //
+            pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = structcloud.pointsBody.makeShared();
+            cloud->header.stamp = static_cast<std::uint64_t>(frame_ptr->timestamp_end * 1e9); //
             
-            // --- NEW: Add transformation loop ---
             // Apply the (x, y, z) -> (y, x, -z) transform to match the PCL viewer's frame.
-            for (auto& point : cloud.points) {
+            for (auto& point : cloud->points) {
                 float original_x = point.x;
                 point.x = -point.y;    // New X is Old Y (East -> PCL Right)
                 point.y = -original_x; // New Y is Old X (North -> PCL Up)
                 point.z = point.z;   // New Z is -Old Z (Down -> PCL Out of screen)
             }
-            // --- End of new code ---
-            
-            // --- Filtering chain ---
-            // pass_intensity.setInputCloud(cloud.makeShared()); //
-            // pass_intensity.filter(*intensity_filtered_cloud); //
 
-            pass_spatial.setInputCloud(cloud.makeShared()); //
+            pass_spatial.setInputCloud(cloud); //
             pass_spatial.filter(*spatial_filtered_cloud); //
 
             vg.setInputCloud(spatial_filtered_cloud); //

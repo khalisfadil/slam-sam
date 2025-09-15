@@ -5,12 +5,10 @@
 #include <pcl/point_types.h>
 
 // %            ... struct representing single 3d point data
-struct Point3f{
-    Eigen::Vector3f pointsBody = Eigen::Vector3f::Zero();           // raw point x,y,z in body frame                                                              [m]
-    Eigen::Vector3f pointsMap = Eigen::Vector3f::Zero();               // storage for point x,y,z in local coordinate frame                                          [m]
-    float alpha = 0.0f;                                             // relative timestamp to the absolute timestamp of the frame          
-    double timestamp = 0.0;                                         // absolute timestamp of the point                                                            [s]
-    int beamid = -1;                                                // beam id of the point in lidar configuration                        
+struct PCLPointCloud{
+    pcl::PointCloud<pcl::PointXYZI> pointsBody;               
+    std::vector<float> pointsAlpha;
+    std::vector<double> pointsTimestamp;                                             
 };
 // %            ... struct representing single frame imu data
 struct ImuData{
@@ -31,22 +29,9 @@ struct PositionData{
 // %            ... struct representing a lidar data and its encapsulated data of imu and position
 struct FrameData{
     double timestamp;                                               // evaluation timestamp
-    std::vector<Point3f> points;
+    PCLPointCloud points;
     std::vector<ImuData> imu;
     std::vector<PositionData> position;
-
-    [[nodiscard]] pcl::PointCloud<pcl::PointXYZ>::Ptr toPCLPointCloud() const {
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
-        cloud->reserve(points.size()); // Pre-allocate for efficiency
-        for (const auto& point : points) {
-            pcl::PointXYZ pcl_point;
-            pcl_point.x = point.pointsBody.x();
-            pcl_point.y = point.pointsBody.y();
-            pcl_point.z = point.pointsBody.z();
-            cloud->push_back(pcl_point);
-        }
-        return cloud;
-    }
 };
 // %             ... struct for parameter
 struct Options{
@@ -113,40 +98,31 @@ struct LidarFrame {
         numberpoints = 0;
     }
 
-    [[nodiscard]] std::vector<Point3f> toPoint3f() const {
-        std::vector<Point3f> pointcloud;
-        pointcloud.reserve(numberpoints);
+    [[nodiscard]] PCLPointCloud toPCLPointCloud() const {
+        PCLPointCloud pointcloud;
+        pointcloud.pointsBody.reserve(numberpoints);
+        pointcloud.pointsAlpha.reserve(numberpoints);
+        pointcloud.pointsTimestamp.reserve(numberpoints);
         const double frame_duration = this->timestamp_end - this->timestamp;
-        for (size_t i = 0; i < numberpoints; ++i) {
-            Point3f point;
-            point.pointsBody = Eigen::Vector3f(this->x[i], this->y[i], this->z[i]); // Raw sensor coordinates (float)
-            point.pointsMap = point.pointsBody; // No motion correction; set equal to raw_pt
-            point.timestamp = this->timestamp_points[i]; // Absolute timestamp (double)
-            point.beamid = static_cast<int>(this->m_id[i]); // Convert uint16_t to int
-            if (frame_duration > 0.0) {
-                const double elapsed_time = point.timestamp - this->timestamp;
-                point.alpha = static_cast<float>(std::max(0.0, std::min(1.0, elapsed_time / frame_duration)));
-            } else {
-                point.alpha = 0.0f;
-            }
-            pointcloud.push_back(point);
-        }
-        return pointcloud;
-    }
 
-    [[nodiscard]] pcl::PointCloud<pcl::PointXYZI> toPCLPointCloud() const {
-        pcl::PointCloud<pcl::PointXYZI> pointcloud;
-        pointcloud.reserve(numberpoints);
-        
         for (size_t i = 0; i < numberpoints; ++i) {
             pcl::PointXYZI point;
-            point.x = x[i];
-            point.y = y[i];
-            point.z = z[i];
-            point.intensity = static_cast<float>(reflectivity[i]); // Use reflectivity for intensity
-            pointcloud.push_back(point);
+            point.x = this->x[i];
+            point.y = this->y[i];
+            point.z = this->z[i];
+            point.intensity = static_cast<float>(this->reflectivity[i]); // Use reflectivity for intensity
+            // Add to pointsBody (raw sensor coordinates)
+            pointcloud.pointsBody.push_back(point);
+            // Calculate alpha (interpolation factor)
+            float alpha = 0.0f;
+            if (frame_duration > 0.0) {
+                const double elapsed_time = this->timestamp_points[i] - this->timestamp;
+                alpha = static_cast<float>(std::max(0.0, std::min(1.0, elapsed_time / frame_duration)));
+            }
+            pointcloud.pointsAlpha.push_back(alpha);
+            // Add absolute timestamp
+            pointcloud.pointsTimestamp.push_back(this->timestamp_points[i]);
         }
-        
         return pointcloud;
     }
 };
