@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "Kubuntu GCC",
+            "includePath": [
+                "/usr/include/eigen3",
+                "/usr/local/include/tbb",
+                "/usr/include/boost",
+                "/usr/local/include/open3d",
+                "${workspaceFolder}/include/**",
+                "/usr/include/pcl-1.14",
+                "/usr/include/flann",
+                "${workspaceFolder}/extern/robin-map/include/tsl/**",
+                "${workspaceFolder}/extern/Sophus",
+                "${workspaceFolder}/extern/pclomp/src/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
