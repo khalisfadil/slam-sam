@@ -111,7 +111,7 @@ int main() {
         pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
         // NOTE: Changed filter field to "y", which is now the forward (North) axis
         pass_spatial.setFilterFieldName("z");
-        pass_spatial.setFilterLimits(-200.0, 5.0); // Adjust limits for forward/backward
+        pass_spatial.setFilterLimits(-200.0, 0.0); // Adjust limits for forward/backward
         
         // VoxelGrid filter
         pcl::VoxelGrid<pcl::PointXYZI> vg; //
