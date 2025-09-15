@@ -10,6 +10,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/passthrough.h>
 #include <boost/asio.hpp>
 
 #include <lidarcallback.hpp>
@@ -92,38 +93,71 @@ int main() {
 
     auto socket = UdpSocket::create(io_context, config, data_callback, error_callback);
 
+    // In viz_lidar_udp.cpp
+
     auto viz_thread = std::thread([&frame_queue]() {
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("LiDAR Visualizer");
-        viewer->setBackgroundColor(0, 0, 0);
-        viewer->addCoordinateSystem(1.0, "coord");
-        viewer->initCameraParameters();
+        viewer->setBackgroundColor(0, 0, 0); //
+        viewer->addCoordinateSystem(10.0, "coord"); //
+        viewer->initCameraParameters(); //
 
-        // OPTIMIZATION 2: Create filter object once, outside the loop.
-        pcl::VoxelGrid<pcl::PointXYZI> vg;
-        vg.setLeafSize(0.5f, 0.5f, 0.5f); // <-- Try a larger size like 50cm
-        pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+        // --- Filter setup ---
+        // Intensity filter
+        pcl::PassThrough<pcl::PointXYZI> pass_intensity; //
+        pass_intensity.setFilterFieldName("intensity"); //
+        pass_intensity.setFilterLimits(0.0f, 150.0f); //
+
+        // Spatial filter
+        pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
+        // NOTE: Changed filter field to "y", which is now the forward (North) axis
+        pass_spatial.setFilterFieldName("y");
+        pass_spatial.setFilterLimits(-150.0, 200.0); // Adjust limits for forward/backward
+        
+        // VoxelGrid filter
+        pcl::VoxelGrid<pcl::PointXYZI> vg; //
+        vg.setLeafSize(0.5f, 0.5f, 0.5f); //
+        
+        // Point cloud pointers for each stage
+        pcl::PointCloud<pcl::PointXYZI>::Ptr intensity_filtered_cloud(new pcl::PointCloud<pcl::PointXYZI>()); //
+        pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_filtered_cloud(new pcl::PointCloud<pcl::PointXYZI>()); //
+        pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>()); //
 
         while (!viewer->wasStopped()) {
-            auto frame_ptr = frame_queue.pop();
-            if (!frame_ptr) break; // Stopped signal
+            auto frame_ptr = frame_queue.pop(); //
+            if (!frame_ptr) break;
 
-            // OPTIMIZATION 1: Conversion now happens here, on the non-critical viz thread.
-            pcl::PointCloud<pcl::PointXYZI> cloud = frame_ptr->toPCLPointCloud();
-            cloud.header.stamp = static_cast<std::uint64_t>(frame_ptr->timestamp * 1e9);
-
-            // Downsampling
-            // setInputCloud requires a shared_ptr, so we make one here.
-            vg.setInputCloud(cloud.makeShared());
-            vg.filter(*downsampled_cloud);
-
-            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_cloud, "intensity");
-            if (!viewer->updatePointCloud(downsampled_cloud, color_handler, "lidar_cloud")) {
-                viewer->addPointCloud(downsampled_cloud, color_handler, "lidar_cloud");
-            }
-            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "lidar_cloud");
+            // Create cloud in original NED coordinate system
+            pcl::PointCloud<pcl::PointXYZI> cloud = frame_ptr->toPCLPointCloud(); //
+            cloud.header.stamp = static_cast<std::uint64_t>(frame_ptr->timestamp * 1e9); //
             
-            // OPTIMIZATION 3: Simplified timing. Let pop() block and call spinOnce() to render.
-            viewer->spinOnce(1); // Handle GUI events and render
+            // --- NEW: Add transformation loop ---
+            // Apply the (x, y, z) -> (y, x, -z) transform to match the PCL viewer's frame.
+            for (auto& point : cloud.points) {
+                float original_x = point.x;
+                point.x = point.y;    // New X is Old Y (East -> PCL Right)
+                point.y = original_x; // New Y is Old X (North -> PCL Up)
+                point.z = -point.z;   // New Z is -Old Z (Down -> PCL Out of screen)
+            }
+            // --- End of new code ---
+            
+            // --- Filtering chain ---
+            pass_intensity.setInputCloud(cloud.makeShared()); //
+            pass_intensity.filter(*intensity_filtered_cloud); //
+
+            pass_spatial.setInputCloud(intensity_filtered_cloud); //
+            pass_spatial.filter(*spatial_filtered_cloud); //
+
+            vg.setInputCloud(spatial_filtered_cloud); //
+            vg.filter(*downsampled_cloud); //
+            
+            // --- Visualization ---
+            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_cloud, "intensity"); //
+            if (!viewer->updatePointCloud(downsampled_cloud, color_handler, "lidar_cloud")) { //
+                viewer->addPointCloud(downsampled_cloud, color_handler, "lidar_cloud"); //
+            }
+            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "lidar_cloud"); //
+            
+            viewer->spinOnce(1); //
         }
     });
 
