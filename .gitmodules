@@ -1,0 +1,3 @@
+[submodule "extern/ndt_omp"]
+	path = extern/ndt_omp
+	url = https://github.com/tier4/ndt_omp.git
