@@ -103,15 +103,15 @@ int main() {
 
         // --- Filter setup ---
         // Intensity filter
-        pcl::PassThrough<pcl::PointXYZI> pass_intensity; //
-        pass_intensity.setFilterFieldName("intensity"); //
-        pass_intensity.setFilterLimits(0.0f, 100.0f); //
+        // pcl::PassThrough<pcl::PointXYZI> pass_intensity; //
+        // pass_intensity.setFilterFieldName("intensity"); //
+        // pass_intensity.setFilterLimits(0.0f, 100.0f); //
 
         // Spatial filter
-        pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
-        // NOTE: Changed filter field to "y", which is now the forward (North) axis
-        pass_spatial.setFilterFieldName("y");
-        pass_spatial.setFilterLimits(-200.0, 200.0); // Adjust limits for forward/backward
+        // pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
+        // // NOTE: Changed filter field to "y", which is now the forward (North) axis
+        // pass_spatial.setFilterFieldName("y");
+        // pass_spatial.setFilterLimits(-200.0, 200.0); // Adjust limits for forward/backward
         
         // VoxelGrid filter
         pcl::VoxelGrid<pcl::PointXYZI> vg; //
@@ -141,13 +141,13 @@ int main() {
             // --- End of new code ---
             
             // --- Filtering chain ---
-            pass_intensity.setInputCloud(cloud.makeShared()); //
-            pass_intensity.filter(*intensity_filtered_cloud); //
+            // pass_intensity.setInputCloud(cloud.makeShared()); //
+            // pass_intensity.filter(*intensity_filtered_cloud); //
 
-            pass_spatial.setInputCloud(intensity_filtered_cloud); //
-            pass_spatial.filter(*spatial_filtered_cloud); //
+            // pass_spatial.setInputCloud(cloud.makeShared()); //
+            // pass_spatial.filter(*spatial_filtered_cloud); //
 
-            vg.setInputCloud(spatial_filtered_cloud); //
+            vg.setInputCloud(cloud.makeShared()); //
             vg.filter(*downsampled_cloud); //
             
             // --- Visualization ---
