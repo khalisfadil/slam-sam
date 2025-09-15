@@ -135,8 +135,8 @@ int main() {
             for (auto& point : cloud.points) {
                 float original_x = point.x;
                 point.x = point.y;    // New X is Old Y (East -> PCL Right)
-                point.y = original_x; // New Y is Old X (North -> PCL Up)
-                point.z = -point.z;   // New Z is -Old Z (Down -> PCL Out of screen)
+                point.y = -original_x; // New Y is Old X (North -> PCL Up)
+                point.z = point.z;   // New Z is -Old Z (Down -> PCL Out of screen)
             }
             // --- End of new code ---
             
