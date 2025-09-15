@@ -5,17 +5,16 @@
 #include <queue>
 #include <condition_variable>
 #include <chrono>
-#include <cstdint>  // Added for std::uint64_t
+#include <cstdint>  
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
 #include <boost/asio.hpp>
 
-#include "lidarcallback.hpp"  // Includes LidarFrame and LidarCallback
-#include "udpsocket.hpp"      // UDP socket for packet reception
+#include <lidarcallback.hpp>  
+#include <udpsocket.hpp>      
 
-// Thread-safe queue for PCL clouds
 class CloudQueue {
 public:
     void push(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloud) {
