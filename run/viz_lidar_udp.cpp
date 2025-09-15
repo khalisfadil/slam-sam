@@ -100,7 +100,7 @@ int main() {
 
         // OPTIMIZATION 2: Create filter object once, outside the loop.
         pcl::VoxelGrid<pcl::PointXYZI> vg;
-        vg.setLeafSize(0.1f, 0.1f, 0.1f);
+        vg.setLeafSize(0.5f, 0.5f, 0.5f); // <-- Try a larger size like 50cm
         pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
 
         while (!viewer->wasStopped()) {
