@@ -105,13 +105,13 @@ int main() {
         // Intensity filter
         pcl::PassThrough<pcl::PointXYZI> pass_intensity; //
         pass_intensity.setFilterFieldName("intensity"); //
-        pass_intensity.setFilterLimits(0.0f, 150.0f); //
+        pass_intensity.setFilterLimits(0.0f, 100.0f); //
 
         // Spatial filter
         pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
         // NOTE: Changed filter field to "y", which is now the forward (North) axis
         pass_spatial.setFilterFieldName("y");
-        pass_spatial.setFilterLimits(-150.0, 200.0); // Adjust limits for forward/backward
+        pass_spatial.setFilterLimits(-200.0, 200.0); // Adjust limits for forward/backward
         
         // VoxelGrid filter
         pcl::VoxelGrid<pcl::PointXYZI> vg; //
