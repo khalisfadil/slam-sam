@@ -7,12 +7,11 @@
                 "/usr/local/include/tbb",
                 "/usr/include/boost",
                 "/usr/local/include/open3d",
-                "${workspaceFolder}/include/**",
                 "/usr/include/pcl-1.14",
                 "/usr/include/flann",
-                "${workspaceFolder}/extern/robin-map/include/tsl/**",
-                "${workspaceFolder}/extern/Sophus",
-                "${workspaceFolder}/extern/pclomp/src/**"
+                "/usr/include/vtk-9.1",
+                "${workspaceFolder}/include/**",
+                "${workspaceFolder}/extern/ndt_omp/include/**"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/g++",
