@@ -202,9 +202,10 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
     std::memcpy(&frame.gForce, packet.data() + 65, sizeof(float));
 
     // Roll, Pitch, Yaw (Bytes 69-80, fp32)
-    std::memcpy(&frame.roll, packet.data() + 69, sizeof(float));
-    std::memcpy(&frame.pitch, packet.data() + 73, sizeof(float));
-    std::memcpy(&frame.yaw, packet.data() + 77, sizeof(float));
+    float roll, pitch, yaw;
+    std::memcpy(&roll, packet.data() + 69, sizeof(float));
+    std::memcpy(&pitch, packet.data() + 73, sizeof(float));
+    std::memcpy(&yaw, packet.data() + 77, sizeof(float));
 
     // Angular Velocity X, Y, Z (Bytes 81-92, fp32, treat as sensor frame IMU data)
     float angularVelocityX_raw, angularVelocityY_raw, angularVelocityZ_raw;
@@ -217,48 +218,15 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
     std::memcpy(&frame.sigmaLongitude, packet.data() + 97, sizeof(float));
     std::memcpy(&frame.sigmaAltitude, packet.data() + 101, sizeof(float));
 
-    // Compute gravity using WGS84 model
-    // double gravity_magnitude = GravityWGS84(frame.latitude, frame.longitude, frame.altitude);
-    // Eigen::Vector3d gravity_ned(0, 0, gravity_magnitude);
-
-    // Compute Coriolis effect
-    // double sinphi = std::sin(frame.latitude);
-    // double cosphi = std::cos(frame.latitude);
-    // double N = a / std::sqrt(1.0 - e2 * sinphi * sinphi);
-    // double Re = a * std::sqrt(1.0 - e2 * sinphi * sinphi) / (1.0 - e2 * sinphi * sinphi);
-
-    // // Earth's angular velocity in NED frame
-    // Eigen::Vector3d w_ie(OMEGA_EARTH * cosphi, 0, -OMEGA_EARTH * sinphi);
-
-    // // Transport rate
-    // Eigen::Vector3d w_en(
-    //     frame.velocityEast / (Re + frame.altitude),
-    //     -frame.velocityNorth / (N + frame.altitude),
-    //     -frame.velocityEast * std::tan(frame.latitude) / (Re + frame.altitude)
-    // );
-
-    // // Velocity in NED frame
-    // Eigen::Vector3d velocity_ned(frame.velocityNorth, frame.velocityEast, frame.velocityDown);
-
-    // // Coriolis acceleration
-    // Eigen::Vector3d coriolis_ned = (2.0 * w_ie + w_en).cross(velocity_ned);
-
-    // Compute NED-to-body rotation from Euler angles (ZYX convention: yaw, pitch, roll)
-    // Eigen::Matrix3d R_ned_to_body_eigen = (
-    //     Eigen::AngleAxisd(frame.yaw, Eigen::Vector3d::UnitZ()) *   // Yaw (Z)
-    //     Eigen::AngleAxisd(frame.pitch, Eigen::Vector3d::UnitY()) * // Pitch (Y)
-    //     Eigen::AngleAxisd(frame.roll, Eigen::Vector3d::UnitX())    // Roll (X)
-    // ).matrix();
-
-    // Transform gravity and Coriolis to sensor frame
-    // Eigen::Vector3d gravity_sensor = body_to_imu_rotation_ * R_ned_to_body_eigen * gravity_ned;
-    // Eigen::Vector3d coriolis_sensor = body_to_imu_rotation_ * R_ned_to_body_eigen * coriolis_ned;
-
-    // Process IMU data: subtract biases, gravity, Coriolis, and transform to body frame
+    // Process IMU data: subtract biases
     Eigen::Vector3d acc_sensor(accelX_raw, accelY_raw, accelZ_raw);
     acc_sensor -= biasAccelerometer_; // Subtract accelerometer bias
-    // acc_sensor -= gravity_sensor;     // Subtract gravity
-    // acc_sensor -= coriolis_sensor;   // Subtract Coriolis
+
+    // Convert Euler angles (ZYX convention) to quaternion
+    frame.orientation = Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()) * 
+                    Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) * 
+                    Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX());
+
     Eigen::Vector3d acc_body = body_to_imu_rotation_.transpose() * acc_sensor;
     frame.accelX = static_cast<float>(acc_body(0));
     frame.accelY = static_cast<float>(acc_body(1));
@@ -266,6 +234,7 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
 
     Eigen::Vector3d ang_sensor(angularVelocityX_raw, angularVelocityY_raw, angularVelocityZ_raw);
     ang_sensor -= biasGyroscope_; // Subtract gyroscope bias
+
     Eigen::Vector3d ang_body = body_to_imu_rotation_.transpose() * ang_sensor;
     frame.angularVelocityX = static_cast<float>(ang_body(0));
     frame.angularVelocityY = static_cast<float>(ang_body(1));
@@ -282,14 +251,6 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
 }
 // %             ... WGS84 Gravity function
 double CompCallback::GravityWGS84(double latitude, double longitude, double altitude) {
-    const double E = 5.2185400842339e5;
-    const double E2 = E * E;
-    const double GM = 3986004.418e8;
-    const double a = 6378137.0;
-    const double b = 6356752.3142;
-    const double e2 = 6.69437999014e-3;
-    const double b_over_a = 0.996647189335;
-    const double omega = 7.292115e-5;
     double sinphi = std::sin(latitude);
     double cosphi = std::cos(latitude);
     double sinlambda = std::sin(longitude);

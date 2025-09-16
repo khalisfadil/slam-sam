@@ -17,9 +17,14 @@ class CompCallback {
     private:
 
         nlohmann::json metadata_;
+        const double E = 5.2185400842339e5;
+        const double E2 = E * E;
+        const double GM = 3986004.418e8;
         const double a = 6378137.0;
+        const double b = 6356752.3142;
         const double e2 = 6.69437999014e-3;
-        const double OMEGA_EARTH = 7.292115e-5;                                     
+        const double b_over_a = 0.996647189335;
+        const double omega = 7.292115e-5;                                   
         double updateRate_ = 100;                                               // frequency rate Hz
         Eigen::Vector3d velocityRandomWalk_ = Eigen::Vector3d::Zero();
         Eigen::Vector3d angularRandomWalk_ = Eigen::Vector3d::Zero();

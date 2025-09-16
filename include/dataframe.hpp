@@ -21,7 +21,7 @@ struct ImuData{
 // %            ... struct representing single frame in position data (GPS,GNSS,INS, etc..)
 struct PositionData{
     Eigen::Vector3d pose = Eigen::Vector3d::Zero();                 // position latitude[rad],longitude[rad],altitude[m] in sensor frame                          ([rad],[rad],[m])
-    Eigen::Vector3f euler = Eigen::Vector3f::Zero();                // position roll[rad],pitch[rad],yaw[rad] in sensor frame                          ([rad],[rad],[m])
+    Eigen::Quaternionf orientation = Eigen::Quaternionf::Identity(); // orientation as quaternion (w, x, y, z)
     Eigen::Vector3f poseStdDev = Eigen::Vector3f::Zero();           // standard deviation in north,east,down in sensor frame   
     Eigen::Vector3f eulerStdDev = Eigen::Vector3f::Zero();          // standard deviation in north,east,down in sensor frame                                   [m]
     double timestamp = 0.0;                                         // absolute timestamp of the data                                                             [s]
@@ -171,9 +171,7 @@ struct CompFrame {
     float accelY = 0.0f;        // Body acceleration Y in m/s^2
     float accelZ = 0.0f;        // Body acceleration Z in m/s^2
     float gForce = 0.0f;        // G force in g
-    float roll = 0.0f;          // Roll angle in radians
-    float pitch = 0.0f;         // Pitch angle in radians
-    float yaw = 0.0f;           // Yaw (heading) angle in radians
+    Eigen::Quaternionf orientation = Eigen::Quaternionf::Identity();
     float angularVelocityX = 0.0f; // Angular velocity X in rad/s
     float angularVelocityY = 0.0f; // Angular velocity Y in rad/s
     float angularVelocityZ = 0.0f; // Angular velocity Z in rad/s
@@ -227,9 +225,7 @@ struct CompFrame {
         accelY = 0.0f;
         accelZ = 0.0f;
         gForce = 0.0f;
-        roll = 0.0f;
-        pitch = 0.0f;
-        yaw = 0.0f;
+        orientation = Eigen::Quaternionf::Identity();
         angularVelocityX = 0.0f;
         angularVelocityY = 0.0f;
         angularVelocityZ = 0.0f;
@@ -253,22 +249,17 @@ struct CompFrame {
     [[nodiscard]] PositionData toPositionData() const {
         PositionData positiondata;
         positiondata.pose = Eigen::Vector3d(this->latitude, this->longitude, this->altitude); 
-        positiondata.euler = Eigen::Vector3f(this->roll, this->pitch, this->yaw);
+        positiondata.orientation = this->orientation;
         positiondata.poseStdDev = Eigen::Vector3f(this->sigmaLatitude, this->sigmaLongitude, this->sigmaAltitude);
         positiondata.timestamp = this->timestamp;
         return positiondata;
     }
 
-    [[nodiscard]] CompFrame linearInterpolate(const CompFrame& a, const CompFrame& b, double t) {
+    [[nodiscard]] CompFrame linearInterpolate(const CompFrame& a, const CompFrame& b, double t) const {
         CompFrame result;
 
         // Clamp t to [0, 1] to avoid extrapolation
         t = std::max(0.0, std::min(1.0, t));
-
-        // Helper function to normalize angles to [-π, π]
-        auto normalizeAngle = [](float angle) -> float {
-            return std::fmod(angle + M_PI, 2.0f * M_PI) - M_PI;
-        };
 
         // Numeric fields: Linear interpolation
         result.timestamp = a.timestamp + t * (b.timestamp - a.timestamp);
@@ -283,10 +274,8 @@ struct CompFrame {
         result.accelZ = a.accelZ + t * (b.accelZ - a.accelZ);
         result.gForce = a.gForce + t * (b.gForce - a.gForce);
 
-        // Interpolate Euler angles and normalize
-        result.roll = normalizeAngle(a.roll + t * (b.roll - a.roll));
-        result.pitch = normalizeAngle(a.pitch + t * (b.pitch - a.pitch));
-        result.yaw = normalizeAngle(a.yaw + t * (b.yaw - a.yaw));
+        // Quaternion: Spherical linear interpolation
+        result.orientation = a.orientation.slerp(t, b.orientation);
 
         result.angularVelocityX = a.angularVelocityX + t * (b.angularVelocityX - a.angularVelocityX);
         result.angularVelocityY = a.angularVelocityY + t * (b.angularVelocityY - a.angularVelocityY);
