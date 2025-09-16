@@ -127,6 +127,24 @@ int main() {
         std::unique_ptr<std::deque<CompFrame>> current_comp_window = nullptr;
         bool is_first_frame = true;
 
+        // Define the interpolation lambda outside the main loop for clarity.
+        auto getInterpolated = [&](double target_time, const std::unique_ptr<std::deque<CompFrame>>& window) -> CompFrame {
+            if (!window || window->empty()) {
+                return CompFrame(); // Return a default/empty frame
+            }
+            if (target_time <= window->front().timestamp) return window->front();
+            if (target_time >= window->back().timestamp) return window->back();
+            for (size_t i = 0; i < window->size() - 1; ++i) {
+                const CompFrame& a = (*window)[i];
+                const CompFrame& b = (*window)[i + 1];
+                if (a.timestamp <= target_time && target_time <= b.timestamp) {
+                    double t = (b.timestamp - a.timestamp > 1e-9) ? (target_time - a.timestamp) / (b.timestamp - a.timestamp) : 0.0;
+                    return a.linearInterpolate(a, b, t); // Assumes linearInterpolate is a const method
+                }
+            }
+            return window->back();
+        };
+
         try {
             while (running) {
                 auto lidar_frame = lidarQueue.pop();
@@ -135,108 +153,102 @@ int main() {
                     break;
                 }
 
-                if (lidar_frame->timestamp_points.size() < 2) {
+                if (lidar_frame->timestamp_points.size() < 2) { //
                     std::cerr << "LiDAR frame " << lidar_frame->frame_id << " has insufficient points, skipping.\n";
                     continue;
                 }
 
-                const double max_lidar_time = lidar_frame->timestamp_points.back();
+                const double max_lidar_time = lidar_frame->timestamp_points.back(); //
 
-                if (is_first_frame) {
-                    *keyLidarTs = max_lidar_time;
-                    is_first_frame = false;
+                if (is_first_frame) { //
+                    *keyLidarTs = max_lidar_time; //
+                    is_first_frame = false; //
                     std::cout << std::setprecision(12) << "Initialized keyLidarTs with first frame: " << *keyLidarTs << std::endl;
-                    continue;
+                    continue; //
                 }
 
-                const double start_interval = *keyLidarTs;
-                const double end_interval = max_lidar_time;
+                const double start_interval = *keyLidarTs; //
+                const double end_interval = max_lidar_time; //
 
-                if (end_interval <= start_interval) {
+                if (end_interval <= start_interval) { //
                     std::cerr << "LiDAR frame " << lidar_frame->frame_id << " is out of order or redundant, skipping.\n";
                     continue;
                 }
 
-                bool data_gap_detected = false;
+                bool data_gap_detected = false; //
                 while (running) {
-                    if (!current_comp_window) {
-                        current_comp_window = compQueue.pop();
+                    if (!current_comp_window) { //
+                        current_comp_window = compQueue.pop(); //
                         if (!current_comp_window) {
                             if (!running) std::cout << "Compass queue stopped, exiting sync thread.\n";
                             break;
                         }
                     }
 
-                    // CHECK 1: Window ends too early (not sufficient). Discard and get the next one.
-                    if (current_comp_window->back().timestamp < end_interval) {
+                    if (current_comp_window->back().timestamp < end_interval) { //
                         std::cout << std::setprecision(12) << "Compass window not sufficient (ends at " << current_comp_window->back().timestamp
                                 << ", need to reach " << end_interval << "). Waiting for more data...\n";
-                        current_comp_window = nullptr;
-                        continue;
+                        current_comp_window = nullptr; //
+                        continue; //
                     }
 
-                    // CHECK 2 (YOUR KEY INSIGHT): Window starts too late (a data gap).
-                    if (current_comp_window->front().timestamp > start_interval) {
+                    if (current_comp_window->front().timestamp > start_interval) { //
                         std::cerr << std::setprecision(12) << "CRITICAL: Data gap detected in compass stream. "
                                 << "Required interval starts at " << start_interval
                                 << " but available data starts at " << current_comp_window->front().timestamp << ".\n";
-                        
-                        // To recover, we must skip the current LiDAR frame and jump our key timestamp forward.
-                        *keyLidarTs = current_comp_window->back().timestamp;
-                        current_comp_window = nullptr; // Discard this window
-                        data_gap_detected = true;
-                        break; // Exit the inner loop to handle the skip in the outer loop
+                        *keyLidarTs = current_comp_window->back().timestamp; //
+                        current_comp_window = nullptr; //
+                        data_gap_detected = true; //
+                        break; //
                     }
-
-                    // SUCCESS: The window is valid for our interval.
                     break;
                 }
 
                 if (!running || !current_comp_window) {
-                    break; 
+                    break;
                 }
-                
-                // If we detected a gap, skip the rest of the processing for this lidar_frame.
-                if (data_gap_detected) {
+
+                if (data_gap_detected) { //
                     std::cerr << "Skipping LiDAR frame " << lidar_frame->frame_id << " due to compass data gap.\n";
-                    continue;
+                    continue; //
                 }
-                
-                // From here, the logic is the same, as we're guaranteed to have a valid window.
+
                 std::cout << "Aligned LiDAR frame " << lidar_frame->frame_id << std::setprecision(12)
                         << " (Interval: " << start_interval << " to " << end_interval
-                        << ") with compass window (time: " << current_comp_window->front().timestamp 
+                        << ") with compass window (time: " << current_comp_window->front().timestamp
                         << " to " << current_comp_window->back().timestamp << ")\n";
+
+                // OPTIMIZATION: Populate dataFrame directly, avoiding intermediate filtCompFrame vector
+                auto dataFrame = std::make_shared<FrameData>(); //
+                dataFrame->points = lidar_frame->toPCLPointCloud(); //
+                dataFrame->timestamp = end_interval; //
                 
-                auto getInterpolated = [&](double target_time) -> CompFrame {
-                    // (interpolation logic remains the same)
-                    if (target_time <= current_comp_window->front().timestamp) return current_comp_window->front();
-                    if (target_time >= current_comp_window->back().timestamp) return current_comp_window->back();
-                    for (size_t i = 0; i < current_comp_window->size() - 1; ++i) {
-                        const CompFrame& a = (*current_comp_window)[i];
-                        const CompFrame& b = (*current_comp_window)[i + 1];
-                        if (a.timestamp <= target_time && target_time <= b.timestamp) {
-                            double t = (b.timestamp - a.timestamp > 1e-9) ? (target_time - a.timestamp) / (b.timestamp - a.timestamp) : 0.0;
-                            return a.linearInterpolate(a, b, t);
-                        }
-                    }
-                    return current_comp_window->back();
-                };
+                // Reserve space once
+                dataFrame->imu.reserve(current_comp_window->size() + 2);
+                dataFrame->position.reserve(current_comp_window->size() + 2);
 
-                auto filtCompFrame = std::make_shared<std::vector<CompFrame>>();
-                filtCompFrame->reserve(current_comp_window->size() + 2);
+                // Add interpolated start point
+                CompFrame start_frame = getInterpolated(start_interval, current_comp_window);
+                dataFrame->imu.push_back(start_frame.toImuData()); //
+                dataFrame->position.push_back(start_frame.toPositionData()); //
 
-                filtCompFrame->push_back(getInterpolated(start_interval));
+                // Add intermediate points
                 for (const auto& data : *current_comp_window) {
-                    if (data.timestamp > start_interval && data.timestamp < end_interval) {
-                        filtCompFrame->push_back(data);
+                    if (data.timestamp > start_interval && data.timestamp < end_interval) { //
+                        dataFrame->imu.push_back(data.toImuData()); //
+                        dataFrame->position.push_back(data.toPositionData()); //
                     }
                 }
-                filtCompFrame->push_back(getInterpolated(end_interval));
-                
-                std::cout << "Generated compass data with " << filtCompFrame->size() << " frames for the interval.\n";
 
-                *keyLidarTs = end_interval;
+                // Add interpolated end point
+                CompFrame end_frame = getInterpolated(end_interval, current_comp_window);
+                dataFrame->imu.push_back(end_frame.toImuData()); //
+                dataFrame->position.push_back(end_frame.toPositionData()); //
+
+                std::cout << "Generated compass data with " << dataFrame->imu.size() << " frames for the interval.\n";
+                std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
+
+                *keyLidarTs = end_interval; //
             }
         } catch (const std::exception& e) {
             std::cerr << "Sync thread error: " << e.what() << "\n";
