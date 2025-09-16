@@ -58,7 +58,7 @@ int main() {
         
         if (frame->numberpoints > 0 && frame->frame_id != *lidarLastID) {
             *lidarLastID = frame->frame_id;
-            std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
+            // std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
             // Move the frame pointer into the queue. No heavy copying.
             lidarQueue.push(std::move(frame));
         }
@@ -75,8 +75,8 @@ int main() {
                 compWin->pop_front();
             }
             compWin->push_back(*frame); // Copy CompFrame into compWin
-            std::cout << "Decoded compass frame with timestamp " << frame->timestamp << ".\n";
-            std::cout << "Compass window size: " << compWin->size() << ".\n";
+            // std::cout << "Decoded compass frame with timestamp " << frame->timestamp << ".\n";
+            // std::cout << "Compass window size: " << compWin->size() << ".\n";
             // Move the entire compWin into the queue when it reaches compWinSize
             if (compWin->size() == *compWinSize) {
                 auto compWinCopy = std::make_unique<std::deque<CompFrame>>(*compWin); // Create a copy of compWin
@@ -145,7 +145,7 @@ int main() {
                 if (is_first_frame) {
                     *keyLidarTs = max_lidar_time;
                     is_first_frame = false;
-                    std::cout << "Initialized keyLidarTs with first frame: " << *keyLidarTs << std::endl;
+                    std::cout << std::setprecision(12) << "Initialized keyLidarTs with first frame: " << *keyLidarTs << std::endl;
                     continue;
                 }
 
@@ -169,7 +169,7 @@ int main() {
 
                     // CHECK 1: Window ends too early (not sufficient). Discard and get the next one.
                     if (current_comp_window->back().timestamp < end_interval) {
-                        std::cout << "Compass window not sufficient (ends at " << current_comp_window->back().timestamp
+                        std::cout << std::setprecision(12) << "Compass window not sufficient (ends at " << current_comp_window->back().timestamp
                                 << ", need to reach " << end_interval << "). Waiting for more data...\n";
                         current_comp_window = nullptr;
                         continue;
@@ -177,7 +177,7 @@ int main() {
 
                     // CHECK 2 (YOUR KEY INSIGHT): Window starts too late (a data gap).
                     if (current_comp_window->front().timestamp > start_interval) {
-                        std::cerr << "CRITICAL: Data gap detected in compass stream. "
+                        std::cerr << std::setprecision(12) << "CRITICAL: Data gap detected in compass stream. "
                                 << "Required interval starts at " << start_interval
                                 << " but available data starts at " << current_comp_window->front().timestamp << ".\n";
                         
@@ -203,7 +203,7 @@ int main() {
                 }
                 
                 // From here, the logic is the same, as we're guaranteed to have a valid window.
-                std::cout << "Aligned LiDAR frame " << lidar_frame->frame_id
+                std::cout << "Aligned LiDAR frame " << lidar_frame->frame_id << std::setprecision(12)
                         << " (Interval: " << start_interval << " to " << end_interval
                         << ") with compass window (time: " << current_comp_window->front().timestamp 
                         << " to " << current_comp_window->back().timestamp << ")\n";
