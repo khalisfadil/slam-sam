@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(pipeline LANGUAGES C CXX)
+project(viz_lidar_udp LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -18,9 +18,8 @@ find_package(Boost REQUIRED COMPONENTS system thread)
 
 # Define source files
 set(SOURCES
-    run/pipeline.cpp
+    run/viz_lidar_udp.cpp
     src/lidarcallback.cpp
-    src/compcallback.cpp
 )
 
 # Define include directories
@@ -32,13 +31,13 @@ set(INCLUDE_DIRS
 )
 
 # Create executable
-add_executable(pipeline ${SOURCES})
+add_executable(viz_lidar_udp ${SOURCES})
 
 # Set include directories for the target
-target_include_directories(pipeline PRIVATE ${INCLUDE_DIRS})
+target_include_directories(viz_lidar_udp PRIVATE ${INCLUDE_DIRS})
 
 # Link libraries
-target_link_libraries(pipeline PRIVATE
+target_link_libraries(viz_lidar_udp PRIVATE
     ${PCL_LIBRARIES}
     ${VTK_LIBRARIES}
     nlohmann_json::nlohmann_json
@@ -47,7 +46,7 @@ target_link_libraries(pipeline PRIVATE
 )
 
 # Add compile options for optimization
-target_compile_options(pipeline PRIVATE -O3)
+target_compile_options(viz_lidar_udp PRIVATE -O3)
 
 # Ensure VTK is properly configured
 if(VTK_FOUND)
