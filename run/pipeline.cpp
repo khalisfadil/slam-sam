@@ -20,6 +20,7 @@ int main() {
 
     FrameQueue<LidarFrame> lidarQueue;
     FrameQueue<std::deque<CompFrame>> compQueue;
+    FrameQueue<FrameData> dataQueue;
     std::shared_ptr<std::deque<CompFrame>> compWin = std::make_shared<std::deque<CompFrame>>(); // Changed to shared_ptr
     auto lidarLastID = std::make_shared<uint16_t>(0);
     auto compLastTs = std::make_shared<double>(0);
@@ -123,7 +124,7 @@ int main() {
         compQueue.stop();
     });
     //####################################################################################################
-    auto sync_thread = std::thread([&lidarQueue, &compQueue, keyLidarTs]() {
+    auto sync_thread = std::thread([&lidarQueue, &compQueue, &dataQueue, keyLidarTs]() {
         std::unique_ptr<std::deque<CompFrame>> current_comp_window = nullptr;
         bool is_first_frame = true;
 
@@ -219,7 +220,7 @@ int main() {
                         << " to " << current_comp_window->back().timestamp << ")\n";
 
                 // OPTIMIZATION: Populate dataFrame directly, avoiding intermediate filtCompFrame vector
-                auto dataFrame = std::make_shared<FrameData>(); //
+                auto dataFrame = std::make_unique<FrameData>(); //
                 dataFrame->points = lidar_frame->toPCLPointCloud(); //
                 dataFrame->timestamp = end_interval; //
                 
@@ -247,6 +248,8 @@ int main() {
 
                 std::cout << "Generated compass data with " << dataFrame->imu.size() << " frames for the interval.\n";
                 std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
+
+                dataQueue.push(std::move(dataFrame));
 
                 *keyLidarTs = end_interval; //
             }
