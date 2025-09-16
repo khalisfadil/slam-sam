@@ -250,6 +250,7 @@ int main() {
                 std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
 
                 dataQueue.push(std::move(dataFrame));
+                std::cout << "Data frame queue size " << dataFrame->size()<< ".\n";
 
                 *keyLidarTs = end_interval; //
             }
