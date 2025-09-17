@@ -261,14 +261,10 @@ int main() {
     auto factor_thread = std::thread([&registerCallback, &dataQueue]() {
         bool is_first_frame = true;
         Eigen::Matrix4f previous_transform = Eigen::Matrix4f::Identity();
-
-        // CHANGED: Pointers now use the pclomp namespace
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
 
         if (registerCallback.registration_method_ == "NDT") {
-            // CHANGED: Use pclomp::NormalDistributionsTransform
             ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
-            // RE-ENABLED: Set multi-threading and search method for pclomp
             ndt_omp->setNumThreads(registerCallback.num_threads_);
             ndt_omp->setResolution(registerCallback.ndt_resolution_);
             ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
@@ -283,7 +279,6 @@ int main() {
                 std::cout << "Warning: Invalid NDT search method. Defaulting to DIRECT7." << std::endl;
                 ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
             }
-            
             registerCallback.registration = ndt_omp;
         } 
 
@@ -299,13 +294,6 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points(new pcl::PointCloud<pcl::PointXYZI>());
                 // pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_points(new pcl::PointCloud<pcl::PointXYZI>());
                 *points = std::move(data_frame->points.pointsBody);
-                
-                // RE-ENABLED: Downsample the point cloud for performance. This is a crucial step.
-                // pcl::VoxelGrid<pcl::PointXYZI> vg;
-                // auto vs = registerCallback.mapvoxelsize_;
-                // vg.setLeafSize(vs, vs, vs);
-                // vg.setInputCloud(points);
-                // vg.filter(*filtered_points);
 
                 // Use the filtered_points from now on
                 if (is_first_frame) {
@@ -324,18 +312,23 @@ int main() {
 
                 if (registerCallback.registration->hasConverged()) {
                     Eigen::Matrix4f lidar_transform = registerCallback.registration->getFinalTransformation();
-                    
-                    // IMPROVEMENT: Update the 'guess' for the next frame's alignment regardless of keyframe status
                     previous_transform = lidar_transform; 
-                    
                     float translation_norm = lidar_transform.block<3, 1>(0, 3).norm();
-
-                    // IMPROVEMENT: Re-introduced keyframe logic to prevent drift
-    
                     std::cout << "Keyframe generated. Translation: " << translation_norm << " m.\n";
                     std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
                     std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
-                        
+                    Eigen::Matrix<double, 6, 6> lidar_factor_cov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+                    if (ndt_omp) {
+                        auto ndt_result = ndt_omp->getResult();
+                        const auto& hessian = ndt_result.hessian;
+                        if (hessian.determinant() > 1e-6) {
+                            lidar_factor_cov = -hessian.inverse();
+                            std::cout << "Covariance estimated from NDT Hessian.\n";
+                            std::cout << "6D Covariance:\n" << lidar_factor_cov << std::endl;
+                        } else {
+                            std::cerr << "Hessian singular; using default covariance.\n";
+                        }
+                    }
                     // Update the target point cloud for the next registration
                     registerCallback.registration->setInputTarget(points); 
                     
