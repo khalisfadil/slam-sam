@@ -282,7 +282,7 @@ int main() {
         }
         try {
             while (running) {
-                std::cout << "factor_thread.\n";
+                // std::cout << "factor_thread.\n";
                 auto data_frame = dataQueue.pop();
                 if (!data_frame) {
                     if (!running) std::cout << "Data queue stopped, exiting factor thread.\n";
@@ -306,12 +306,12 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points_aligned(new pcl::PointCloud<pcl::PointXYZI>);
                 registerCallback.registration->setInputSource(filtered_points);
                 auto align_start = std::chrono::high_resolution_clock::now();
-                std::cout << "start aligned.\n";
+                // std::cout << "start aligned.\n";
                 registerCallback.registration->align(*points_aligned, previous_transform);
-                std::cout << "end aligned.\n";
+                // std::cout << "end aligned.\n";
                 auto align_end = std::chrono::high_resolution_clock::now();
                 auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
-                std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
+                
                 
                 if (registerCallback.registration->hasConverged()) {
                     std::cout << "has converged.\n";
@@ -320,6 +320,9 @@ int main() {
                     // previous_transform = *lidarFactor;
                     std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
                     if (translation_norm > 5){
+                        std::cout << "has converged.\n";
+                        std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
+                        std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
                         std::cout << "has moved.\n";
                         registerCallback.registration->setInputTarget(filtered_points); 
                     }
