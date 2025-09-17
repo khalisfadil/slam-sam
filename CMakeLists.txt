@@ -21,6 +21,7 @@ set(SOURCES
     run/pipeline.cpp
     src/lidarcallback.cpp
     src/compcallback.cpp
+    src/registercallback.cpp
     extern/ndt_omp/src/estimate_covariance/estimate_covariance.cpp
     extern/ndt_omp/src/multigrid_pclomp/multi_voxel_grid_covariance_omp.cpp
     extern/ndt_omp/src/multigrid_pclomp/multigrid_ndt_omp.cpp
