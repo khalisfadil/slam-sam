@@ -34,20 +34,6 @@ struct FrameData{
     std::vector<PositionData> position;
 };
 // %             ... struct for parameter
-struct Options{
-
-    int num_threads = 8;
-    float mapvoxelsize = 1.0;
-
-    std::string registration_method = "NDT_OMP";
-    float ndt_resolution = 1.0;
-    float ndt_transform_epsilon = 0.01;
-    std::string ndt_neighborhood_search_method = "DIRECT7";
-    // pcl omp gicp
-    float gicp_corr_dist_threshold = 5.0;
-    float gicp_transform_epsilon = 0.01;
-};
-// %             ... struct for parameter
 struct LidarFrame {
     uint16_t frame_id = 0;
     double timestamp = 0.0; // Current timestamp, unix timestamp (PTP sync)

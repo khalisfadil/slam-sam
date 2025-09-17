@@ -248,7 +248,7 @@ int main() {
                 // std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
 
                 dataQueue.push(std::move(dataFrame));
-                // std::cout << "Data frame queue size " << dataQueue.size()<< ".\n";
+                std::cout << "Data frame queue size " << dataQueue.size()<< ".\n";
 
                 *keyLidarTs = end_interval; //
             }
@@ -282,7 +282,9 @@ int main() {
         }
         try {
             while (running) {
+                std::cout << "factor_thread.\n";
                 auto data_frame = dataQueue.pop();
+                std::cout << "receive data frame with number points: "<< data_frame->points.pointsBody.size() <<".\n";
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_points(new pcl::PointCloud<pcl::PointXYZI>());
                 *points = std::move(data_frame->points.pointsBody);
