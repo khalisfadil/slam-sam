@@ -15,8 +15,10 @@ int main() {
     std::string lidarmeta = "../config/lidar_meta_berlin.json";
     std::string lidarparam = "../config/lidar_config_berlin.json";
     std::string imuparam = "../config/imu_config_berlin.json";
+    std::string registerparam = "../config/register_config.json";
     LidarCallback lidarCallback(lidarmeta, lidarparam);                 // initialize
-    CompCallback compCallback(imuparam);                                // initialize
+    CompCallback compCallback(imuparam);
+    RegisterCallback registerCallback(registerparam);                                // initialize
 
     FrameQueue<LidarFrame> lidarQueue;
     FrameQueue<std::deque<CompFrame>> compQueue;
@@ -62,8 +64,7 @@ int main() {
             // std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
             // Move the frame pointer into the queue. No heavy copying.
             lidarQueue.push(std::move(frame));
-        }
-    };
+        }};
     //####################################################################################################
     auto comp_callback = [&compCallback, &compQueue, compLastTs, compWin, compWinSize](const DataBuffer& packet) {
         if (!running) return;
@@ -83,20 +84,17 @@ int main() {
                 auto compWinCopy = std::make_unique<std::deque<CompFrame>>(*compWin); // Create a copy of compWin
                 compQueue.push(std::move(compWinCopy)); // Push the copy into compQueue
             }
-        }
-    };
+        }};
     //####################################################################################################
     auto lidar_errcallback = [](const boost::system::error_code& ec) {
         if (running) {
             std::cerr << "LiDAR IO error: " << ec.message() << " (code: " << ec.value() << ")\n";
-        }
-    };
+        }};
     //####################################################################################################
     auto comp_errcallback = [](const boost::system::error_code& ec) {
         if (running) {
             std::cerr << "Compass IO error: " << ec.message() << " (code: " << ec.value() << ")\n";
-        }
-    };
+        }};
     //####################################################################################################
     auto lidar_socket = std::shared_ptr<UdpSocket>(UdpSocket::create(lidar_iocontext, lidarUdpConfig, lidar_callback, lidar_errcallback));
     //####################################################################################################
@@ -164,7 +162,7 @@ int main() {
                 if (is_first_frame) { //
                     *keyLidarTs = max_lidar_time; //
                     is_first_frame = false; //
-                    std::cout << std::setprecision(12) << "Initialized keyLidarTs with first frame: " << *keyLidarTs << std::endl;
+                    // std::cout << std::setprecision(12) << "Initialized keyLidarTs with first frame: " << *keyLidarTs << std::endl;
                     continue; //
                 }
 
@@ -187,8 +185,8 @@ int main() {
                     }
 
                     if (current_comp_window->back().timestamp < end_interval) { //
-                        std::cout << std::setprecision(12) << "Compass window not sufficient (ends at " << current_comp_window->back().timestamp
-                                << ", need to reach " << end_interval << "). Waiting for more data...\n";
+                        // std::cout << std::setprecision(12) << "Compass window not sufficient (ends at " << current_comp_window->back().timestamp
+                        //         << ", need to reach " << end_interval << "). Waiting for more data...\n";
                         current_comp_window = nullptr; //
                         continue; //
                     }
@@ -214,10 +212,10 @@ int main() {
                     continue; //
                 }
 
-                std::cout << "Aligned LiDAR frame " << lidar_frame->frame_id << std::setprecision(12)
-                        << " (Interval: " << start_interval << " to " << end_interval
-                        << ") with compass window (time: " << current_comp_window->front().timestamp
-                        << " to " << current_comp_window->back().timestamp << ")\n";
+                // std::cout << "Aligned LiDAR frame " << lidar_frame->frame_id << std::setprecision(12)
+                //         << " (Interval: " << start_interval << " to " << end_interval
+                //         << ") with compass window (time: " << current_comp_window->front().timestamp
+                //         << " to " << current_comp_window->back().timestamp << ")\n";
 
                 // OPTIMIZATION: Populate dataFrame directly, avoiding intermediate filtCompFrame vector
                 auto dataFrame = std::make_unique<FrameData>(); //
@@ -246,11 +244,11 @@ int main() {
                 dataFrame->imu.push_back(end_frame.toImuData()); //
                 dataFrame->position.push_back(end_frame.toPositionData()); //
 
-                std::cout << "Generated compass data with " << dataFrame->imu.size() << " frames for the interval.\n";
-                std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
+                // std::cout << "Generated compass data with " << dataFrame->imu.size() << " frames for the interval.\n";
+                // std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
 
                 dataQueue.push(std::move(dataFrame));
-                std::cout << "Data frame queue size " << dataQueue.size()<< ".\n";
+                // std::cout << "Data frame queue size " << dataQueue.size()<< ".\n";
 
                 *keyLidarTs = end_interval; //
             }
@@ -260,8 +258,99 @@ int main() {
         std::cout << "Sync thread exiting\n";
     });
     //####################################################################################################
-    auto factor_thread = std::thread([&dataQueue]() {
-
+    auto factor_thread = std::thread([&registerCallback, &dataQueue]() {
+        bool is_first_frame = true;
+        std::unique_ptr<Eigen::Matrix4f> lidarFactor = nullptr;
+        Eigen::Matrix4f previous_transform = Eigen::Matrix4f::Identity();
+        pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
+        pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp = nullptr;
+        if(registerCallback.registration_method_ == "NDT_OMP") {
+            ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+            ndt_omp->setResolution(registerCallback.ndt_resolution_);
+            ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
+            ndt_omp->setNumThreads(registerCallback.num_threads_);
+            if(registerCallback.ndt_neighborhood_search_method_ == "DIRECT1"){ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT1);
+                }else if(registerCallback.ndt_neighborhood_search_method_ == "DIRECT7"){ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
+                }else if(registerCallback.ndt_neighborhood_search_method_ == "KDTREE"){ndt_omp->setNeighborhoodSearchMethod(pclomp::KDTREE);
+                }else{ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT1);}
+            registerCallback.registration = ndt_omp;
+        } else if (registerCallback.registration_method_ == "GICP") {
+            gicp.reset(new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
+            gicp->setMaxCorrespondenceDistance(registerCallback.gicp_corr_dist_threshold_);
+            gicp->setTransformationEpsilon(registerCallback.gicp_transform_epsilon_);
+            registerCallback.registration = gicp;
+        }
+        try {
+            while (running) {
+                auto data_frame = dataQueue.pop();
+                pcl::PointCloud<pcl::PointXYZI>::Ptr points(new pcl::PointCloud<pcl::PointXYZI>());
+                pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_points(new pcl::PointCloud<pcl::PointXYZI>());
+                *points = std::move(data_frame->points.pointsBody);
+                pcl::VoxelGrid<pcl::PointXYZI> vg;
+                auto vs = registerCallback.mapvoxelsize_;
+                vg.setLeafSize(vs, vs, vs);
+                vg.setInputCloud(points);
+                vg.filter(*filtered_points);
+                if (is_first_frame) { //
+                    registerCallback.registration->setInputTarget(filtered_points);
+                    is_first_frame = false; //
+                    continue; //
+                }
+                // Perform registration
+                pcl::PointCloud<pcl::PointXYZI>::Ptr points_aligned(new pcl::PointCloud<pcl::PointXYZI>);
+                registerCallback.registration->setInputSource(filtered_points);
+                auto align_start = std::chrono::high_resolution_clock::now();
+                registerCallback.registration->align(*points_aligned, previous_transform);
+                auto align_end = std::chrono::high_resolution_clock::now();
+                auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
+                if (registerCallback.registration->hasConverged()) {
+                    lidarFactor = std::make_unique<Eigen::Matrix4f>(registerCallback.registration->getFinalTransformation());
+                    previous_transform = *lidarFactor;
+                    registerCallback.registration->setInputTarget(filtered_points); 
+                    auto cov_start = std::chrono::high_resolution_clock::now();
+                    Eigen::Matrix<double, 6, 6> lidarFactorCov = Eigen::Matrix<double, 6, 6>::Zero();
+                    bool covariance_calculated = false;
+                    if(registerCallback.registration_method_ == "NDT_OMP") {
+                        if(ndt_omp) {
+                            pclomp::NdtResult ndt_result = ndt_omp->getResult();
+                            const Eigen::Matrix<double, 6, 6>& hessian = ndt_result.hessian;
+                            if (hessian.determinant() != 0) {
+                                lidarFactorCov = -hessian.inverse();
+                                covariance_calculated = true;
+                            }
+                        }
+                    } else if (registerCallback.registration_method_ == "GICP") {
+                        if(gicp) {
+                            double fitness_score = gicp->getFitnessScore();
+                            double k = 0.1; 
+                            double variance = k * fitness_score;
+                            lidarFactorCov(0, 0) = variance; // x
+                            lidarFactorCov(1, 1) = variance; // y
+                            lidarFactorCov(2, 2) = variance; // z
+                            lidarFactorCov(3, 3) = variance; // roll
+                            lidarFactorCov(4, 4) = variance; // pitch
+                            lidarFactorCov(5, 5) = variance; // yaw
+                            covariance_calculated = true;
+                        }
+                    }
+                    auto cov_end = std::chrono::high_resolution_clock::now();
+                    auto cov_duration = std::chrono::duration_cast<std::chrono::microseconds>(cov_end - cov_start);
+                    if (covariance_calculated) {
+                        std::cout << "----------------------------------------" << std::endl;
+                        // ADDED: Print timing results
+                        std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
+                        std::cout << "Covariance Time: " << cov_duration.count() << " us" << std::endl; // us = microseconds
+                        
+                        std::cout << "\nFinal Transformation (T):\n" << *lidarFactor << std::endl;
+                        std::cout << "\nCalculated 6D Covariance (Cov):\n" << lidarFactorCov << std::endl;
+                        std::cout << "----------------------------------------" << std::endl;
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Factor thread error: " << e.what() << "\n";
+        }
+        std::cout << "Factor thread exiting\n";
     });
     //####################################################################################################
     // Cleanup
@@ -272,9 +361,11 @@ int main() {
     comp_socket->stop();
     lidarQueue.stop();
     compQueue.stop();
+    dataQueue.stop();
 
     if (lidar_iothread.joinable()) lidar_iothread.join();
     if (comp_iothread.joinable()) comp_iothread.join();
     if (sync_thread.joinable()) sync_thread.join();
+    if (factor_thread.joinable()) sync_thread.join();
     
 }

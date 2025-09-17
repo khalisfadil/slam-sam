@@ -99,6 +99,11 @@ int main() {
         viewer->setBackgroundColor(0, 0, 0); //
         viewer->addCoordinateSystem(10.0, "coord"); //
         viewer->initCameraParameters(); //
+        viewer->setCameraPosition(
+            0, 0, -50,   // Camera position: above the origin along z-axis
+            0, 0, 0,    // Focal point: look at origin
+            1, 0, 0     // Up direction: positive y-axis to match default view
+        );
 
         // Spatial filter
         pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
@@ -126,10 +131,9 @@ int main() {
             
             // Apply the (x, y, z) -> (y, x, -z) transform to match the PCL viewer's frame.
             for (auto& point : cloud->points) {
-                float original_x = point.x;
-                point.x = -point.y;    // New X is Old Y (East -> PCL Right)
-                point.y = -original_x; // New Y is Old X (North -> PCL Up)
-                point.z = point.z;   // New Z is -Old Z (Down -> PCL Out of screen)
+                point.x = -point.x;    // 
+                point.y = point.y; // 
+                point.z = point.z;   // 
             }
 
             pass_spatial.setInputCloud(cloud); //

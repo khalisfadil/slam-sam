@@ -36,14 +36,9 @@ struct FrameData{
 // %             ... struct for parameter
 struct Options{
 
-    int intializestep = 20;
-    int num_threads = 4;
-    // mapconfig
-    int maplifetime = 10;
+    int num_threads = 8;
     float mapvoxelsize = 1.0;
-    int mapvoxelcapacity = 20;
-    float mapmaxdistance = 300.0;
-    // pcl omp ndt 
+
     std::string registration_method = "NDT_OMP";
     float ndt_resolution = 1.0;
     float ndt_transform_epsilon = 0.01;

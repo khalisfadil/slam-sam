@@ -9,9 +9,11 @@
 #include <mutex>
 #include <condition_variable>
 #include <memory>
+#include <functional>
 
 #include <lidarcallback.hpp>
 #include <compcallback.hpp>
+#include <registercallback.hpp>
 #include <udpsocket.hpp>
 
 template<typename T>
