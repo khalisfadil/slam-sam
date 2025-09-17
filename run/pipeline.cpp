@@ -320,6 +320,7 @@ int main() {
                     // previous_transform = *lidarFactor;
                     std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
                     if (translation_norm > 5){
+                        std::cout << "has moved.\n";
                         registerCallback.registration->setInputTarget(filtered_points); 
                     }
                 }
