@@ -1,9 +1,9 @@
 {   
     "register_parameter": {
         "num_threads":                          2,
-        "mapvoxelsize":                         1.0,
-        "registration_method":                  "GICP",
-        "ndt_resolution":                       1.0,
+        "mapvoxelsize":                         0.1,
+        "registration_method":                  "NDT_OMP",
+        "ndt_resolution":                       0.1,
         "ndt_transform_epsilon":                0.0001,
         "ndt_neighborhood_search_method":       "DIRECT7",
         "gicp_corr_dist_threshold":             5.0,
