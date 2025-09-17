@@ -260,6 +260,10 @@ int main() {
         std::cout << "Sync thread exiting\n";
     });
     //####################################################################################################
+    auto factor_thread = std::thread([&dataQueue]() {
+
+    });
+    //####################################################################################################
     // Cleanup
     while (running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
