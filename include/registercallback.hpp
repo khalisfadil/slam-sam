@@ -4,12 +4,12 @@
 #include <nlohmann/json.hpp>
 #include <dataframe.hpp>
 
-#include <pclomp/ndt_omp.h>
-#include <pclomp/ndt_omp_impl.hpp>
-#include <pclomp/voxel_grid_covariance_omp.h>
-#include <pclomp/voxel_grid_covariance_omp_impl.hpp>
-#include <pclomp/gicp_omp.h>
-#include <pclomp/gicp_omp_impl.hpp>
+// #include <pclomp/ndt_omp.h>
+// #include <pclomp/ndt_omp_impl.hpp>
+// #include <pclomp/voxel_grid_covariance_omp.h>
+// #include <pclomp/voxel_grid_covariance_omp_impl.hpp>
+// #include <pclomp/gicp_omp.h>
+// #include <pclomp/gicp_omp_impl.hpp>
 
 #include <pcl/point_types.h>
 #include <pcl/registration/icp.h>
