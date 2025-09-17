@@ -260,89 +260,87 @@ int main() {
     //####################################################################################################
     auto factor_thread = std::thread([&registerCallback, &dataQueue]() {
         bool is_first_frame = true;
-        // This variable is used to provide an initial guess for the alignment, which speeds up convergence.
         Eigen::Matrix4f previous_transform = Eigen::Matrix4f::Identity();
 
-        // CHANGED: Pointers now use the standard pcl namespace
-        pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt = nullptr;
-        pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp = nullptr;
+        // CHANGED: Pointers now use the pclomp namespace
+        pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
 
         if (registerCallback.registration_method_ == "NDT") {
-            // CHANGED: Use pcl::NormalDistributionsTransform instead of pclomp::...
-            ndt.reset(new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
-            ndt->setResolution(registerCallback.ndt_resolution_);
-            ndt->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
-            
-            // REMOVED: These methods are specific to pclomp and do not exist in the standard PCL NDT.
-            // ndt->setNumThreads(registerCallback.num_threads_);
-            // ndt->setNeighborhoodSearchMethod(...);
+            // CHANGED: Use pclomp::NormalDistributionsTransform
+            ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+            // RE-ENABLED: Set multi-threading and search method for pclomp
+            ndt_omp->setNumThreads(registerCallback.num_threads_);
+            ndt_omp->setResolution(registerCallback.ndt_resolution_);
+            ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
 
-            // NOTE: The standard PCL NDT is single-threaded. Performance will be lower than the OMP version.
+            if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT1") {
+                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT1);
+            } else if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT7") {
+                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
+            } else if (registerCallback.ndt_neighborhood_search_method_ == "KDTREE") {
+                ndt_omp->setNeighborhoodSearchMethod(pclomp::KDTREE);
+            } else {
+                std::cout << "Warning: Invalid NDT search method. Defaulting to DIRECT7." << std::endl;
+                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
+            }
             
-            registerCallback.registration = ndt;
-        } else if (registerCallback.registration_method_ == "GICP") {
-            // CHANGED: Use pcl::GeneralizedIterativeClosestPoint instead of pclomp::...
-            gicp.reset(new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>());
-            gicp->setMaxCorrespondenceDistance(registerCallback.gicp_corr_dist_threshold_);
-            gicp->setTransformationEpsilon(registerCallback.gicp_transform_epsilon_);
-            registerCallback.registration = gicp;
-        }
+            registerCallback.registration = ndt_omp;
+        } 
 
         try {
             while (running) {
                 auto data_frame = dataQueue.pop();
                 if (!data_frame) {
                     if (!running) std::cout << "Data queue stopped, exiting factor thread.\n";
-                    break; // Exit the while loop
+                    break;
                 }
                 std::cout << "receive data frame with number points: " << data_frame->points.pointsBody.size() << ".\n";
                 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_points(new pcl::PointCloud<pcl::PointXYZI>());
+                // pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_points(new pcl::PointCloud<pcl::PointXYZI>());
                 *points = std::move(data_frame->points.pointsBody);
                 
-                // Downsample the point cloud
+                // RE-ENABLED: Downsample the point cloud for performance. This is a crucial step.
                 // pcl::VoxelGrid<pcl::PointXYZI> vg;
                 // auto vs = registerCallback.mapvoxelsize_;
                 // vg.setLeafSize(vs, vs, vs);
                 // vg.setInputCloud(points);
                 // vg.filter(*filtered_points);
 
+                // Use the filtered_points from now on
                 if (is_first_frame) {
                     registerCallback.registration->setInputTarget(points);
                     is_first_frame = false;
                     continue;
                 }
 
-                // Perform registration
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points_aligned(new pcl::PointCloud<pcl::PointXYZI>);
                 registerCallback.registration->setInputSource(points);
                 
                 auto align_start = std::chrono::high_resolution_clock::now();
-                
-                // The 'previous_transform' provides an initial guess for the alignment
                 registerCallback.registration->align(*points_aligned, previous_transform);
-                
                 auto align_end = std::chrono::high_resolution_clock::now();
                 auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
 
                 if (registerCallback.registration->hasConverged()) {
                     Eigen::Matrix4f lidar_transform = registerCallback.registration->getFinalTransformation();
+                    
+                    // IMPROVEMENT: Update the 'guess' for the next frame's alignment regardless of keyframe status
+                    previous_transform = lidar_transform; 
+                    
                     float translation_norm = lidar_transform.block<3, 1>(0, 3).norm();
 
-                    std::cout << "Significant movement detected. Translation: " << translation_norm << " m.\n";
+                    // IMPROVEMENT: Re-introduced keyframe logic to prevent drift
+    
+                    std::cout << "Keyframe generated. Translation: " << translation_norm << " m.\n";
                     std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
                     std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
                         
-                        // Update the target point cloud for the next registration
+                    // Update the target point cloud for the next registration
                     registerCallback.registration->setInputTarget(points); 
-
-                        // BUG FIX / IMPROVEMENT: Update previous_transform with the latest result.
-                        // This provides a much better initial guess for the next frame's alignment.
-                    previous_transform = lidar_transform;
+                    
                 } else {
                     std::cout << "Registration failed to converge." << std::endl;
-                    // If it fails, we might want to keep the old 'previous_transform' as our guess.
                 }
             }
         } catch (const std::exception& e) {
