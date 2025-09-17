@@ -318,7 +318,6 @@ int main() {
                     Eigen::Matrix4f lidar_transform = registerCallback.registration->getFinalTransformation();
                     float translation_norm = lidar_transform.block<3,1>(0,3).norm();
                     // previous_transform = *lidarFactor;
-                    std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
                     if (translation_norm > 5){
                         std::cout << "has converged.\n";
                         std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
