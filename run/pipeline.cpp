@@ -315,53 +315,12 @@ int main() {
                 
                 if (registerCallback.registration->hasConverged()) {
                     std::cout << "has converged.\n";
-                    lidarFactor = std::make_unique<Eigen::Matrix4f>(registerCallback.registration->getFinalTransformation());
-                    previous_transform = *lidarFactor;
-                    std::cout << "\nFinal Transformation (T):\n" << *lidarFactor << std::endl;
-                    registerCallback.registration->setInputTarget(filtered_points); 
-                    auto cov_start = std::chrono::high_resolution_clock::now();
-                    Eigen::Matrix<double, 6, 6> lidarFactorCov = Eigen::Matrix<double, 6, 6>::Zero();
-                    bool covariance_calculated = false;
-                    if(registerCallback.registration_method_ == "NDT_OMP") {
-                        std::cout << "calcualte covariance ndt.\n";
-                        if(ndt_omp) {
-                            std::cout << "ndt valid.\n";
-                            pclomp::NdtResult ndt_result = ndt_omp->getResult();
-                            const Eigen::Matrix<double, 6, 6>& hessian = ndt_result.hessian;
-                            if (hessian.determinant() != 0) {
-                                lidarFactorCov = -hessian.inverse();
-                                covariance_calculated = true;
-                            } else {
-                                std::cout << "hessian not valid.\n";
-                            }
-                        }
-                    } else if (registerCallback.registration_method_ == "GICP") {
-                        std::cout << "calcualte covariance gicp.\n";
-                        if(gicp) {
-                            std::cout << "gicp valid.\n";
-                            double fitness_score = gicp->getFitnessScore();
-                            double k = 0.1; 
-                            double variance = k * fitness_score;
-                            lidarFactorCov(0, 0) = variance; // x
-                            lidarFactorCov(1, 1) = variance; // y
-                            lidarFactorCov(2, 2) = variance; // z
-                            lidarFactorCov(3, 3) = variance; // roll
-                            lidarFactorCov(4, 4) = variance; // pitch
-                            lidarFactorCov(5, 5) = variance; // yaw
-                            covariance_calculated = true;
-                        }
-                    }
-                    auto cov_end = std::chrono::high_resolution_clock::now();
-                    auto cov_duration = std::chrono::duration_cast<std::chrono::microseconds>(cov_end - cov_start);
-                    if (covariance_calculated) {
-                        std::cout << "----------------------------------------" << std::endl;
-                        // ADDED: Print timing results
-                        std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
-                        std::cout << "Covariance Time: " << cov_duration.count() << " us" << std::endl; // us = microseconds
-                        
-                        std::cout << "\nFinal Transformation (T):\n" << *lidarFactor << std::endl;
-                        std::cout << "\nCalculated 6D Covariance (Cov):\n" << lidarFactorCov << std::endl;
-                        std::cout << "----------------------------------------" << std::endl;
+                    Eigen::Matrix4f lidar_transform = registerCallback.registration->getFinalTransformation();
+                    float translation_norm = lidar_transform.block<3,1>(0,3).norm();
+                    // previous_transform = *lidarFactor;
+                    std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
+                    if (translation_norm > 5){
+                        registerCallback.registration->setInputTarget(filtered_points); 
                     }
                 }
             }
