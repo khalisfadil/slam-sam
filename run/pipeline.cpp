@@ -335,7 +335,7 @@ int main() {
                     std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
                         
                         // Update the target point cloud for the next registration
-                    registerCallback.registration->setInputTarget(filtered_points); 
+                    registerCallback.registration->setInputTarget(points); 
 
                         // BUG FIX / IMPROVEMENT: Update previous_transform with the latest result.
                         // This provides a much better initial guess for the next frame's alignment.
