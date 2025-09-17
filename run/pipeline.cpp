@@ -316,16 +316,22 @@ int main() {
                     Eigen::Matrix<double, 6, 6> lidarFactorCov = Eigen::Matrix<double, 6, 6>::Zero();
                     bool covariance_calculated = false;
                     if(registerCallback.registration_method_ == "NDT_OMP") {
+                        std::cout << "calcualte covariance ndt.\n";
                         if(ndt_omp) {
+                            std::cout << "ndt valid.\n";
                             pclomp::NdtResult ndt_result = ndt_omp->getResult();
                             const Eigen::Matrix<double, 6, 6>& hessian = ndt_result.hessian;
                             if (hessian.determinant() != 0) {
                                 lidarFactorCov = -hessian.inverse();
                                 covariance_calculated = true;
+                            } else {
+                                td::cout << "hessian not valid.\n";
                             }
                         }
                     } else if (registerCallback.registration_method_ == "GICP") {
+                        std::cout << "calcualte covariance gicp.\n";
                         if(gicp) {
+                            std::cout << "gicp valid.\n";
                             double fitness_score = gicp->getFitnessScore();
                             double k = 0.1; 
                             double variance = k * fitness_score;
