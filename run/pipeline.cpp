@@ -248,7 +248,7 @@ int main() {
                 // std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
 
                 dataQueue.push(std::move(dataFrame));
-                std::cout << "Data frame queue size " << dataQueue.size()<< ".\n";
+                // std::cout << "Data frame queue size " << dataQueue.size()<< ".\n";
 
                 *keyLidarTs = end_interval; //
             }
@@ -284,6 +284,10 @@ int main() {
             while (running) {
                 std::cout << "factor_thread.\n";
                 auto data_frame = dataQueue.pop();
+                if (!data_frame) {
+                    if (!running) std::cout << "Data queue stopped, exiting factor thread.\n";
+                    break; // Exit the while loop
+                }
                 std::cout << "receive data frame with number points: "<< data_frame->points.pointsBody.size() <<".\n";
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_points(new pcl::PointCloud<pcl::PointXYZI>());
@@ -307,10 +311,13 @@ int main() {
                 std::cout << "end aligned.\n";
                 auto align_end = std::chrono::high_resolution_clock::now();
                 auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
+                std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
+                
                 if (registerCallback.registration->hasConverged()) {
                     std::cout << "has converged.\n";
                     lidarFactor = std::make_unique<Eigen::Matrix4f>(registerCallback.registration->getFinalTransformation());
                     previous_transform = *lidarFactor;
+                    std::cout << "\nFinal Transformation (T):\n" << *lidarFactor << std::endl;
                     registerCallback.registration->setInputTarget(filtered_points); 
                     auto cov_start = std::chrono::high_resolution_clock::now();
                     Eigen::Matrix<double, 6, 6> lidarFactorCov = Eigen::Matrix<double, 6, 6>::Zero();
@@ -377,6 +384,6 @@ int main() {
     if (lidar_iothread.joinable()) lidar_iothread.join();
     if (comp_iothread.joinable()) comp_iothread.join();
     if (sync_thread.joinable()) sync_thread.join();
-    if (factor_thread.joinable()) sync_thread.join();
+    if (factor_thread.joinable()) factor_thread.join();
     
 }
