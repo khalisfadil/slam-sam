@@ -330,24 +330,16 @@ int main() {
                     Eigen::Matrix4f lidar_transform = registerCallback.registration->getFinalTransformation();
                     float translation_norm = lidar_transform.block<3, 1>(0, 3).norm();
 
-                    // Only update the target map and transform if the sensor has moved a significant distance.
-                    // This is a common strategy to create a keyframe-based map.
-                    if (translation_norm > 5.0f) { // Using 5.0f for clarity
-                        std::cout << "Significant movement detected. Translation: " << translation_norm << " m.\n";
-                        std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
-                        std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
+                    std::cout << "Significant movement detected. Translation: " << translation_norm << " m.\n";
+                    std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
+                    std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
                         
                         // Update the target point cloud for the next registration
-                        registerCallback.registration->setInputTarget(filtered_points); 
+                    registerCallback.registration->setInputTarget(filtered_points); 
 
                         // BUG FIX / IMPROVEMENT: Update previous_transform with the latest result.
                         // This provides a much better initial guess for the next frame's alignment.
-                        previous_transform = lidar_transform;
-                    } else {
-                        // If movement is small, we don't update the target, but we still update the
-                        // transform guess to reflect the small motion.
-                        previous_transform = lidar_transform;
-                    }
+                    previous_transform = lidar_transform;
                 } else {
                     std::cout << "Registration failed to converge." << std::endl;
                     // If it fails, we might want to keep the old 'previous_transform' as our guess.
