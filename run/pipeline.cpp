@@ -267,7 +267,7 @@ int main() {
         pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt = nullptr;
         pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI>::Ptr gicp = nullptr;
 
-        if (registerCallback.registration_method_ == "NDT_OMP" || registerCallback.registration_method_ == "NDT") {
+        if (registerCallback.registration_method_ == "NDT") {
             // CHANGED: Use pcl::NormalDistributionsTransform instead of pclomp::...
             ndt.reset(new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
             ndt->setResolution(registerCallback.ndt_resolution_);
@@ -302,21 +302,21 @@ int main() {
                 *points = std::move(data_frame->points.pointsBody);
                 
                 // Downsample the point cloud
-                pcl::VoxelGrid<pcl::PointXYZI> vg;
-                auto vs = registerCallback.mapvoxelsize_;
-                vg.setLeafSize(vs, vs, vs);
-                vg.setInputCloud(points);
-                vg.filter(*filtered_points);
+                // pcl::VoxelGrid<pcl::PointXYZI> vg;
+                // auto vs = registerCallback.mapvoxelsize_;
+                // vg.setLeafSize(vs, vs, vs);
+                // vg.setInputCloud(points);
+                // vg.filter(*filtered_points);
 
                 if (is_first_frame) {
-                    registerCallback.registration->setInputTarget(filtered_points);
+                    registerCallback.registration->setInputTarget(points);
                     is_first_frame = false;
                     continue;
                 }
 
                 // Perform registration
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points_aligned(new pcl::PointCloud<pcl::PointXYZI>);
-                registerCallback.registration->setInputSource(filtered_points);
+                registerCallback.registration->setInputSource(points);
                 
                 auto align_start = std::chrono::high_resolution_clock::now();
                 
