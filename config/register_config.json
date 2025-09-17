@@ -4,9 +4,9 @@
         "mapvoxelsize":                         1.0,
         "registration_method":                  "GICP",
         "ndt_resolution":                       1.0,
-        "ndt_transform_epsilon":                0.01,
+        "ndt_transform_epsilon":                0.0001,
         "ndt_neighborhood_search_method":       "DIRECT7",
         "gicp_corr_dist_threshold":             5.0,
-        "gicp_transform_epsilon":               0.01
+        "gicp_transform_epsilon":               0.0001
     }
 }
