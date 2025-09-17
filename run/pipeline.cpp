@@ -325,7 +325,7 @@ int main() {
                                 lidarFactorCov = -hessian.inverse();
                                 covariance_calculated = true;
                             } else {
-                                td::cout << "hessian not valid.\n";
+                                std::cout << "hessian not valid.\n";
                             }
                         }
                     } else if (registerCallback.registration_method_ == "GICP") {
