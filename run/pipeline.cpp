@@ -311,10 +311,7 @@ int main() {
                 // std::cout << "end aligned.\n";
                 auto align_end = std::chrono::high_resolution_clock::now();
                 auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
-                
-                
                 if (registerCallback.registration->hasConverged()) {
-                    std::cout << "has converged.\n";
                     Eigen::Matrix4f lidar_transform = registerCallback.registration->getFinalTransformation();
                     float translation_norm = lidar_transform.block<3,1>(0,3).norm();
                     // previous_transform = *lidarFactor;
