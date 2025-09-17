@@ -302,10 +302,13 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points_aligned(new pcl::PointCloud<pcl::PointXYZI>);
                 registerCallback.registration->setInputSource(filtered_points);
                 auto align_start = std::chrono::high_resolution_clock::now();
+                std::cout << "start aligned.\n";
                 registerCallback.registration->align(*points_aligned, previous_transform);
+                std::cout << "end aligned.\n";
                 auto align_end = std::chrono::high_resolution_clock::now();
                 auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
                 if (registerCallback.registration->hasConverged()) {
+                    std::cout << "has converged.\n";
                     lidarFactor = std::make_unique<Eigen::Matrix4f>(registerCallback.registration->getFinalTransformation());
                     previous_transform = *lidarFactor;
                     registerCallback.registration->setInputTarget(filtered_points); 
