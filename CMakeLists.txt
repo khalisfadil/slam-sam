@@ -32,9 +32,7 @@ set(SOURCES
 # Define include directories
 set(INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/extern/ndt_omp/include/estimate_covariance
-    ${CMAKE_CURRENT_SOURCE_DIR}/extern/ndt_omp/include/multigrid_pclomp
-    ${CMAKE_CURRENT_SOURCE_DIR}/extern/ndt_omp/include/pclomp
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/ndt_omp/include
     ${PCL_INCLUDE_DIRS}
     ${VTK_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
