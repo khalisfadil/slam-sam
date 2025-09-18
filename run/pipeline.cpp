@@ -350,7 +350,7 @@ int main() {
                     std::cout << "Warning: GPS unreliable. Using motion model for NDT guess." << std::endl;
                 }else {
                     Eigen::Vector3d Gpstb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
-                    Eigen::Matrix4d GpsTb2m = Eigen::Matrix4d::Identity();
+                    GpsTb2m = Eigen::Matrix4d::Identity();
                     GpsTb2m.block<3,3>(0,0) = GpsCb2m.cast<double>();
                     GpsTb2m.block<3,1>(0,3) = Gpstb2m;
 
