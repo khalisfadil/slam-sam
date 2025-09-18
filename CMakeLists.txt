@@ -3,11 +3,10 @@ project(pipeline LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON) # Enable GNU extensions for C++
 set(CMAKE_C_STANDARD 17)
-set(CMAKE_C_EXTENSIONS ON)   # Enable GNU extensions for C
+set(CMAKE_C_EXTENSIONS ON) # Enable GNU extensions for C
 
 # Find dependencies
 find_package(PCL 1.14 REQUIRED COMPONENTS common io filters features segmentation registration visualization)
@@ -15,6 +14,7 @@ find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
+find_package(GTSAM REQUIRED) # Added to find GTSAM library
 
 # Define source files
 set(SOURCES
@@ -37,6 +37,7 @@ set(INCLUDE_DIRS
     ${PCL_INCLUDE_DIRS}
     ${VTK_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
+    ${GTSAM_INCLUDE_DIR} # Added GTSAM include directory
 )
 
 # Create executable
@@ -52,6 +53,7 @@ target_link_libraries(pipeline PRIVATE
     nlohmann_json::nlohmann_json
     Boost::system
     Boost::thread
+    gtsam # Added GTSAM library for linking
 )
 
 # Add compile options for optimization
