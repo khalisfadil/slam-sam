@@ -4,6 +4,27 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
+#include <gtsam/geometry/Pose3.h>
+#include <gtsam/navigation/ImuFactor.h>
+#include <gtsam/linear/NoiseModel.h>
+
+#include <cstdint> 
+#include <memory>
+
+// %            ... struct representing factor graph data
+struct GtsamFactorData {
+    uint64_t keyframe_id;
+    // Data for the LiDAR BetweenFactor
+    gtsam::Pose3 lidarFactor;
+    gtsam::SharedNoiseModel lidarNoiseModel;
+    // Data for the optional GPS PriorFactor
+    bool has_gps_factor = false;
+    gtsam::Pose3 insFactor;
+    gtsam::SharedNoiseModel insNoiseModel;
+    // Data for the initial estimates of the new state variables
+    gtsam::Pose3 priorPoseFactor;
+    gtsam::Velocity3 priorVelocityFactor;
+};
 // %            ... struct representing single 3d point data
 struct PCLPointCloud{
     pcl::PointCloud<pcl::PointXYZI> pointsBody;               
@@ -15,7 +36,7 @@ struct ImuData{
     Eigen::Vector3f acc = Eigen::Vector3f::Zero();                  // acceleration x,y,z in IMU sensor frame                                                     [m/(s*s)]
     Eigen::Vector3f gyr = Eigen::Vector3f::Zero();                  // angular rate around x-axis,y-axis,z-axis in IMU sensor frame                               [rad/s]
     Eigen::Vector3f accStdDev = Eigen::Vector3f::Zero();            // standard deviation for acceleration x,y,z in IMU sensor frame                              [m/(s*s)]
-    Eigen::Vector3f gyrStdDev = Eigen::Vector3f::Zero();            // standard deviation for angular rate around x-axis,y-axis,z-axis in IMU sensor frame        [rad/s]
+    Eigen::Vector3f gyrStdDev = Eigen::Vector3f::Zero();            // standard deviation for angular rate around x-axis,y-axis,z-axis in IMU sensor frame        [rad/s] 
     double timestamp = 0.0;                                         // absolute timestamp of the data                                                             [s]
 };
 // %            ... struct representing single frame in position data (GPS,GNSS,INS, etc..)

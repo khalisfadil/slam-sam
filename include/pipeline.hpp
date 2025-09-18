@@ -11,10 +11,21 @@
 #include <memory>
 #include <functional>
 
+#include <gtsam/geometry/Pose3.h>
+#include <gtsam/geometry/Rot3.h>
+#include <gtsam/navigation/ImuFactor.h>
+#include <gtsam/navigation/CombinedImuFactor.h>
+#include <gtsam/slam/BetweenFactor.h>
+#include <gtsam/slam/PriorFactor.h>
+#include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <gtsam/nonlinear/Values.h>
+#include <gtsam/inference/Symbol.h>
+
 #include <lidarcallback.hpp>
 #include <compcallback.hpp>
 #include <registercallback.hpp>
 #include <udpsocket.hpp>
+#include <dataframe.hpp>
 
 template<typename T>
 class FrameQueue {

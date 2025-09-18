@@ -23,6 +23,7 @@ int main() {
     FrameQueue<LidarFrame> lidarQueue;
     FrameQueue<std::deque<CompFrame>> compQueue;
     FrameQueue<FrameData> dataQueue;
+    FrameQueue<GtsamFactorData> factorQueue;
     std::shared_ptr<std::deque<CompFrame>> compWin = std::make_shared<std::deque<CompFrame>>(); // Changed to shared_ptr
     auto lidarLastID = std::make_shared<uint16_t>(0);
     auto compLastTs = std::make_shared<double>(0);
@@ -258,10 +259,11 @@ int main() {
         std::cout << "Sync thread exiting\n";
     });
     //####################################################################################################
-    auto factor_thread = std::thread([&registerCallback, &dataQueue]() {
+    auto factor_thread = std::thread([&registerCallback, &dataQueue, &factorQueue]() {
         bool is_first_keyframe = true;
-        Eigen::Matrix4d prevTb2m = Eigen::Matrix4d::Identity();
-        Eigen::Matrix4d prevTbc2bp = Eigen::Matrix4d::Identity();
+        uint64_t keyframe_id = 0;
+        gtsam::NavState priorState;
+
         Eigen::Matrix4d GpsTb2m = Eigen::Matrix4d::Identity();
         Eigen::Matrix4d prevGpsTb2m = Eigen::Matrix4d::Identity();
         Eigen::Matrix4d GpsTbc2bp = Eigen::Matrix4d::Identity();
@@ -298,38 +300,65 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points(new pcl::PointCloud<pcl::PointXYZI>());
                 *points = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
-                const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
+                const Eigen::Matrix3d& GpsCb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 if (is_first_keyframe){
                     rlla = lla;
-                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
-                    Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                    Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
-                    Tb2m.block<3,1>(0,3) = tb2m;
-                    pcl::transformPointCloud(*points,*pointsMap,Tb2m);
+                    Eigen::Vector3d Gpstb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    GpsTb2m.block<3,3>(0,0) = GpsCb2m.cast<double>();
+                    GpsTb2m.block<3,1>(0,3) = Gpstb2m;
+                    pcl::transformPointCloud(*points,*pointsMap,GpsTb2m);
                     registerCallback.registration->setInputTarget(pointsMap);
-                    prevTb2m = Tb2m;
+                    
+                    //intialize all value
+                    GpsTbc2bp = prevGpsTb2m.inverse()*GpsTb2m;
+                    prevGpsTb2m = GpsTb2m;
+
+                    LidarTb2m = GpsTb2m;
+                    LidarTbc2bp = prevLidarTb2m.inverse()*LidarTb2m;
+                    prevLidarTb2m = LidarTb2m;
+
+                     // GTSAM part for the first keyframe
+                    gtsam::Pose3 currGpsTb2m(GpsTb2m);
+                    priorState = gtsam::NavState(currGpsTb2m, gtsam::Velocity3::Zero());
+
+                    auto data_factor = std::make_unique<GtsamFactorData>();
+                    data_factor->keyframe_id = keyframe_id;
+
+                    // Set initial estimates for the first state
+                    data_factor->priorPoseFactor = priorState.pose();
+                    data_factor->priorVelocityFactor = priorState.velocity();
+
+                     // Add a strong GPS prior to anchor the graph
+                    data_factor->has_gps_factor = true; 
+                    data_factor->insFactor = currGpsTb2m;
+                    const auto& currPoseStdDev = data_frame->position.back().poseStdDev;
+                    data_factor->insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, currPoseStdDev.x(), currPoseStdDev.y(), currPoseStdDev.z()).finished());
+                    
+                    factorQueue.push(std::move(data_factor));
+
                     is_first_keyframe = false;
+                    keyframe_id++;
                     continue;
                 }
                 registerCallback.registration->setInputSource(points);
                 Eigen::Matrix4d predTb2m = Eigen::Matrix4d::Identity();
-                int iter = 0;
-                Eigen::Matrix<double, 6, 6> lidar_factor_cov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+                int ndt_iter = 0;
+                Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
                 if (data_frame->position.back().poseStdDev.norm() > 1.0f) {
-                    predTb2m = prevTb2m * prevTbc2bp;
+                    predTb2m = prevLidarTb2m * LidarTbc2bp;
                     std::cout << "Warning: GPS unreliable. Using motion model for NDT guess." << std::endl;
                 }else {
-                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
-                    Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                    Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
-                    Tb2m.block<3,1>(0,3) = tb2m;
-                    predTb2m = Tb2m;
-                    GpsTb2m = Tb2m;
+                    Eigen::Vector3d Gpstb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Matrix4d GpsTb2m = Eigen::Matrix4d::Identity();
+                    GpsTb2m.block<3,3>(0,0) = GpsCb2m.cast<double>();
+                    GpsTb2m.block<3,1>(0,3) = Gpstb2m;
+
                     GpsTbc2bp = prevGpsTb2m.inverse()*GpsTb2m;
-                    prevTb2m = GpsTb2m;
-                    prevTbc2bp = GpsTbc2bp;
-                    prevGpsTb2m =GpsTb2m;
+                    prevGpsTb2m = GpsTb2m;
+                    
+                    predTb2m = GpsTb2m;
+
                     std::cout << "Logging: GPS reliable. Using gps for NDT guess." << std::endl;
                 }
                 auto align_start = std::chrono::high_resolution_clock::now();
@@ -340,17 +369,15 @@ int main() {
                     std::cout << "Registration converged." << std::endl;
                     LidarTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
                     registerCallback.registration->setInputTarget(pointsMap);
-                    prevTb2m = LidarTb2m;
                     LidarTbc2bp = prevLidarTb2m.inverse()*LidarTb2m;
-                    prevTbc2bp = LidarTbc2bp;
                     prevLidarTb2m = LidarTb2m;
                     if (ndt_omp) {
                         auto ndt_result = ndt_omp->getResult();
-                        iter = ndt_result.iteration_num;
+                        ndt_iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                         if (hessian.determinant() > 1e-6) {
-                            lidar_factor_cov = -hessian.inverse();
+                            lidarCov = -hessian.inverse();
                             std::cout << "Covariance estimated from NDT Hessian.\n";
                         } else {
                             std::cerr << "Hessian singular; using default covariance.\n";
@@ -360,18 +387,38 @@ int main() {
                     std::cout << "Registration failed to converge." << std::endl;
                 }
                 std::cout << "----------------------------------------" << std::endl;
-                std::cout << "Position stndrdDev............." << data_frame->position.back().poseStdDev.norm() << std::endl;
-                std::cout << "Number points.................." << points->size() << std::endl;
-                std::cout << "Alignment Time................." << align_duration.count() << " ms" << std::endl;
-                std::cout << "Number Iteration..............." << iter << std::endl;
-                std::cout << "tran source to target norm....." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "tran Ld source to target norm.." << LidarTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "tran GPS source to target norm." << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "diff Aligned to Gps trans norm." << LidarTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "T GPS body to map..............\n" << GpsTb2m << std::endl;
-                std::cout << "T L body to map................\n" << LidarTb2m << std::endl;
-                std::cout << "6D Covariance..................\n" << lidar_factor_cov << std::endl;
+                std::cout << "Position stndrdDev................" << data_frame->position.back().poseStdDev.norm() << std::endl;
+                std::cout << "Number points....................." << points->size() << std::endl;
+                std::cout << "Alignment Time...................." << align_duration.count() << " ms" << std::endl;
+                std::cout << "Number NDT Iteration.............." << ndt_iter << std::endl;
+                std::cout << "tran Ld source to target norm....." << LidarTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "tran GPS source to target norm...." << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "diff Aligned to Gps trans norm...." << LidarTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "T GPS body to map.................\n" << GpsTb2m << std::endl;
+                std::cout << "T L body to map...................\n" << LidarTb2m << std::endl;
+                std::cout << "6D Covariance.....................\n" << lidarCov << std::endl;
                 std::cout << "----------------------------------------" << std::endl;
+
+                // 3. Create and Populate GtsamFactorData
+                auto data_factor = std::make_unique<GtsamFactorData>();
+                data_factor->keyframe_id = keyframe_id;
+
+                // 2. Populate LiDAR Factor Data
+                data_factor->lidarFactor = gtsam::Pose3(LidarTbc2bp);
+                Eigen::Matrix<double, 6, 6> lidarNoiseModel = registerCallback.reorderCovarianceForGTSAM(lidarCov);
+                data_factor->lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(lidarNoiseModel);
+
+                // 3. Populate GPS Factor Data
+                if (data_frame->position.back().poseStdDev.norm() <= 1.0f) {
+                    data_factor->has_gps_factor = true;
+                    data_factor->insFactor = gtsam::Pose3(GpsTb2m);
+                    const auto& currPoseStdDev = data_frame->position.back().poseStdDev;
+                    data_factor->insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, currPoseStdDev.x(), currPoseStdDev.y(), currPoseStdDev.z()).finished());
+                }
+                factorQueue.push(std::move(data_factor));
+
+                // upadte key frame id
+                keyframe_id++;
             }
         } catch (const std::exception& e) {
             std::cerr << "Factor thread error: " << e.what() << "\n";

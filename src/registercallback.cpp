@@ -137,4 +137,22 @@ double RegisterCallback::SymmetricalAngle(double x) {
     if (y == PI) {y = -PI;}
     return y;
 }
+// %            ... reorderCovarianceForGTSAM
+Eigen::Matrix<double, 6, 6> RegisterCallback::reorderCovarianceForGTSAM(
+    const Eigen::Matrix<double, 6, 6>& ndt_covariance)
+{
+    Eigen::Matrix<double, 6, 6> gtsam_covariance;
+
+    // Copy C_tt (translation-translation) from top-left to bottom-right
+    gtsam_covariance.block<3, 3>(3, 3) = ndt_covariance.block<3, 3>(0, 0);
+
+    // Copy C_rr (rotation-rotation) from bottom-right to top-left
+    gtsam_covariance.block<3, 3>(0, 0) = ndt_covariance.block<3, 3>(3, 3);
+
+    // Copy cross-correlation blocks
+    gtsam_covariance.block<3, 3>(0, 3) = ndt_covariance.block<3, 3>(0, 3);
+    gtsam_covariance.block<3, 3>(3, 0) = ndt_covariance.block<3, 3>(3, 0);
+
+    return gtsam_covariance;
+}
 
