@@ -262,6 +262,9 @@ int main() {
         bool is_first_keyframe = true;
         Eigen::Matrix4d prevTb2m = Eigen::Matrix4d::Identity();
         Eigen::Matrix4d prevTbc2bp = Eigen::Matrix4d::Identity();
+        Eigen::Matrix4d GpsTb2m = Eigen::Matrix4d::Identity();
+        Eigen::Matrix4d prevGpsTb2m = Eigen::Matrix4d::Identity();
+        Eigen::Matrix4d GpsTbc2bp = Eigen::Matrix4d::Identity();
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
         if (registerCallback.registration_method_ == "NDT") {
@@ -319,6 +322,10 @@ int main() {
                     Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
                     Tb2m.block<3,1>(0,3) = tb2m;
                     predTb2m = Tb2m;
+                    GpsTb2m = Tb2m;
+                    GpsTbc2bp = prevGpsTb2m.inverse()*GpsTb2m;
+                    prevGpsTb2m =GpsTb2m;
+                    std::cout << "Logging: GPS reliable. Using gps for NDT guess." << std::endl;
                 }
                 auto align_start = std::chrono::high_resolution_clock::now();
                 registerCallback.registration->align(*pointsMap, predTb2m.cast<float>());
@@ -350,7 +357,9 @@ int main() {
                 std::cout << "Alignment Time................." << align_duration.count() << " ms" << std::endl;
                 std::cout << "Number Iteration..............." << iter << std::endl;
                 std::cout << "tran source to target norm....." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "T source to target.............\n" << prevTb2m << std::endl;
+                std::cout << "tran GPS source to target.............\n" << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "diff Aligned to Gps trans norm." << prevTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "T body to map..................\n" << predTb2m << std::endl;
                 std::cout << "6D Covariance..................\n" << lidar_factor_cov << std::endl;
                 std::cout << "----------------------------------------" << std::endl;
             }
