@@ -389,7 +389,7 @@ int main() {
                 std::cout << "Position stndrdDev..................." << data_frame->position.back().poseStdDev.norm() << std::endl;
                 std::cout << "Number points........................" << points->size() << std::endl;
                 std::cout << "Alignment Time......................." << align_duration.count() << " ms" << std::endl;
-                std::cout << "Number Iteration....................." << iter << std::endl;
+                std::cout << "Number Iteration....................." << ndt_iter << std::endl;
                 std::cout << "tran source to target norm..........." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 std::cout << "tran Ld source to target norm........" << LidarTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 std::cout << "tran GPS source to target norm......." << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
