@@ -396,7 +396,7 @@ int main() {
                 std::cout << "diff Aligned to Gps trans norm......." << LidarTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 std::cout << "T GPS body to map....................\n" << GpsTb2m << std::endl;
                 std::cout << "T L body to map......................\n" << LidarTb2m << std::endl;
-                std::cout << "6D Covariance........................\n" << lidar_factor_cov << std::endl;
+                std::cout << "6D Covariance........................\n" << lidarCov << std::endl;
                 std::cout << "----------------------------------------" << std::endl;
 
                 // 3. Create and Populate GtsamFactorData
