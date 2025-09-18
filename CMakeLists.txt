@@ -12,7 +12,12 @@ set(CMAKE_C_EXTENSIONS ON) # Enable GNU extensions for C
 unset(FLANN_ROOT)
 cmake_policy(SET CMP0144 NEW)
 
+# --- NEW LINE ---
+# Add this hint to point to your custom TBB installation directory.
+set(TBB_ROOT "/usr/local")
+
 # Find dependencies
+# When find_package(GTSAM) runs, it will now find TBB in the location specified by TBB_ROOT.
 find_package(PCL 1.14 REQUIRED COMPONENTS common io filters features segmentation registration visualization)
 find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -44,10 +49,9 @@ set(INCLUDE_DIRS
     ${GTSAM_INCLUDE_DIR}
 )
 
-# Set the Runtime Path (RPATH) to prioritize your local install path.
-# This ensures your program uses the TBB from /usr/local/lib at runtime.
-set(CMAKE_INSTALL_RPATH "/usr/local/lib")
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+# The manual RPATH settings are no longer needed
+# set(CMAKE_INSTALL_RPATH "/usr/local/lib")
+# set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 
 # Create executable
 add_executable(pipeline ${SOURCES})
@@ -55,8 +59,7 @@ add_executable(pipeline ${SOURCES})
 # Set include directories for the target
 target_include_directories(pipeline PRIVATE ${INCLUDE_DIRS})
 
-# Link libraries. Since the TBB::tbb target is now found automatically by a dependency,
-# we just link against it directly.
+# Link libraries.
 target_link_libraries(pipeline PRIVATE
     ${PCL_LIBRARIES}
     ${VTK_LIBRARIES}
@@ -64,8 +67,8 @@ target_link_libraries(pipeline PRIVATE
     Boost::system
     Boost::thread
     gtsam
-    TBB::tbb       # Link against the automatically found target
-    TBB::tbbmalloc # Link against the automatically found target
+    TBB::tbb
+    TBB::tbbmalloc
 )
 
 # Add compile options for optimization
