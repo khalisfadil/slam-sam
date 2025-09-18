@@ -260,8 +260,8 @@ int main() {
     //####################################################################################################
     auto factor_thread = std::thread([&registerCallback, &dataQueue]() {
         bool is_first_keyframe = true;
-        Eigen::Matrix4d prevTb2m = Eigen::Matrix4f::Identity();
-        Eigen::Matrix4d prevTbc2bp = Eigen::Matrix4f::Identity();
+        Eigen::Matrix4d prevTb2m = Eigen::Matrix4d::Identity();
+        Eigen::Matrix4d prevTbc2bp = Eigen::Matrix4d::Identity();
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
         if (registerCallback.registration_method_ == "NDT") {
