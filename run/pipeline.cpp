@@ -259,10 +259,11 @@ int main() {
     });
     //####################################################################################################
     auto factor_thread = std::thread([&registerCallback, &dataQueue]() {
-        bool is_first_frame = true;
-        Eigen::Matrix4f previous_transform = Eigen::Matrix4f::Identity();
+        bool is_first_keyframe = true;
+        Eigen::Matrix4d prevTb2m = Eigen::Matrix4f::Identity();
+        Eigen::Matrix4d prevTbc2bp = Eigen::Matrix4f::Identity();
+        Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
-
         if (registerCallback.registration_method_ == "NDT") {
             ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
             ndt_omp->setNumThreads(registerCallback.num_threads_);
@@ -281,7 +282,6 @@ int main() {
             }
             registerCallback.registration = ndt_omp;
         } 
-
         try {
             while (running) {
                 auto data_frame = dataQueue.pop();
@@ -289,52 +289,68 @@ int main() {
                     if (!running) std::cout << "Data queue stopped, exiting factor thread.\n";
                     break;
                 }
-                std::cout << "receive data frame with number points: " << data_frame->points.pointsBody.size() << ".\n";
-                
                 pcl::PointCloud<pcl::PointXYZI>::Ptr points(new pcl::PointCloud<pcl::PointXYZI>());
-                // pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_points(new pcl::PointCloud<pcl::PointXYZI>());
                 *points = std::move(data_frame->points.pointsBody);
-
-                // Use the filtered_points from now on
-                if (is_first_frame) {
-                    registerCallback.registration->setInputTarget(points);
-                    is_first_frame = false;
+                const Eigen::Vector3d& lla = data_frame->position.back().pose;
+                const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
+                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+                if (is_first_keyframe){
+                    rlla = lla;
+                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                    Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
+                    Tb2m.block<3,1>(0,3) = tb2m;
+                    pcl::transformPointCloud(*points,*pointsMap,Tb2m);
+                    registerCallback.registration->setInputTarget(pointsMap);
+                    prevTb2m = Tb2m;
+                    is_first_keyframe = false;
                     continue;
                 }
-
-                pcl::PointCloud<pcl::PointXYZI>::Ptr points_aligned(new pcl::PointCloud<pcl::PointXYZI>);
                 registerCallback.registration->setInputSource(points);
-                
+                Eigen::Matrix4d predTb2m = Eigen::Matrix4d::Identity();
+                int iter = 0;
+                Eigen::Matrix<double, 6, 6> lidar_factor_cov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+                if (data_frame->position.back().poseStdDev.norm() > 5.0f) {
+                    predTb2m = prevTb2m * prevTbc2bp;
+                    std::cout << "Warning: GPS unreliable. Using motion model for NDT guess." << std::endl;
+                }else {
+                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                    Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
+                    Tb2m.block<3,1>(0,3) = tb2m;
+                    predTb2m = Tb2m;
+                }
                 auto align_start = std::chrono::high_resolution_clock::now();
-                registerCallback.registration->align(*points_aligned, previous_transform);
+                registerCallback.registration->align(*pointsMap, predTb2m.cast<float>());
                 auto align_end = std::chrono::high_resolution_clock::now();
                 auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
-
                 if (registerCallback.registration->hasConverged()) {
-                    Eigen::Matrix4f lidar_transform = registerCallback.registration->getFinalTransformation();
-                    previous_transform = lidar_transform; 
-                    float translation_norm = lidar_transform.block<3, 1>(0, 3).norm();
-                    std::cout << "Keyframe generated. Translation: " << translation_norm << " m.\n";
-                    std::cout << "Alignment Time:  " << align_duration.count() << " ms" << std::endl;
-                    std::cout << "\nFinal Transformation (T):\n" << lidar_transform << std::endl;
-                    Eigen::Matrix<double, 6, 6> lidar_factor_cov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+                    Eigen::Matrix4d Tbc2bp = registerCallback.registration->getFinalTransformation().cast<double>();
+                    registerCallback.registration->setInputTarget(pointsMap);
+                    prevTbc2bp = Tbc2bp;
+                    prevTb2m = predTb2m;
                     if (ndt_omp) {
                         auto ndt_result = ndt_omp->getResult();
+                        iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         if (hessian.determinant() > 1e-6) {
                             lidar_factor_cov = -hessian.inverse();
                             std::cout << "Covariance estimated from NDT Hessian.\n";
-                            std::cout << "6D Covariance:\n" << lidar_factor_cov << std::endl;
                         } else {
                             std::cerr << "Hessian singular; using default covariance.\n";
                         }
                     }
-                    // Update the target point cloud for the next registration
-                    registerCallback.registration->setInputTarget(points); 
-                    
                 } else {
                     std::cout << "Registration failed to converge." << std::endl;
                 }
+                std::cout << "----------------------------------------" << std::endl;
+                std::cout << "Number points.................." << data_frame->points.pointsBody.size() << std::endl;
+                std::cout << "Alignment Time................." << align_duration.count() << " ms" << std::endl;
+                std::cout << "Number Iteration..............." << iter << std::endl;
+                std::cout << "tran source to target norm....." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "T source to target.............\n" << prevTb2m << std::endl;
+                std::cout << "6D Covariance..................\n" << lidar_factor_cov << std::endl;
+                std::cout << "----------------------------------------" << std::endl;
             }
         } catch (const std::exception& e) {
             std::cerr << "Factor thread error: " << e.what() << "\n";

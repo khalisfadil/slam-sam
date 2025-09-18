@@ -20,6 +20,10 @@ class RegisterCallback {
     public:
         explicit RegisterCallback(const std::string& json_param_path);
         explicit RegisterCallback(const nlohmann::json& json_param);
+        Eigen::Vector3d lla2ned(double lat, double lon, double alt, double rlat, double rlon, double ralt);
+        Eigen::Vector3d ned2lla(double n, double e, double d, double rlat, double rlon, double ralt);
+        double SymmetricalAngle(double x);
+
         pcl::Registration <pcl::PointXYZI, pcl::PointXYZI>::Ptr registration;
 
         int num_threads_ = 8;
