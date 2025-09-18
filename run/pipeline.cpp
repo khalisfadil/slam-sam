@@ -344,6 +344,7 @@ int main() {
                     std::cout << "Registration failed to converge." << std::endl;
                 }
                 std::cout << "----------------------------------------" << std::endl;
+                std::cout << "Position stndrdDev............." << data_frame->position.back().poseStdDev.norm() << std::endl;
                 std::cout << "Number points.................." << data_frame->points.pointsBody.size() << std::endl;
                 std::cout << "Alignment Time................." << align_duration.count() << " ms" << std::endl;
                 std::cout << "Number Iteration..............." << iter << std::endl;
