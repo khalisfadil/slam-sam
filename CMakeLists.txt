@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS ON) # Enable GNU extensions for C++
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_EXTENSIONS ON) # Enable GNU extensions for C
 
-# Suppress FLANN_ROOT warning
+# Suppress FLANN_ROOT warning from PCL
 unset(FLANN_ROOT)
 cmake_policy(SET CMP0144 NEW)
 
@@ -44,27 +44,10 @@ set(INCLUDE_DIRS
     ${GTSAM_INCLUDE_DIR}
 )
 
-# Set the RPATH to prioritize your local install path.
-# This tells the executable to look in /usr/local/lib first at runtime.
+# Set the Runtime Path (RPATH) to prioritize your local install path.
+# This ensures your program uses the TBB from /usr/local/lib at runtime.
 set(CMAKE_INSTALL_RPATH "/usr/local/lib")
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-
-# Find your specific local TBB libraries to avoid ambiguity
-find_library(TBB_LIBRARY NAMES tbb HINTS /usr/local/lib REQUIRED)
-find_library(TBB_MALLOC_LIBRARY NAMES tbbmalloc HINTS /usr/local/lib REQUIRED)
-
-# Create explicit IMPORTED targets for your local TBB libraries.
-# This creates a "nickname" for the exact .so file path.
-if(TBB_LIBRARY AND TBB_MALLOC_LIBRARY)
-    add_library(TBB::tbb SHARED IMPORTED)
-    set_target_properties(TBB::tbb PROPERTIES IMPORTED_LOCATION "${TBB_LIBRARY}")
-
-    add_library(TBB::tbbmalloc SHARED IMPORTED)
-    set_target_properties(TBB::tbbmalloc PROPERTIES IMPORTED_LOCATION "${TBB_MALLOC_LIBRARY}")
-    message(STATUS "SUCCESS: Found and configured local TBB libraries.")
-else()
-    message(FATAL_ERROR "Could not find local TBB libraries in /usr/local/lib")
-endif()
 
 # Create executable
 add_executable(pipeline ${SOURCES})
@@ -72,7 +55,8 @@ add_executable(pipeline ${SOURCES})
 # Set include directories for the target
 target_include_directories(pipeline PRIVATE ${INCLUDE_DIRS})
 
-# Link libraries using the new explicit TBB targets
+# Link libraries. Since the TBB::tbb target is now found automatically by a dependency,
+# we just link against it directly.
 target_link_libraries(pipeline PRIVATE
     ${PCL_LIBRARIES}
     ${VTK_LIBRARIES}
@@ -80,8 +64,8 @@ target_link_libraries(pipeline PRIVATE
     Boost::system
     Boost::thread
     gtsam
-    TBB::tbb       # Use the explicit target for libtbb.so
-    TBB::tbbmalloc # Use the explicit target for libtbbmalloc.so
+    TBB::tbb       # Link against the automatically found target
+    TBB::tbbmalloc # Link against the automatically found target
 )
 
 # Add compile options for optimization
