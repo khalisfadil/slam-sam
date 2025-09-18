@@ -265,6 +265,9 @@ int main() {
         Eigen::Matrix4d GpsTb2m = Eigen::Matrix4d::Identity();
         Eigen::Matrix4d prevGpsTb2m = Eigen::Matrix4d::Identity();
         Eigen::Matrix4d GpsTbc2bp = Eigen::Matrix4d::Identity();
+        Eigen::Matrix4d LidarTb2m = Eigen::Matrix4d::Identity();
+        Eigen::Matrix4d prevLidarTb2m = Eigen::Matrix4d::Identity();
+        Eigen::Matrix4d LidarTbc2bp = Eigen::Matrix4d::Identity();
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
         if (registerCallback.registration_method_ == "NDT") {
@@ -324,6 +327,8 @@ int main() {
                     predTb2m = Tb2m;
                     GpsTb2m = Tb2m;
                     GpsTbc2bp = prevGpsTb2m.inverse()*GpsTb2m;
+                    prevTb2m = GpsTb2m;
+                    prevTbc2bp = GpsTbc2bp;
                     prevGpsTb2m =GpsTb2m;
                     std::cout << "Logging: GPS reliable. Using gps for NDT guess." << std::endl;
                 }
@@ -333,10 +338,12 @@ int main() {
                 auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
                 if (registerCallback.registration->hasConverged()) {
                     std::cout << "Registration converged." << std::endl;
-                    Eigen::Matrix4d Tbc2bp = registerCallback.registration->getFinalTransformation().cast<double>();
+                    LidarTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
                     registerCallback.registration->setInputTarget(pointsMap);
-                    prevTbc2bp = Tbc2bp;
-                    prevTb2m = predTb2m;
+                    prevTb2m = LidarTb2m;
+                    LidarTbc2bp = prevLidarTb2m.inverse()*LidarTb2m;
+                    prevTbc2bp = LidarTbc2bp;
+                    prevLidarTb2m = LidarTb2m;
                     if (ndt_omp) {
                         auto ndt_result = ndt_omp->getResult();
                         iter = ndt_result.iteration_num;
@@ -357,9 +364,11 @@ int main() {
                 std::cout << "Alignment Time................." << align_duration.count() << " ms" << std::endl;
                 std::cout << "Number Iteration..............." << iter << std::endl;
                 std::cout << "tran source to target norm....." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "tran Ld source to target norm.." << LidarTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 std::cout << "tran GPS source to target norm." << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "diff Aligned to Gps trans norm." << prevTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "T body to map..................\n" << predTb2m << std::endl;
+                std::cout << "diff Aligned to Gps trans norm." << LidarTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "T GPS body to map..............\n" << GpsTb2m << std::endl;
+                std::cout << "T L body to map................\n" << LidarTb2m << std::endl;
                 std::cout << "6D Covariance..................\n" << lidar_factor_cov << std::endl;
                 std::cout << "----------------------------------------" << std::endl;
             }
