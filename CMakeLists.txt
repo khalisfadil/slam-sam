@@ -44,11 +44,27 @@ set(INCLUDE_DIRS
     ${GTSAM_INCLUDE_DIR}
 )
 
-# Add /usr/local/lib to linker search path
-link_directories(/usr/local/lib)
+# Set the RPATH to prioritize your local install path.
+# This tells the executable to look in /usr/local/lib first at runtime.
+set(CMAKE_INSTALL_RPATH "/usr/local/lib")
+set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 
-# Set runtime path to prioritize /usr/local/lib
-set(CMAKE_BUILD_RPATH /usr/local/lib /usr/lib/x86_64-linux-gnu)
+# Find your specific local TBB libraries to avoid ambiguity
+find_library(TBB_LIBRARY NAMES tbb HINTS /usr/local/lib REQUIRED)
+find_library(TBB_MALLOC_LIBRARY NAMES tbbmalloc HINTS /usr/local/lib REQUIRED)
+
+# Create explicit IMPORTED targets for your local TBB libraries.
+# This creates a "nickname" for the exact .so file path.
+if(TBB_LIBRARY AND TBB_MALLOC_LIBRARY)
+    add_library(TBB::tbb SHARED IMPORTED)
+    set_target_properties(TBB::tbb PROPERTIES IMPORTED_LOCATION "${TBB_LIBRARY}")
+
+    add_library(TBB::tbbmalloc SHARED IMPORTED)
+    set_target_properties(TBB::tbbmalloc PROPERTIES IMPORTED_LOCATION "${TBB_MALLOC_LIBRARY}")
+    message(STATUS "SUCCESS: Found and configured local TBB libraries.")
+else()
+    message(FATAL_ERROR "Could not find local TBB libraries in /usr/local/lib")
+endif()
 
 # Create executable
 add_executable(pipeline ${SOURCES})
@@ -56,7 +72,7 @@ add_executable(pipeline ${SOURCES})
 # Set include directories for the target
 target_include_directories(pipeline PRIVATE ${INCLUDE_DIRS})
 
-# Link libraries
+# Link libraries using the new explicit TBB targets
 target_link_libraries(pipeline PRIVATE
     ${PCL_LIBRARIES}
     ${VTK_LIBRARIES}
@@ -64,7 +80,8 @@ target_link_libraries(pipeline PRIVATE
     Boost::system
     Boost::thread
     gtsam
-    tbb # Explicitly link TBB
+    TBB::tbb       # Use the explicit target for libtbb.so
+    TBB::tbbmalloc # Use the explicit target for libtbbmalloc.so
 )
 
 # Add compile options for optimization
