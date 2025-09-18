@@ -357,7 +357,7 @@ int main() {
                 std::cout << "Alignment Time................." << align_duration.count() << " ms" << std::endl;
                 std::cout << "Number Iteration..............." << iter << std::endl;
                 std::cout << "tran source to target norm....." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "tran GPS source to target.............\n" << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                std::cout << "tran GPS source to target norm." << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 std::cout << "diff Aligned to Gps trans norm." << prevTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 std::cout << "T body to map..................\n" << predTb2m << std::endl;
                 std::cout << "6D Covariance..................\n" << lidar_factor_cov << std::endl;
