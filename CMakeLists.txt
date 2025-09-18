@@ -8,13 +8,17 @@ set(CMAKE_CXX_EXTENSIONS ON) # Enable GNU extensions for C++
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_EXTENSIONS ON) # Enable GNU extensions for C
 
+# Suppress FLANN_ROOT warning
+unset(FLANN_ROOT)
+cmake_policy(SET CMP0144 NEW)
+
 # Find dependencies
 find_package(PCL 1.14 REQUIRED COMPONENTS common io filters features segmentation registration visualization)
 find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
-find_package(GTSAM REQUIRED) # Added to find GTSAM library
+find_package(GTSAM REQUIRED)
 
 # Define source files
 set(SOURCES
@@ -37,8 +41,14 @@ set(INCLUDE_DIRS
     ${PCL_INCLUDE_DIRS}
     ${VTK_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
-    ${GTSAM_INCLUDE_DIR} # Added GTSAM include directory
+    ${GTSAM_INCLUDE_DIR}
 )
+
+# Add /usr/local/lib to linker search path
+link_directories(/usr/local/lib)
+
+# Set runtime path to prioritize /usr/local/lib
+set(CMAKE_BUILD_RPATH /usr/local/lib /usr/lib/x86_64-linux-gnu)
 
 # Create executable
 add_executable(pipeline ${SOURCES})
@@ -53,13 +63,14 @@ target_link_libraries(pipeline PRIVATE
     nlohmann_json::nlohmann_json
     Boost::system
     Boost::thread
-    gtsam # Added GTSAM library for linking
+    gtsam
+    tbb # Explicitly link TBB
 )
 
 # Add compile options for optimization
 target_compile_options(pipeline PRIVATE -O3)
 
-# Ensure VTK is properly configured
-if(VTK_FOUND)
-    include(${VTK_USE_FILE})
+# Check VTK availability
+if(NOT VTK_FOUND)
+    message(FATAL_ERROR "VTK not found. Please install VTK.")
 endif()
