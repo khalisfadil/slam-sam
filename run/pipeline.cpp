@@ -348,6 +348,7 @@ int main() {
                         auto ndt_result = ndt_omp->getResult();
                         iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
+                        Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                         if (hessian.determinant() > 1e-6) {
                             lidar_factor_cov = -hessian.inverse();
                             std::cout << "Covariance estimated from NDT Hessian.\n";
