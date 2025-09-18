@@ -356,6 +356,8 @@ int main() {
 
                     GpsTbc2bp = prevGpsTb2m.inverse()*GpsTb2m;
                     prevGpsTb2m = GpsTb2m;
+                    LidarTbc2bp = GpsTbc2bp;
+                    prevLidarTb2m = prevGpsTb2m;
                     
                     predTb2m = GpsTb2m;
 
