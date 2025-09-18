@@ -325,6 +325,7 @@ int main() {
                 auto align_end = std::chrono::high_resolution_clock::now();
                 auto align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
                 if (registerCallback.registration->hasConverged()) {
+                    std::cout << "Registration converged." << std::endl;
                     Eigen::Matrix4d Tbc2bp = registerCallback.registration->getFinalTransformation().cast<double>();
                     registerCallback.registration->setInputTarget(pointsMap);
                     prevTbc2bp = Tbc2bp;
@@ -345,7 +346,7 @@ int main() {
                 }
                 std::cout << "----------------------------------------" << std::endl;
                 std::cout << "Position stndrdDev............." << data_frame->position.back().poseStdDev.norm() << std::endl;
-                std::cout << "Number points.................." << data_frame->points.pointsBody.size() << std::endl;
+                std::cout << "Number points.................." << points->size() << std::endl;
                 std::cout << "Alignment Time................." << align_duration.count() << " ms" << std::endl;
                 std::cout << "Number Iteration..............." << iter << std::endl;
                 std::cout << "tran source to target norm....." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
