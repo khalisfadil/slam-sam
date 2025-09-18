@@ -310,7 +310,7 @@ int main() {
                 Eigen::Matrix4d predTb2m = Eigen::Matrix4d::Identity();
                 int iter = 0;
                 Eigen::Matrix<double, 6, 6> lidar_factor_cov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
-                if (data_frame->position.back().poseStdDev.norm() > 5.0f) {
+                if (data_frame->position.back().poseStdDev.norm() > 1.0f) {
                     predTb2m = prevTb2m * prevTbc2bp;
                     std::cout << "Warning: GPS unreliable. Using motion model for NDT guess." << std::endl;
                 }else {
