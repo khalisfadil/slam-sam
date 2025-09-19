@@ -261,8 +261,6 @@ int main() {
     //####################################################################################################
     auto factor_thread = std::thread([&registerCallback, &dataQueue, &factorQueue]() {
         bool is_first_keyframe = true;
-        uint64_t keyframe_id = 0;
-        gtsam::NavState priorState;
 
         Eigen::Matrix4d prevTb2m = Eigen::Matrix4d::Identity();
         Eigen::Matrix4d prevTbc2bp = Eigen::Matrix4d::Identity();
@@ -319,7 +317,7 @@ int main() {
                     gtsam::Pose3 currGpsTb2m(Tb2m);
 
                     auto data_factor = std::make_unique<GtsamFactorData>();
-                    data_factor->keyframe_id = keyframe_id;
+                    data_factor->frame_id = data_frame->points.frame_id;
                     data_factor->pointsBody = std::move(points);
                     // Set initial estimates for the first state
                     data_factor->estimatedPoseFactor = currGpsTb2m;
@@ -330,11 +328,8 @@ int main() {
                     gtsam::Vector6 anchor_sigmas;
                     anchor_sigmas << gtsam::Vector3::Constant(1e-4), gtsam::Vector3::Constant(1e-3);  
                     data_factor->insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(anchor_sigmas);
-                    
                     factorQueue.push(std::move(data_factor));
-
                     is_first_keyframe = false;
-                    keyframe_id++;
                     continue;
                 }
                 registerCallback.registration->setInputSource(points);
@@ -386,7 +381,9 @@ int main() {
                 // else {
                 //     std::cout << "Registration failed to converge." << std::endl;
                 // }
-                std::cout << "----------------------------------------" << std::endl;
+                std::cout << "........................................" << std::endl;
+                std::cout << "Factor Thread..........................." << std::endl;
+                std::cout << "Frame ID................................" << data_frame->position.back().poseStdDev.norm() << std::endl;
                 // std::cout << "Position stndrdDev..................." << data_frame->position.back().poseStdDev.norm() << std::endl;
                 // std::cout << "Number points........................" << points->size() << std::endl;
                 // std::cout << "Alignment Time......................." << align_duration.count() << " ms" << std::endl;
@@ -395,14 +392,14 @@ int main() {
                 // std::cout << "tran Ld source to target norm........" << LidarTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 // std::cout << "tran GPS source to target norm......." << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 // std::cout << "diff Aligned to Gps trans norm......." << LidarTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "T GPS body to map....................\n" << GpsTb2m << std::endl;
+                std::cout << "Tb2m....................................\n" << GpsTb2m << std::endl;
                 // std::cout << "T L body to map......................\n" << LidarTb2m << std::endl;
                 // std::cout << "6D Covariance........................\n" << lidarCov << std::endl;
-                std::cout << "----------------------------------------" << std::endl;
+                std::cout << "........................................." << std::endl;
 
                 // 3. Create and Populate GtsamFactorData
                 auto data_factor = std::make_unique<GtsamFactorData>();
-                data_factor->keyframe_id = keyframe_id;
+                data_factor->frame_id = data_frame->points.frame_id;
                 data_factor->pointsBody = std::move(points);
                 gtsam::Pose3 estimatedPose(std::move(estimatedTb2m));
                 data_factor->estimatedPoseFactor = std::move(estimatedPose);
@@ -430,6 +427,7 @@ int main() {
     });
 
     auto gtsam_thread = std::thread([&factorQueue]() {
+        bool is_first_keyframe = true;
         gtsam::ISAM2Params isam2_params;
         isam2_params.relinearizeThreshold = 0.1;
         isam2_params.relinearizeSkip = 1;
@@ -444,33 +442,35 @@ int main() {
 
                 gtsam::NonlinearFactorGraph newFactors;
                 gtsam::Values newEstimates;
-                uint64_t id = data_factor->keyframe_id;
+                uint64_t id = data_factor->frame_id;
 
                 // Add the initial estimate for the new pose
                 newEstimates.insert(Symbol('x', id), data_factor->estimatedPoseFactor);
 
-                if (id == 0) {
+                if (is_first_keyframe) {
                     // Add a Prior for the first pose to anchor the graph
-                    newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', 0), data_factor->insFactor, data_factor->insNoiseModel));
-                } else {
-                    if (data_factor->has_gps_factor) {
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), data_factor->insFactor, data_factor->insNoiseModel));
-                    }
-                    newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id),data_factor->lidarFactor, data_factor->lidarNoiseModel));
+                    newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), data_factor->insFactor, data_factor->insNoiseModel));
+                    is_first_keyframe = false;
+                    continue;
+                } 
+
+                if (data_factor->has_gps_factor) {
+                    newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), data_factor->insFactor, data_factor->insNoiseModel));
                 }
+                newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id),data_factor->lidarFactor, data_factor->lidarNoiseModel));
+                
                 isam2.update(newFactors, newEstimates);
-                // --- NEW: Add logging to monitor the optimizer state ---
-                std::cout << "GTSAM: Updated with keyframe " << id << "." << std::endl;
 
                 // Periodically print a more detailed summary
-                gtsam::Values current_estimate = isam2.calculateEstimate();
-                gtsam::Pose3 latest_pose = current_estimate.at<gtsam::Pose3>(Symbol('x', id));
+                gtsam::Values Val = isam2.calculateEstimate();
+                gtsam::Pose3 Tb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
 
-                std::cout << "\n--- GTSAM Status Check at Keyframe " << id << " ---" << std::endl;
+                std::cout << "........................................" << std::endl;
+                std::cout << "Gtsam Thread............................" << std::endl;
                 std::cout << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
-                std::cout << "Optimized Pose (Tb2m) Matrix............\n" << latest_pose.matrix() << std::endl;
-                std::cout << "------------------------------------------" << std::endl;
+                std::cout << "Optimized Tb2m..........................\n" << Tb2m.matrix() << std::endl;
+                std::cout << "........................................" << std::endl;
                 
 
             }

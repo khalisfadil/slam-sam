@@ -13,7 +13,7 @@
 
 // %            ... struct representing factor graph data
 struct GtsamFactorData {
-    uint64_t keyframe_id;
+    uint64_t frame_id;
     // Data for the LiDAR BetweenFactor
     gtsam::Pose3 lidarFactor;
     gtsam::SharedNoiseModel lidarNoiseModel;
@@ -28,6 +28,7 @@ struct GtsamFactorData {
 };
 // %            ... struct representing single 3d point data
 struct PCLPointCloud{
+    uint16_t frame_id = 0;
     pcl::PointCloud<pcl::PointXYZI> pointsBody;               
     std::vector<float> pointsAlpha;
     std::vector<double> pointsTimestamp;                                             
@@ -106,8 +107,9 @@ struct LidarFrame {
         pointcloud.pointsBody.reserve(numberpoints);
         pointcloud.pointsAlpha.reserve(numberpoints);
         pointcloud.pointsTimestamp.reserve(numberpoints);
-        const double frame_duration = this->timestamp_end - this->timestamp;
 
+        const double frame_duration = this->timestamp_end - this->timestamp;
+        pointcloud.frame_id = this->frame_id;
         for (size_t i = 0; i < numberpoints; ++i) {
             pcl::PointXYZI point;
             point.x = this->x[i];
