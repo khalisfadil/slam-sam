@@ -20,12 +20,15 @@
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/inference/Symbol.h>
+#include <gtsam/nonlinear/ISAM2.h>
 
 #include <lidarcallback.hpp>
 #include <compcallback.hpp>
 #include <registercallback.hpp>
 #include <udpsocket.hpp>
 #include <dataframe.hpp>
+
+using gtsam::Symbol;
 
 template<typename T>
 class FrameQueue {

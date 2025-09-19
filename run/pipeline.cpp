@@ -317,20 +317,19 @@ int main() {
 
                      // GTSAM part for the first keyframe
                     gtsam::Pose3 currGpsTb2m(Tb2m);
-                    priorState = gtsam::NavState(currGpsTb2m, gtsam::Velocity3::Zero());
 
                     auto data_factor = std::make_unique<GtsamFactorData>();
                     data_factor->keyframe_id = keyframe_id;
-
+                    data_factor->pointsBody = std::move(points);
                     // Set initial estimates for the first state
-                    data_factor->priorPoseFactor = priorState.pose();
-                    data_factor->priorVelocityFactor = priorState.velocity();
+                    data_factor->estimatedPoseFactor = currGpsTb2m;
 
-                     // Add a strong GPS prior to anchor the graph
+                    // Add a strong GPS prior to anchor the graph
                     data_factor->has_gps_factor = true; 
                     data_factor->insFactor = currGpsTb2m;
-                    const auto& currPoseStdDev = data_frame->position.back().poseStdDev;
-                    data_factor->insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, currPoseStdDev.x(), currPoseStdDev.y(), currPoseStdDev.z()).finished());
+                    gtsam::Vector6 anchor_sigmas;
+                    anchor_sigmas << gtsam::Vector3::Constant(1e-4), gtsam::Vector3::Constant(1e-3);  
+                    data_factor->insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(anchor_sigmas);
                     
                     factorQueue.push(std::move(data_factor));
 
@@ -342,8 +341,9 @@ int main() {
                 Eigen::Matrix4d predTb2m = Eigen::Matrix4d::Identity();
                 int ndt_iter = 0;
                 Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+                Eigen::Matrix4d estimatedTb2m = prevTb2m * prevTbc2bp;
                 if (data_frame->position.back().poseStdDev.norm() > 1.0f) {
-                    predTb2m = prevTb2m * prevTbc2bp;
+                    predTb2m = estimatedTb2m;
                     std::cout << "Warning: GPS unreliable. Using motion model for NDT guess." << std::endl;
                 }else {
                     Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
@@ -382,9 +382,10 @@ int main() {
                             std::cerr << "Hessian singular; using default covariance.\n";
                         }
                     }
-                } else {
-                    std::cout << "Registration failed to converge." << std::endl;
-                }
+                } 
+                // else {
+                //     std::cout << "Registration failed to converge." << std::endl;
+                // }
                 std::cout << "----------------------------------------" << std::endl;
                 std::cout << "Position stndrdDev..................." << data_frame->position.back().poseStdDev.norm() << std::endl;
                 std::cout << "Number points........................" << points->size() << std::endl;
@@ -402,11 +403,13 @@ int main() {
                 // 3. Create and Populate GtsamFactorData
                 auto data_factor = std::make_unique<GtsamFactorData>();
                 data_factor->keyframe_id = keyframe_id;
-
+                data_factor->pointsBody = std::move(points);
+                gtsam::Pose3 estimatedPose(std::move(estimatedTb2m));
+                data_factor->estimatedPoseFactor = std::move(estimatedPose);
                 // 2. Populate LiDAR Factor Data
                 data_factor->lidarFactor = gtsam::Pose3(prevTbc2bp);
-                Eigen::Matrix<double, 6, 6> lidarNoiseModel = registerCallback.reorderCovarianceForGTSAM(lidarCov);
-                data_factor->lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(lidarNoiseModel);
+                Eigen::Matrix<double, 6, 6> lidarNoiseModel = registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov));
+                data_factor->lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(std::move(lidarNoiseModel));
 
                 // 3. Populate GPS Factor Data
                 if (data_frame->position.back().poseStdDev.norm() <= 1.0f) {
@@ -425,6 +428,44 @@ int main() {
         }
         std::cout << "Factor thread exiting\n";
     });
+
+    auto gtsam_thread = std::thread([&factorQueue]() {
+        gtsam::ISAM2Params isam2_params;
+        isam2_params.relinearizeThreshold = 0.1;
+        isam2_params.relinearizeSkip = 1;
+        gtsam::ISAM2 isam2(isam2_params);
+        try{
+            while (running) {
+                auto data_factor = factorQueue.pop();
+                if (!data_factor) {
+                    if (!running) std::cout << "Factor queue stopped, exiting Gtsam thread.\n";
+                    break;
+                }
+
+                gtsam::NonlinearFactorGraph newFactors;
+                gtsam::Values newEstimates;
+                uint64_t id = data_factor->keyframe_id;
+
+                // Add the initial estimate for the new pose
+                newEstimates.insert(Symbol('x', id), data_factor->estimatedPoseFactor);
+
+                if (id == 0) {
+                    // Add a Prior for the first pose to anchor the graph
+                    newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', 0), data_factor->insFactor, data_factor->insNoiseModel));
+                } else {
+                    if (data_factor->has_gps_factor) {
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', 0), data_factor->insFactor, data_factor->insNoiseModel));
+                    }
+                    newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id),data_factor->lidarFactor, data_factor->lidarNoiseModel));
+                }
+                isam2.update(newFactors, newEstimates);
+
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Gtsam thread error: " << e.what() << "\n";
+        }
+        std::cout << "Gtsam thread exiting\n";
+    });
     //####################################################################################################
     // Cleanup
     while (running) {
@@ -435,10 +476,13 @@ int main() {
     lidarQueue.stop();
     compQueue.stop();
     dataQueue.stop();
+    factorQueue.stop();
 
     if (lidar_iothread.joinable()) lidar_iothread.join();
     if (comp_iothread.joinable()) comp_iothread.join();
     if (sync_thread.joinable()) sync_thread.join();
     if (factor_thread.joinable()) factor_thread.join();
+    if (gtsam_thread.joinable()) gtsam_thread.join();
     
+    std::cout << "All threads have been joined. Shutdown complete." << std::endl;
 }

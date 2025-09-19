@@ -22,8 +22,9 @@ struct GtsamFactorData {
     gtsam::Pose3 insFactor;
     gtsam::SharedNoiseModel insNoiseModel;
     // Data for the initial estimates of the new state variables
-    gtsam::Pose3 priorPoseFactor;
-    gtsam::Velocity3 priorVelocityFactor;
+    gtsam::Pose3 estimatedPoseFactor;
+    //point cloud
+    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody;
 };
 // %            ... struct representing single 3d point data
 struct PCLPointCloud{
