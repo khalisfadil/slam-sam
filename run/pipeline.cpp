@@ -466,8 +466,7 @@ int main() {
                 gtsam::Values current_estimate = isam2.calculateEstimate();
                 gtsam::Pose3 latest_pose = current_estimate.at<gtsam::Pose3>(Symbol('x', id));
 
-                std::cout << "\n--- GTSAM Status Check at Keyframe 
-                " << id << " ---" << std::endl;
+                std::cout << "\n--- GTSAM Status Check at Keyframe " << id << " ---" << std::endl;
                 std::cout << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
                 std::cout << "Optimized Pose (Tb2m) Matrix............\n" << latest_pose.matrix() << std::endl;
