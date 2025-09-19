@@ -448,14 +448,15 @@ int main() {
                     // Add a Prior for the first pose to anchor the graph
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), data_factor->insFactor, data_factor->insNoiseModel));
                     is_first_keyframe = false;
-                    continue;
-                } 
+                } else {
+                    // For ALL SUBSEQUENT poses, add the relative motion factor from LiDAR.
+                    newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), data_factor->lidarFactor, data_factor->lidarNoiseModel));
 
-                if (data_factor->has_gps_factor) {
-                    newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), data_factor->insFactor, data_factor->insNoiseModel));
+                    // Also add a GPS prior if the data is reliable.
+                    if (data_factor->has_gps_factor) {
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), data_factor->insFactor, data_factor->insNoiseModel));
+                    }
                 }
-                newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id),data_factor->lidarFactor, data_factor->lidarNoiseModel));
-                
                 isam2.update(newFactors, newEstimates);
 
                 // Periodically print a more detailed summary
