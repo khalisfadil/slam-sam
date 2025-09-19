@@ -344,7 +344,7 @@ int main() {
                 Eigen::Matrix4d estimatedTb2m = prevTb2m * prevTbc2bp;
                 if (data_frame->position.back().poseStdDev.norm() > 1.0f) {
                     predTb2m = estimatedTb2m;
-                    std::cout << "Warning: GPS unreliable. Using motion model for NDT guess." << std::endl;
+                    // std::cout << "Warning: GPS unreliable. Using motion model for NDT guess." << std::endl;
                 }else {
                     Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
@@ -356,7 +356,7 @@ int main() {
                     prevTb2m = GpsTb2m;
                     prevTbc2bp = GpsTbc2bp;
                     prevGpsTb2m =GpsTb2m;
-                    std::cout << "Logging: GPS reliable. Using gps for NDT guess." << std::endl;
+                    // std::cout << "Logging: GPS reliable. Using gps for NDT guess." << std::endl;
                 }
                 auto align_start = std::chrono::high_resolution_clock::now();
                 registerCallback.registration->align(*pointsMap, predTb2m.cast<float>());
@@ -387,17 +387,17 @@ int main() {
                 //     std::cout << "Registration failed to converge." << std::endl;
                 // }
                 std::cout << "----------------------------------------" << std::endl;
-                std::cout << "Position stndrdDev..................." << data_frame->position.back().poseStdDev.norm() << std::endl;
-                std::cout << "Number points........................" << points->size() << std::endl;
-                std::cout << "Alignment Time......................." << align_duration.count() << " ms" << std::endl;
-                std::cout << "Number Iteration....................." << ndt_iter << std::endl;
-                std::cout << "tran source to target norm..........." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "tran Ld source to target norm........" << LidarTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "tran GPS source to target norm......." << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
-                std::cout << "diff Aligned to Gps trans norm......." << LidarTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                // std::cout << "Position stndrdDev..................." << data_frame->position.back().poseStdDev.norm() << std::endl;
+                // std::cout << "Number points........................" << points->size() << std::endl;
+                // std::cout << "Alignment Time......................." << align_duration.count() << " ms" << std::endl;
+                // std::cout << "Number Iteration....................." << ndt_iter << std::endl;
+                // std::cout << "tran source to target norm..........." << prevTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                // std::cout << "tran Ld source to target norm........" << LidarTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                // std::cout << "tran GPS source to target norm......." << GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
+                // std::cout << "diff Aligned to Gps trans norm......." << LidarTbc2bp.block<3, 1>(0, 3).norm() - GpsTbc2bp.block<3, 1>(0, 3).norm() << std::endl;
                 std::cout << "T GPS body to map....................\n" << GpsTb2m << std::endl;
-                std::cout << "T L body to map......................\n" << LidarTb2m << std::endl;
-                std::cout << "6D Covariance........................\n" << lidarCov << std::endl;
+                // std::cout << "T L body to map......................\n" << LidarTb2m << std::endl;
+                // std::cout << "6D Covariance........................\n" << lidarCov << std::endl;
                 std::cout << "----------------------------------------" << std::endl;
 
                 // 3. Create and Populate GtsamFactorData
@@ -459,6 +459,20 @@ int main() {
                     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id),data_factor->lidarFactor, data_factor->lidarNoiseModel));
                 }
                 isam2.update(newFactors, newEstimates);
+                // --- NEW: Add logging to monitor the optimizer state ---
+                std::cout << "GTSAM: Updated with keyframe " << id << "." << std::endl;
+
+                // Periodically print a more detailed summary
+                gtsam::Values current_estimate = isam2.calculateEstimate();
+                gtsam::Pose3 latest_pose = current_estimate.at<gtsam::Pose3>(Symbol('x', id));
+
+                std::cout << "\n--- GTSAM Status Check at Keyframe 
+                " << id << " ---" << std::endl;
+                std::cout << "New factors added this step............." << newFactors.size() << std::endl;
+                std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
+                std::cout << "Optimized Pose (Tb2m) Matrix............\n" << latest_pose.matrix() << std::endl;
+                std::cout << "------------------------------------------" << std::endl;
+                
 
             }
         } catch (const std::exception& e) {
