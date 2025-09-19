@@ -383,7 +383,7 @@ int main() {
                 // }
                 std::cout << "........................................" << std::endl;
                 std::cout << "Factor Thread..........................." << std::endl;
-                std::cout << "Frame ID................................" << data_frame->position.back().poseStdDev.norm() << std::endl;
+                std::cout << "Frame ID................................" << data_frame->points.frame_id << std::endl;
                 // std::cout << "Position stndrdDev..................." << data_frame->position.back().poseStdDev.norm() << std::endl;
                 // std::cout << "Number points........................" << points->size() << std::endl;
                 // std::cout << "Alignment Time......................." << align_duration.count() << " ms" << std::endl;
@@ -464,6 +464,7 @@ int main() {
 
                 std::cout << "........................................" << std::endl;
                 std::cout << "Gtsam Thread............................" << std::endl;
+                std::cout << "Frame ID................................" << id << std::endl;
                 std::cout << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
                 std::cout << "Optimized Tb2m..........................\n" << Tb2m.matrix() << std::endl;
