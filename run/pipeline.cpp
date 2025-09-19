@@ -454,7 +454,7 @@ int main() {
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', 0), data_factor->insFactor, data_factor->insNoiseModel));
                 } else {
                     if (data_factor->has_gps_factor) {
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', 0), data_factor->insFactor, data_factor->insNoiseModel));
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), data_factor->insFactor, data_factor->insNoiseModel));
                     }
                     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id),data_factor->lidarFactor, data_factor->lidarNoiseModel));
                 }
