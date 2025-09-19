@@ -415,10 +415,7 @@ int main() {
                     const auto& currPoseStdDev = data_frame->position.back().poseStdDev;
                     data_factor->insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, currPoseStdDev.x(), currPoseStdDev.y(), currPoseStdDev.z()).finished());
                 }
-                factorQueue.push(std::move(data_factor));
-
-                // upadte key frame id
-                keyframe_id++;
+                factorQueue.push(std::move(data_factor));   
             }
         } catch (const std::exception& e) {
             std::cerr << "Factor thread error: " << e.what() << "\n";
