@@ -326,6 +326,7 @@ int main() {
                 gtsam::Values newEstimates;
 
                 if (is_first_keyframe) {
+                    std::cout << "Initial key frame............................" << std::endl;
                     rlla = lla;
                     gtsam::Pose3 insFactor(Tb2m);
                     gtsam::Vector6 insNoise;
@@ -335,6 +336,7 @@ int main() {
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                     is_first_keyframe = false;
                 } else {
+                    std::cout << "Sequential key frame............................" << std::endl;
                     gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
                     newEstimates.insert(Symbol('x', id), initialFactor);
                     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
