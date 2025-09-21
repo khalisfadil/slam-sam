@@ -27,6 +27,7 @@
 #include <registercallback.hpp>
 #include <udpsocket.hpp>
 #include <dataframe.hpp>
+#include <map.hpp>
 
 using gtsam::Symbol;
 

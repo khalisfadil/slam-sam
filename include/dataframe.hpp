@@ -11,21 +11,6 @@
 #include <cstdint> 
 #include <memory>
 
-// %            ... struct representing factor graph data
-struct GtsamFactorData {
-    uint64_t frame_id;
-    // Data for the LiDAR BetweenFactor
-    gtsam::Pose3 lidarFactor;
-    gtsam::SharedNoiseModel lidarNoiseModel;
-    // Data for the optional GPS PriorFactor
-    bool has_gps_factor = false;
-    gtsam::Pose3 insFactor;
-    gtsam::SharedNoiseModel insNoiseModel;
-    // Data for the initial estimates of the new state variables
-    gtsam::Pose3 estimatedPoseFactor;
-    //point cloud
-    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody;
-};
 // %            ... struct representing single 3d point data
 struct PCLPointCloud{
     uint16_t frame_id = 0;

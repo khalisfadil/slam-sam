@@ -11,6 +11,7 @@
                 "/usr/include/flann",
                 "/usr/include/vtk-9.1",
                 "${workspaceFolder}/include/**",
+                "${workspaceFolder}/extern/robin-map/include/tsl/**",
                 "${workspaceFolder}/extern/ndt_omp/include/**"
             ],
             "defines": [],

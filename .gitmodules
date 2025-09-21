@@ -1,3 +1,6 @@
 [submodule "extern/ndt_omp"]
 	path = extern/ndt_omp
 	url = https://github.com/tier4/ndt_omp.git
+[submodule "extern/robin-map"]
+	path = extern/robin-map
+	url = https://github.com/Tessil/robin-map.git
