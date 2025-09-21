@@ -371,7 +371,7 @@ int main() {
                     }
                 }
 
-                ###########LOOP CLOSURE
+                // ###########LOOP CLOSURE
                 bool loopCandidateFound = false;
                 KeyframeInfo loopTargetCandidate = {0, 0.0};
                 gtsam::Pose3 loopFactorSourceTb2m, loopFactorTargetTb2m;
@@ -441,7 +441,7 @@ int main() {
                 Val = isam2.calculateEstimate();
 
                 gtsam::Pose3 currTb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
-                
+
                 if (!is_first_keyframe) {
                     gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', id -1));
                     Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
