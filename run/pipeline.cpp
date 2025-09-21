@@ -348,7 +348,7 @@ int main() {
                     registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
                     if (registerCallback.registration->hasConverged()) {
                         lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
-                        Eigen::Matrix4d lidarTbs2bt = lidarFactorTargetTb2m.inverse()*lidarFactorSourceTb2m;
+                        Eigen::Matrix4d lidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
                         if (ndt_omp) {
                             auto ndt_result = ndt_omp->getResult();
                             const auto& hessian = ndt_result.hessian;
