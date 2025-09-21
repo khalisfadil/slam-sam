@@ -326,7 +326,6 @@ int main() {
                 gtsam::Values newEstimates;
 
                 if (is_first_keyframe) {
-                    std::cout << "Initial key frame............................" << std::endl;
                     rlla = lla;
                     gtsam::Pose3 insFactor(Tb2m);
                     gtsam::Vector6 insNoise;
@@ -334,9 +333,7 @@ int main() {
                     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(std::move(insNoise));
                     newEstimates.insert(Symbol('x', id), insFactor);
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    is_first_keyframe = false;
                 } else {
-                    std::cout << "Sequential key frame............................" << std::endl;
                     gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
                     newEstimates.insert(Symbol('x', id), initialFactor);
                     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
@@ -357,7 +354,7 @@ int main() {
                             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                             if (regularized_hessian.determinant() > 1e-6) {
                                 lidarCov = -regularized_hessian.inverse();
-                                std::cout << "Covariance estimated from NDT Hessian.\n";
+                                std::cout << "Covariance estimated from NDT Hessian.";
                             }
                         }
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(lidarTbs2bt));
@@ -373,72 +370,71 @@ int main() {
                     }
                 }
 
-                // // ###########LOOP CLOSURE
-                // bool loopCandidateFound = false;
-                // KeyframeInfo loopTargetCandidate = {0, 0.0};
-                // gtsam::Pose3 loopFactorSourceTb2m, loopFactorTargetTb2m;
-                // if (!is_first_keyframe) {
-                //     loopFactorSourceTb2m = Val.at<gtsam::Pose3>(Symbol('x', id - 1));
-                //     Voxel loopFactorSourceVoxel = Voxel::getKey(loopFactorSourceTb2m.translation().cast<float>(), VOXEL_SIZE);
-                //     double min_distance_sq = std::numeric_limits<double>::max();
-                //     for (int dx = -NEIGHBOR_SEARCH_SIZE; dx <= NEIGHBOR_SEARCH_SIZE; ++dx) {
-                //         for (int dy = -NEIGHBOR_SEARCH_SIZE; dy <= NEIGHBOR_SEARCH_SIZE; ++dy) {
-                //             for (int dz = -NEIGHBOR_SEARCH_SIZE; dz <= NEIGHBOR_SEARCH_SIZE; ++dz) {
-                //                 Voxel loopFactorQueryVoxel{loopFactorSourceVoxel.x + dx, loopFactorSourceVoxel.y + dy, loopFactorSourceVoxel.z + dz};
-                //                 auto it = spatialArchive.find(loopFactorQueryVoxel);
-                //                 if (it != spatialArchive.end()) {
-                //                     for (const auto& loopFactorCandidate : it->second) {
-                //                         if (std::abs(timestamp - loopFactorCandidate.timestamp) < LOOP_CLOSURE_TIME_THRESHOLD) {
-                //                             continue; 
-                //                         }
-                //                         if (Val.exists(Symbol('x', loopFactorCandidate.id))) {
-                //                             loopFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', loopFactorCandidate.id));
-                //                             double dist_sq = (loopFactorSourceTb2m.translation() - loopFactorTargetTb2m.translation()).squaredNorm();
-                //                             if (dist_sq < min_distance_sq) {
-                //                                 min_distance_sq = dist_sq;
-                //                                 loopTargetCandidate = loopFactorCandidate;
-                //                                 loopCandidateFound = true;
-                //                             }
-                //                         }
-                //                     }
-                //                 }
-                //             }
-                //         }
-                //     }
-                // }
+                // ###########LOOP CLOSURE
+                bool loopCandidateFound = false;
+                KeyframeInfo loopTargetCandidate = {0, 0.0};
+                gtsam::Pose3 loopFactorSourceTb2m, loopFactorTargetTb2m;
+                if (!is_first_keyframe) {
+                    loopFactorSourceTb2m = Val.at<gtsam::Pose3>(Symbol('x', id - 1));
+                    Voxel loopFactorSourceVoxel = Voxel::getKey(loopFactorSourceTb2m.translation().cast<float>(), VOXEL_SIZE);
+                    double min_distance_sq = std::numeric_limits<double>::max();
+                    for (int dx = -NEIGHBOR_SEARCH_SIZE; dx <= NEIGHBOR_SEARCH_SIZE; ++dx) {
+                        for (int dy = -NEIGHBOR_SEARCH_SIZE; dy <= NEIGHBOR_SEARCH_SIZE; ++dy) {
+                            for (int dz = -NEIGHBOR_SEARCH_SIZE; dz <= NEIGHBOR_SEARCH_SIZE; ++dz) {
+                                Voxel loopFactorQueryVoxel{loopFactorSourceVoxel.x + dx, loopFactorSourceVoxel.y + dy, loopFactorSourceVoxel.z + dz};
+                                auto it = spatialArchive.find(loopFactorQueryVoxel);
+                                if (it != spatialArchive.end()) {
+                                    for (const auto& loopFactorCandidate : it->second) {
+                                        if (std::abs(timestamp - loopFactorCandidate.timestamp) < LOOP_CLOSURE_TIME_THRESHOLD) {
+                                            continue; 
+                                        }
+                                        if (Val.exists(Symbol('x', loopFactorCandidate.id))) {
+                                            loopFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', loopFactorCandidate.id));
+                                            double dist_sq = (loopFactorSourceTb2m.translation() - loopFactorTargetTb2m.translation()).squaredNorm();
+                                            if (dist_sq < min_distance_sq) {
+                                                min_distance_sq = dist_sq;
+                                                loopTargetCandidate = loopFactorCandidate;
+                                                loopCandidateFound = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
-                // if (loopCandidateFound) {
-                //     const auto& loopFactorSourcePointsArchive = pointsArchive.at(id - 1);
-                //     const auto& loopFactorTargetPointsArchive = pointsArchive.at(loopTargetCandidate.id);
-                //     pcl::PointCloud<pcl::PointXYZI>::Ptr loopFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                //     pcl::PointCloud<pcl::PointXYZI>::Ptr loopFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
-                //     pcl::transformPointCloud(*loopFactorTargetPointsArchive.points,*loopFactorPointsTarget,loopFactorTargetTb2m.matrix());
+                if (loopCandidateFound) {
+                    std::cout << "Found loop closure.";
+                    const auto& loopFactorSourcePointsArchive = pointsArchive.at(id - 1);
+                    const auto& loopFactorTargetPointsArchive = pointsArchive.at(loopTargetCandidate.id);
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr loopFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr loopFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::transformPointCloud(*loopFactorTargetPointsArchive.points,*loopFactorPointsTarget,loopFactorTargetTb2m.matrix());
 
-                //     registerCallback.registration->setInputTarget(loopFactorPointsTarget);
-                //     registerCallback.registration->setInputSource(loopFactorSourcePointsArchive.points);
-                //     registerCallback.registration->align(*loopFactorPointsSource, loopFactorSourceTb2m.matrix().cast<float>());
-                //     if (registerCallback.registration->hasConverged()) {
-                //         Eigen::Matrix4d loopFactorUpdatedSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
-                //         Eigen::Matrix4d loopTbs2bt = loopFactorTargetTb2m.matrix().inverse()*loopFactorUpdatedSourceTb2m;
-                //         if (ndt_omp) {
-                //             auto ndt_result = ndt_omp->getResult();
-                //             const auto& hessian = ndt_result.hessian;
-                //             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                //             if (regularized_hessian.determinant() > 1e-6) {
-                //                 loopCov = -regularized_hessian.inverse();
-                //             }
-                //         }
-                //         gtsam::Pose3 loopFactor = gtsam::Pose3(std::move(loopTbs2bt));
-                //         gtsam::SharedNoiseModel loopNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(loopCov)));
-                //         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', loopTargetCandidate.id), Symbol('x', id - 1), std::move(loopFactor), std::move(loopNoiseModel)));
-                //     }
-                // }
+                    registerCallback.registration->setInputTarget(loopFactorPointsTarget);
+                    registerCallback.registration->setInputSource(loopFactorSourcePointsArchive.points);
+                    registerCallback.registration->align(*loopFactorPointsSource, loopFactorSourceTb2m.matrix().cast<float>());
+                    if (registerCallback.registration->hasConverged()) {
+                        Eigen::Matrix4d loopFactorUpdatedSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
+                        Eigen::Matrix4d loopTbs2bt = loopFactorTargetTb2m.matrix().inverse()*loopFactorUpdatedSourceTb2m;
+                        if (ndt_omp) {
+                            auto ndt_result = ndt_omp->getResult();
+                            const auto& hessian = ndt_result.hessian;
+                            Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                            if (regularized_hessian.determinant() > 1e-6) {
+                                loopCov = -regularized_hessian.inverse();
+                            }
+                        }
+                        gtsam::Pose3 loopFactor = gtsam::Pose3(std::move(loopTbs2bt));
+                        gtsam::SharedNoiseModel loopNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(loopCov)));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', loopTargetCandidate.id), Symbol('x', id - 1), std::move(loopFactor), std::move(loopNoiseModel)));
+                    }
+                }
                 
                 // ########################
-
                 isam2.update(newFactors, newEstimates);
                 
-
                 // Periodically print a more detailed summary
                 Val = isam2.calculateEstimate();
 
@@ -448,24 +444,24 @@ int main() {
                     gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', id -1));
                     Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
                     lidarFactorSourceTb2m = currTb2m.matrix() * loopTbc2bp;
+                } else {
+                    is_first_keyframe = false;
                 }
                 
 
                 // #################add single info into spatial map if loop closure not found
-                // if (loopCandidateFound){
-                //     spatialArchive.clear();
-                //     for (const auto& key_value : Val) {
-                //         uint64_t frame_id = gtsam::Symbol(key_value.key).index();
-                //         gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
-                //         Voxel key = Voxel::getKey(pose.translation().cast<float>(), VOXEL_SIZE);
-                //         spatialArchive[key].push_back({frame_id, pointsArchive.at(frame_id).timestamp});
-                //     }
-                // } else {
-                //     Voxel spatialKey = Voxel::getKey(currTb2m.translation().cast<float>(), VOXEL_SIZE);
-                //     spatialArchive[spatialKey].push_back({id, timestamp});
-                // }
-                Voxel spatialKey = Voxel::getKey(currTb2m.translation().cast<float>(), VOXEL_SIZE);
-                spatialArchive[spatialKey].push_back({id, timestamp});
+                if (loopCandidateFound){
+                    spatialArchive.clear();
+                    for (const auto& key_value : Val) {
+                        uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+                        gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+                        Voxel key = Voxel::getKey(pose.translation().cast<float>(), VOXEL_SIZE);
+                        spatialArchive[key].push_back({frame_id, pointsArchive.at(frame_id).timestamp});
+                    }
+                } else {
+                    Voxel key = Voxel::getKey(currTb2m.translation().cast<float>(), VOXEL_SIZE);
+                    spatialArchive[key].push_back({id, timestamp});
+                }
                 pointsArchive[id] = {pointsBody, timestamp};
                 // ################# rebuild spatial map if loop closure found
 
