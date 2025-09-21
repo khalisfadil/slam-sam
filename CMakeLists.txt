@@ -43,6 +43,7 @@ set(SOURCES
 set(INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/ndt_omp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/robin-map/include/tsl
     ${PCL_INCLUDE_DIRS}
     ${VTK_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
