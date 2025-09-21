@@ -315,7 +315,6 @@ int main() {
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
                 Tb2m.block<3,1>(0,3) = tb2m;
-                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
 
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
@@ -327,6 +326,7 @@ int main() {
                 gtsam::Values newEstimates;
 
                 if (is_first_keyframe) {
+                    std::cout << "Start frame " << id << std::endl;
                     rlla = lla;
                     gtsam::Pose3 insFactor(Tb2m);
                     gtsam::Vector6 insNoise;
@@ -336,6 +336,7 @@ int main() {
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                     is_first_keyframe = false;
                 } else {
+                    std::cout << "Start frame " << id << std::endl;
                     gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
                     newEstimates.insert(Symbol('x', id), initialFactor);
                     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
@@ -347,6 +348,7 @@ int main() {
                     registerCallback.registration->setInputSource(pointsBody);
                     registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
                     if (registerCallback.registration->hasConverged()) {
+                        std::cout << "Registration converged." << std::endl;
                         lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
                         Eigen::Matrix4d lidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
                         if (ndt_omp) {
@@ -355,6 +357,7 @@ int main() {
                             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                             if (regularized_hessian.determinant() > 1e-6) {
                                 lidarCov = -regularized_hessian.inverse();
+                                std::cout << "Covariance estimated from NDT Hessian.\n";
                             }
                         }
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(lidarTbs2bt));
