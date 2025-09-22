@@ -586,11 +586,11 @@ int main() {
                     pass_spatial.setFilterFieldName("z");
                     pass_spatial.setFilterLimits(-300.0, 0.0);
 
-                    for (auto& point : downsampled_cloud->points) {
-                        point.x = -point.x;    // 
-                        point.y = point.y; // 
-                        point.z = point.z;   // 
-                    }
+                    // for (auto& point : downsampled_cloud->points) {
+                    //     point.x = point.x;    // 
+                    //     point.y = point.y; // 
+                    //     point.z = point.z;   // 
+                    // }
                     pass_spatial.setInputCloud(downsampled_cloud); //
                     pass_spatial.filter(*spatial_cloud);
 
@@ -610,7 +610,7 @@ int main() {
             for (const auto& key_value : *(vizData->poses)) {
                 gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
                 pcl::PointXYZRGB trajectory_point;
-                trajectory_point.x = -pose.translation().x();
+                trajectory_point.x = pose.translation().x();
                 trajectory_point.y = pose.translation().y();
                 trajectory_point.z = pose.translation().z();
                 trajectory_point.r = 255;
