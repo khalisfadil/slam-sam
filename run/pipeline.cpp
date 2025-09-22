@@ -372,8 +372,14 @@ int main() {
                                 lidarCov = -regularized_hessian.inverse();
                                 std::cout << "Covariance estimated from NDT Hessian.";
                             }
-                        }
+                        } 
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(lidarTbs2bt));
+                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                    } else {
+                        Eigen::Matrix4d lidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
+                        gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(lidarTbs2bt));
+                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 1.0;
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
@@ -552,7 +558,7 @@ int main() {
                     
                     // (The rest of your cloud construction logic is unchanged)
                     pcl::transformPointCloud(*keypoint.points, *transformed_cloud, pose.matrix().cast<float>());
-                    *map_cloud += transformed_cloud;
+                    *map_cloud += *transformed_cloud;
 
                     pcl::PointXYZRGB trajectory_point;
                     trajectory_point.x = pose.translation().x();
