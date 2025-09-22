@@ -339,9 +339,8 @@ int main() {
                     Tb2m.block<3,1>(0,3) = tb2m;
 
                     gtsam::Pose3 insFactor(Tb2m);
-                    gtsam::Vector6 insNoise;
-                    insNoise << gtsam::Vector3::Constant(1e-4), gtsam::Vector3::Constant(1e-3);
-                    gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(std::move(insNoise));
+                    const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                    gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
                     newEstimates.insert(Symbol('x', id), insFactor);
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
 
@@ -409,12 +408,12 @@ int main() {
                         gtsam::Pose3 insFactor = gtsam::Pose3(std::move(Tcurr2prev));
 
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x()*5, insFactorStdDev.y()*5, insFactorStdDev.z()*5,0.5, 0.5, 0.5;
-                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.5, 0.5, 0.5, insFactorStdDev.x()*5, insFactorStdDev.y()*5, insFactorStdDev.z()*5).finished());
+                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),1, 1, 1;
+                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                     } else {
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x()*5, insFactorStdDev.y()*5, insFactorStdDev.z()*5,0.5, 0.5, 0.5;
+                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),1, 1, 1;
                     }
                 }
 
