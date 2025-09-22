@@ -313,10 +313,7 @@ int main() {
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
                 const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
-                Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
-                Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
-                Tb2m.block<3,1>(0,3) = tb2m;
+                
 
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
@@ -331,6 +328,11 @@ int main() {
 
                 if (is_first_keyframe) {
                     rlla = lla;
+                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                    Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
+                    Tb2m.block<3,1>(0,3) = tb2m;
+
                     gtsam::Pose3 insFactor(Tb2m);
                     gtsam::Vector6 insNoise;
                     insNoise << gtsam::Vector3::Constant(1e-4), gtsam::Vector3::Constant(1e-3);
@@ -338,6 +340,11 @@ int main() {
                     newEstimates.insert(Symbol('x', id), insFactor);
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                 } else {
+                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                    Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
+                    Tb2m.block<3,1>(0,3) = tb2m;
+
                     gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
                     newEstimates.insert(Symbol('x', id), initialFactor);
                     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
@@ -487,6 +494,7 @@ int main() {
                 std::cout << "Number Iteration....................." << ndt_iter << std::endl;
                 std::cout << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
+                std::cout << "Tb2m....................................\n" << Tb2m << std::endl;
                 std::cout << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
                 std::cout << "........................................" << std::endl;
             }
