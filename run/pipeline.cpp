@@ -273,7 +273,7 @@ int main() {
 
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
-        Eigen::Vector<double, 6> lidarCovScalingVector{100, 10, 10, 1e3, 1e3, 1e3};
+        Eigen::Vector<double, 6> lidarCovScalingVector{100, 10, 10, 1e4, 1e4, 1e4};
         
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
         if (registerCallback.registration_method_ == "NDT") {
