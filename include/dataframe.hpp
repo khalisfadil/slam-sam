@@ -8,6 +8,8 @@
 #include <gtsam/navigation/ImuFactor.h>
 #include <gtsam/linear/NoiseModel.h>
 
+#include <map.hpp>
+
 #include <cstdint> 
 #include <memory>
 
