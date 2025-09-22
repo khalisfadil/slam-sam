@@ -525,7 +525,7 @@ int main() {
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
         viewer->initCameraParameters();
-        viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // This initial position is no longer essential
+        viewer->setCameraPosition(0, 0, -50, 0, 0, 0, -1, 0, 0); // This initial position is no longer essential
 
         // VoxelGrid filter...
         pcl::VoxelGrid<pcl::PointXYZI> vg;
