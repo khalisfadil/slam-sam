@@ -370,7 +370,7 @@ int main() {
                             const auto& hessian = ndt_result.hessian;
                             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                             if (regularized_hessian.determinant() > 1e-6) {
-                                lidarCov = -regularized_hessian.inverse();
+                                lidarCov = -regularized_hessian.inverse()*10;
                                 lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                                 std::cout << "Covariance estimated from NDT Hessian.\n";
                             }
@@ -380,7 +380,7 @@ int main() {
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     } else {
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
-                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 10.0;
+                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 1.0;
                         lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
@@ -572,7 +572,7 @@ int main() {
                     pcl::PointXYZRGB trajectory_point;
                     trajectory_point.x = -pose.translation().x();
                     trajectory_point.y = pose.translation().y();
-                    trajectory_point.z = -pose.translation().z();
+                    trajectory_point.z = pose.translation().z();
                     trajectory_point.r = 255;
                     trajectory_point.g = 10;
                     trajectory_point.b = 10;
@@ -592,7 +592,7 @@ int main() {
                 for (auto& point : downsampled_map->points) {
                     point.x = -point.x;    // 
                     point.y = point.y; // 
-                    point.z = -point.z;   // 
+                    point.z = point.z;   // 
                 }
                 pass_spatial.setInputCloud(downsampled_map); //
                 pass_spatial.filter(*spatial_filtered_map);
