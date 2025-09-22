@@ -321,6 +321,8 @@ int main() {
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
+                std::chrono::duration_cast<std::chrono::milliseconds> align_duration;
+                
                 Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
                 Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
 
@@ -345,13 +347,17 @@ int main() {
                     pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
                     registerCallback.registration->setInputTarget(lidarFactorPointsTarget);
                     registerCallback.registration->setInputSource(pointsBody);
+                    auto align_start = std::chrono::high_resolution_clock::now();
                     registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
+                    auto align_end = std::chrono::high_resolution_clock::now();
+                    align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
                     if (registerCallback.registration->hasConverged()) {
                         std::cout << "Registration converged." << std::endl;
                         lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
                         Eigen::Matrix4d lidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
                         if (ndt_omp) {
                             auto ndt_result = ndt_omp->getResult();
+                            ndt_iter = ndt_result.iteration_num;
                             const auto& hessian = ndt_result.hessian;
                             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                             if (regularized_hessian.determinant() > 1e-6) {
@@ -364,12 +370,12 @@ int main() {
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
                     // Also add a GPS prior if the data is reliable.
-                    if (data_frame->position.back().poseStdDev.norm() < 1.0f) {
-                        gtsam::Pose3 insFactor(Tb2m);
-                        const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    }
+                    // if (data_frame->position.back().poseStdDev.norm() < 0.5f) {
+                    //     gtsam::Pose3 insFactor(Tb2m);
+                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    // }
                 }
 
                 // ###########LOOP CLOSURE
@@ -473,7 +479,11 @@ int main() {
                 // ################# rebuild spatial map if loop closure found
                 std::cout << "........................................" << std::endl;
                 std::cout << "Gtsam Thread............................" << std::endl;
+                std::cout << "Position stndrdDev..................." << data_frame->position.back().poseStdDev.norm() << std::endl;
                 std::cout << "Frame ID................................" << id << std::endl;
+                std::cout << "Number points........................" << pointsBody->size() << std::endl;
+                std::cout << "Alignment Time......................." << align_duration.count() << " ms" << std::endl;
+                std::cout << "Number Iteration....................." << ndt_iter << std::endl;
                 std::cout << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
                 std::cout << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
