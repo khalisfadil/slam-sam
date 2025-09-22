@@ -570,7 +570,7 @@ int main() {
                     *map_cloud += *transformed_cloud;
 
                     pcl::PointXYZRGB trajectory_point;
-                    trajectory_point.x = -pose.translation().x();
+                    trajectory_point.x = pose.translation().x();
                     trajectory_point.y = -pose.translation().y();
                     trajectory_point.z = pose.translation().z();
                     trajectory_point.r = 255;
@@ -579,23 +579,29 @@ int main() {
                     trajectory_cloud->push_back(trajectory_point);
                 }
             }
-
+            pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
+            // NOTE: Changed filter field to "y", which is now the forward (North) axis
+            pass_spatial.setFilterFieldName("z");
+            pass_spatial.setFilterLimits(-300.0, 0.0);
             // Downsample the map (unchanged)
             pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_map(new pcl::PointCloud<pcl::PointXYZI>());
+            pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_filtered_map(new pcl::PointCloud<pcl::PointXYZI>());
             if (!map_cloud->empty()) {
                 vg.setInputCloud(map_cloud);
                 vg.filter(*downsampled_map);
                 for (auto& point : downsampled_map->points) {
-                    point.x = -point.x;    // 
+                    point.x = point.x;    // 
                     point.y = -point.y; // 
                     point.z = point.z;   // 
                 }
+                pass_spatial.setInputCloud(downsampled_map); //
+                pass_spatial.filter(*spatial_filtered_map);
             }
 
             // Update visualizer point clouds (unchanged)
-            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_map, "intensity");
-            if (!viewer->updatePointCloud(downsampled_map, color_handler, "map_cloud")) {
-                viewer->addPointCloud(downsampled_map, color_handler, "map_cloud");
+            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(spatial_filtered_map, "intensity");
+            if (!viewer->updatePointCloud(spatial_filtered_map, color_handler, "map_cloud")) {
+                viewer->addPointCloud(spatial_filtered_map, color_handler, "map_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
             }
             // pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(transformed_cloud, "intensity");
