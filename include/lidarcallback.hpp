@@ -74,6 +74,8 @@ class LidarCallback {
         LidarFrame data_buffer1_;
         LidarFrame data_buffer2_;
         bool buffer_toggle_ = true;
+        float zfiltermax_ = 0.0f;
+        float zfiltermin_ = -300.0f;
 
         void Initialize();
         void ParseMetadata(const nlohmann::json& json_data);

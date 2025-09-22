@@ -22,6 +22,11 @@
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/nonlinear/ISAM2.h>
 
+#include <pcl/visualization/pcl_visualizer.h> 
+#include <pcl/filters/voxel_grid.h>          
+#include <pcl/common/transforms.h>           
+#include <pcl/point_types.h>  
+
 #include <lidarcallback.hpp>
 #include <compcallback.hpp>
 #include <registercallback.hpp>

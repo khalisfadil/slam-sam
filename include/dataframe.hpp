@@ -12,6 +12,11 @@
 #include <memory>
 
 // %            ... struct representing single 3d point data
+struct VisualizationData {
+    std::shared_ptr<gtsam::Values> poses;
+    std::shared_ptr<PointsHashMap> points;
+};
+// %            ... struct representing single 3d point data
 struct PCLPointCloud{
     uint16_t frame_id = 0;
     pcl::PointCloud<pcl::PointXYZI> pointsBody;               

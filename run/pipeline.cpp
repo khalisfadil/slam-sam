@@ -24,6 +24,8 @@ int main() {
     FrameQueue<LidarFrame> lidarQueue;
     FrameQueue<std::deque<CompFrame>> compQueue;
     FrameQueue<FrameData> dataQueue;
+    FrameQueue<VisualizationData> vizQueue;
+
     std::shared_ptr<std::deque<CompFrame>> compWin = std::make_shared<std::deque<CompFrame>>(); // Changed to shared_ptr
     
     auto lidarLastID = std::make_shared<uint16_t>(0);
@@ -260,7 +262,7 @@ int main() {
         std::cout << "Sync thread exiting\n";
     });
     //####################################################################################################
-    auto gtsam_thread = std::thread([&registerCallback, &dataQueue]() {
+    auto gtsam_thread = std::thread([&registerCallback, &dataQueue, &vizQueue]() {
         // --- MAPS AND NDT ARE NOW DECLARED AND OWNED BY THIS THREAD ---
         const double VOXEL_SIZE = 5.0; 
         const double LOOP_CLOSURE_TIME_THRESHOLD = 180.0;
@@ -431,7 +433,6 @@ int main() {
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', loopTargetCandidate.id), Symbol('x', id - 1), std::move(loopFactor), std::move(loopNoiseModel)));
                     }
                 }
-                
                 // ########################
                 isam2.update(newFactors, newEstimates);
                 
@@ -447,8 +448,6 @@ int main() {
                 } else {
                     is_first_keyframe = false;
                 }
-                
-
                 // #################add single info into spatial map if loop closure not found
                 if (loopCandidateFound){
                     spatialArchive.clear();
@@ -463,8 +462,15 @@ int main() {
                     spatialArchive[key].push_back({id, timestamp});
                 }
                 pointsArchive[id] = {pointsBody, timestamp};
-                // ################# rebuild spatial map if loop closure found
 
+                if (!Val.empty()) {
+                    auto vizData = std::make_unique<VisualizationData>();
+                    vizData->poses = std::make_shared<gtsam::Values>(Val);
+                    // Pass a deep copy of the points archive for thread safety
+                    vizData->points = std::make_shared<PointsHashMap>(pointsArchive);
+                    vizQueue.push(std::move(vizData));
+                }
+                // ################# rebuild spatial map if loop closure found
                 std::cout << "........................................" << std::endl;
                 std::cout << "Gtsam Thread............................" << std::endl;
                 std::cout << "Frame ID................................" << id << std::endl;
@@ -472,13 +478,119 @@ int main() {
                 std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
                 std::cout << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
                 std::cout << "........................................" << std::endl;
-                
-
             }
         } catch (const std::exception& e) {
             std::cerr << "Gtsam thread error: " << e.what() << "\n";
         }
         std::cout << "Gtsam thread exiting\n";
+    });
+    //####################################################################################################
+    auto viz_thread = std::thread([&vizQueue]() {
+        auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("GTSAM Optimized Map");
+        viewer->setBackgroundColor(0.1, 0.1, 0.1);
+        viewer->addCoordinateSystem(10.0, "world_origin");
+        viewer->initCameraParameters();
+        // viewer->setCameraPosition(-50, -50, 50, 0, 0, 0, 0, 0, 1); // This initial position is no longer essential
+
+        // VoxelGrid filter...
+        pcl::VoxelGrid<pcl::PointXYZI> vg;
+        vg.setLeafSize(1.0f, 1.0f, 1.0f);
+
+        pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+
+         bool pose_viz_added = false;
+
+        while (running && !viewer->wasStopped()) {
+            auto vizData = vizQueue.pop();
+            if (!vizData) {
+                if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
+                break;
+            }
+
+            map_cloud->clear();
+            trajectory_cloud->clear();
+
+            // ADD THESE TWO VARIABLES to track the latest pose
+            gtsam::Pose3 latest_pose;
+            uint64_t max_id = 0;
+
+            for (const auto& key_value : *(vizData->poses)) {
+                uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+                
+                auto it = vizData->points->find(frame_id);
+                if (it != vizData->points->end()) {
+                    auto& keypoint = it->second;
+                    gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+                    
+                    // --- Keep track of the latest pose ---
+                    if (frame_id > max_id) {
+                        max_id = frame_id;
+                        latest_pose = pose;
+                    }
+                    
+                    // (The rest of your cloud construction logic is unchanged)
+                    pcl::PointCloud<pcl::PointXYZI> transformed_cloud;
+                    pcl::transformPointCloud(*(keypoint.points), transformed_cloud, pose.matrix().cast<float>());
+                    *map_cloud += transformed_cloud;
+
+                    pcl::PointXYZRGB trajectory_point;
+                    trajectory_point.x = pose.translation().x();
+                    trajectory_point.y = pose.translation().y();
+                    trajectory_point.z = pose.translation().z();
+                    trajectory_point.r = 255;
+                    trajectory_point.g = 10;
+                    trajectory_point.b = 10;
+                    trajectory_cloud->push_back(trajectory_point);
+                }
+            }
+
+            // Downsample the map (unchanged)
+            pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_map(new pcl::PointCloud<pcl::PointXYZI>());
+            if (!map_cloud->empty()) {
+                vg.setInputCloud(map_cloud);
+                vg.filter(*downsampled_map);
+            }
+
+            // Update visualizer point clouds (unchanged)
+            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_map, "intensity");
+            if (!viewer->updatePointCloud(downsampled_map, color_handler, "map_cloud")) {
+                viewer->addPointCloud(downsampled_map, color_handler, "map_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
+            }
+            if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
+                viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
+            }
+
+            // --- ADD THIS BLOCK TO UPDATE THE CAMERA POSITION ---
+            // After updating the clouds, move the camera to follow the latest pose
+            if (max_id > 0) { // Ensure we have a valid latest pose
+                const auto& current_pos = latest_pose.translation();
+                viewer->setCameraPosition(
+                    current_pos.x(), current_pos.y(), -80, // Camera position: behind and above the vehicle
+                    current_pos.x(), current_pos.y(), current_pos.z(),               // Viewpoint: where the vehicle is
+                    -1, 0, 0                                                          // Up vector: Z-axis is up
+                );
+
+                // 2. Convert gtsam::Pose3 to Eigen::Affine3f for the visualizer
+                Eigen::Affine3f vehicle_pose_affine = Eigen::Affine3f::Identity();
+                vehicle_pose_affine.matrix() = latest_pose.matrix().cast<float>();
+
+                // 3. Add or update the vehicle's coordinate system
+                if (!pose_viz_added) {
+                    // Add the coordinate system with a scale of 2.0 and a unique ID
+                    viewer->addCoordinateSystem(2.0, vehicle_pose_affine, "vehicle_pose");
+                    pose_viz_added = true;
+                } else {
+                    // Update the pose of the existing coordinate system
+                    viewer->updateCoordinateSystemPose("vehicle_pose", vehicle_pose_affine);
+                }
+            }
+
+            viewer->spinOnce(100);
+        }
+        std::cout << "Visualization thread exiting\n";
     });
     //####################################################################################################
     // Cleanup
@@ -490,11 +602,13 @@ int main() {
     lidarQueue.stop();
     compQueue.stop();
     dataQueue.stop();
+    vizQueue.stop();
 
     if (lidar_iothread.joinable()) lidar_iothread.join();
     if (comp_iothread.joinable()) comp_iothread.join();
     if (sync_thread.joinable()) sync_thread.join();
     if (gtsam_thread.joinable()) gtsam_thread.join();
+    if (viz_thread.joinable()) viz_thread.join();
     
     std::cout << "All threads have been joined. Shutdown complete." << std::endl;
 }
