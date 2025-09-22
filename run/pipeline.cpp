@@ -590,7 +590,7 @@ int main() {
 
                     for (auto& point : downsampled_cloud->points) {
                         point.x = -point.x;    // 
-                        point.y = point.y; // 
+                        point.y = -point.y; // 
                         point.z = point.z;   // 
                     }
                     pass_spatial.setInputCloud(downsampled_cloud); //
@@ -613,7 +613,7 @@ int main() {
                 gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
                 pcl::PointXYZRGB trajectory_point;
                 trajectory_point.x = -pose.translation().x();
-                trajectory_point.y = pose.translation().y();
+                trajectory_point.y = -pose.translation().y();
                 trajectory_point.z = pose.translation().z();
                 trajectory_point.r = 255;
                 trajectory_point.g = 10;
