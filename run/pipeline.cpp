@@ -296,6 +296,7 @@ int main() {
         } 
 
         bool is_first_keyframe = true;
+        uint64_t last_id = 0;
         gtsam::ISAM2Params isam2_params;
         isam2_params.relinearizeThreshold = 0.1;
         isam2_params.relinearizeSkip = 1;
@@ -353,8 +354,8 @@ int main() {
                     newEstimates.insert(Symbol('x', id), initialFactor);
                     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
                     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                    const auto& lidarFactorPointsArchive = pointsArchive.at(id - 1);
-                    gtsam::Pose3 lidarFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', id - 1));
+                    const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
+                    gtsam::Pose3 lidarFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
                     pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
                     registerCallback.registration->setInputTarget(lidarFactorPointsTarget);
                     registerCallback.registration->setInputSource(pointsBody);
@@ -470,7 +471,7 @@ int main() {
                 gtsam::Pose3 currTb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
 
                 if (!is_first_keyframe) {
-                    gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', id -1));
+                    gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
                     Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
                     lidarFactorSourceTb2m = currTb2m.matrix() * loopTbc2bp;
                 } else {
@@ -491,6 +492,7 @@ int main() {
                     spatialArchive[key].push_back({id, timestamp});
                 // }
                 pointsArchive[id] = {pointsBody, timestamp};
+                last_id = id; 
 
                 if (!Val.empty()) {
                     auto vizData = std::make_unique<VisualizationData>();
