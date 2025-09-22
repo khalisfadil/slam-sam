@@ -313,6 +313,7 @@ int main() {
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
                 const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
+                Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 
 
                 uint64_t id = data_frame->points.frame_id;
@@ -329,7 +330,7 @@ int main() {
                 if (is_first_keyframe) {
                     rlla = lla;
                     Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
-                    Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                    Tb2m = Eigen::Matrix4d::Identity();
                     Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
                     Tb2m.block<3,1>(0,3) = tb2m;
 
@@ -341,7 +342,7 @@ int main() {
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                 } else {
                     Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
-                    Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                    Tb2m = Eigen::Matrix4d::Identity();
                     Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
                     Tb2m.block<3,1>(0,3) = tb2m;
 
