@@ -273,6 +273,7 @@ int main() {
 
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
+        Eigen::Vector<double, 6> lidarCovScalingVector{100, 10, 10, 1e3, 1e3, 1e3};
         
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
         if (registerCallback.registration_method_ == "NDT") {
@@ -370,7 +371,7 @@ int main() {
                             const auto& hessian = ndt_result.hessian;
                             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                             if (regularized_hessian.determinant() > 1e-6) {
-                                lidarCov = -regularized_hessian.inverse()*10;
+                                lidarCov = -regularized_hessian.inverse() * lidarCovScalingVector.asDiagonal();
                                 lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                                 std::cout << "Covariance estimated from NDT Hessian.\n";
                             }
@@ -380,7 +381,8 @@ int main() {
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     } else {
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
-                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 1.0;
+                        Eigen::Matrix<double, 6, 6> covariance;
+                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.1;
                         lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
@@ -389,12 +391,12 @@ int main() {
                     if (data_frame->position.back().poseStdDev.norm() < 0.5f) {
                         gtsam::Pose3 insFactor(Tb2m);
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),1, 1, 1;
-                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.1, 0.1, 0.1;
+                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.1, 0.1, 0.1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                     } else {
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),1, 1, 1;
+                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.1, 0.1, 0.1;
                     }
                 }
 
