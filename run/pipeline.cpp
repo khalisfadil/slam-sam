@@ -378,12 +378,12 @@ int main() {
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
                     // Also add a GPS prior if the data is reliable.
-                    // if (data_frame->position.back().poseStdDev.norm() < 0.5f) {
-                    //     gtsam::Pose3 insFactor(Tb2m);
-                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    // }
+                    if (data_frame->position.back().poseStdDev.norm() < 0.5f) {
+                        gtsam::Pose3 insFactor(Tb2m);
+                        const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    }
                 }
 
                 // ###########LOOP CLOSURE
@@ -529,7 +529,7 @@ int main() {
                 break;
             }
 
-            // map_cloud->clear();
+            map_cloud->clear();
             trajectory_cloud->clear();
 
             // ADD THESE TWO VARIABLES to track the latest pose
@@ -552,7 +552,7 @@ int main() {
                     
                     // (The rest of your cloud construction logic is unchanged)
                     pcl::transformPointCloud(*keypoint.points, *transformed_cloud, pose.matrix().cast<float>());
-                    // *map_cloud += transformed_cloud;
+                    *map_cloud += transformed_cloud;
 
                     pcl::PointXYZRGB trajectory_point;
                     trajectory_point.x = pose.translation().x();
@@ -566,23 +566,23 @@ int main() {
             }
 
             // Downsample the map (unchanged)
-            // pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_map(new pcl::PointCloud<pcl::PointXYZI>());
-            // if (!map_cloud->empty()) {
-            //     vg.setInputCloud(map_cloud);
-            //     vg.filter(*downsampled_map);
-            // }
+            pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_map(new pcl::PointCloud<pcl::PointXYZI>());
+            if (!map_cloud->empty()) {
+                vg.setInputCloud(map_cloud);
+                vg.filter(*downsampled_map);
+            }
 
             // Update visualizer point clouds (unchanged)
-            // pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_map, "intensity");
-            // if (!viewer->updatePointCloud(downsampled_map, color_handler, "map_cloud")) {
-            //     viewer->addPointCloud(downsampled_map, color_handler, "map_cloud");
-            //     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
-            // }
-            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(transformed_cloud, "intensity");
-            if (!viewer->updatePointCloud(transformed_cloud, color_handler, "transformed_cloud")) {
-                viewer->addPointCloud(transformed_cloud, color_handler, "transformed_cloud");
-                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "transformed_cloud");
+            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_map, "intensity");
+            if (!viewer->updatePointCloud(downsampled_map, color_handler, "map_cloud")) {
+                viewer->addPointCloud(downsampled_map, color_handler, "map_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
             }
+            // pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(transformed_cloud, "intensity");
+            // if (!viewer->updatePointCloud(transformed_cloud, color_handler, "transformed_cloud")) {
+            //     viewer->addPointCloud(transformed_cloud, color_handler, "transformed_cloud");
+            //     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "transformed_cloud");
+            // }
             if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
                 viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
