@@ -26,6 +26,7 @@
 #include <pcl/filters/voxel_grid.h>          
 #include <pcl/common/transforms.h>           
 #include <pcl/point_types.h>  
+#include <pcl/filters/passthrough.h>
 
 #include <lidarcallback.hpp>
 #include <compcallback.hpp>
