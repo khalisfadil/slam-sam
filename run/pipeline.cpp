@@ -572,7 +572,7 @@ int main() {
                     *map_cloud += *transformed_cloud;
 
                     pcl::PointXYZRGB trajectory_point;
-                    trajectory_point.x = -pose.translation().x();
+                    trajectory_point.x = pose.translation().x();
                     trajectory_point.y = pose.translation().y();
                     trajectory_point.z = pose.translation().z();
                     trajectory_point.r = 255;
@@ -591,11 +591,6 @@ int main() {
             if (!map_cloud->empty()) {
                 vg.setInputCloud(map_cloud);
                 vg.filter(*downsampled_map);
-                for (auto& point : downsampled_map->points) {
-                    point.x = -point.x;    // 
-                    point.y = point.y; // 
-                    point.z = point.z;   // 
-                }
                 pass_spatial.setInputCloud(downsampled_map); //
                 pass_spatial.filter(*spatial_filtered_map);
             }
