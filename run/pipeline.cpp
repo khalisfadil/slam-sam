@@ -530,7 +530,7 @@ int main() {
         viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0);
 
         // --- NEW: Use a deque to track the IDs of the clouds currently in the viewer ---
-        const size_t kSlidingWindowSize = 50;
+        const size_t kSlidingWindowSize = 100;
         std::deque<uint64_t> displayed_frame_ids;
         uint64_t last_processed_id = 0;
 
