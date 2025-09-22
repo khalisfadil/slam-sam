@@ -570,7 +570,7 @@ int main() {
                 viewer->setCameraPosition(
                     current_pos.x(), current_pos.y(), -80, // Camera position: behind and above the vehicle
                     current_pos.x(), current_pos.y(), current_pos.z(),               // Viewpoint: where the vehicle is
-                    -1, 0, 0                                                          // Up vector: Z-axis is up
+                    1, 0, 0                                                          // Up vector: Z-axis is up
                 );
 
                 // 2. Convert gtsam::Pose3 to Eigen::Affine3f for the visualizer
