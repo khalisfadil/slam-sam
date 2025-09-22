@@ -273,8 +273,6 @@ int main() {
 
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
-
-        auto prev_data_Frame = std::make_unique<FrameData>();
         
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
         if (registerCallback.registration_method_ == "NDT") {
@@ -391,26 +389,11 @@ int main() {
                     }
                     // Also add a GPS prior if the data is reliable.
                     if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
-                        // gtsam::Pose3 insFactor(Tb2m);
-                        const Eigen::Vector3d& prev_lla = prev_data_Frame->position.back().pose;
-                        const Eigen::Matrix3d& pev_Cb2m = prev_data_Frame->position.back().orientation.toRotationMatrix().cast<double>();
-                        Eigen::Vector3d pev_tb2m = Eigen::Vector3d::Zero();
-                        Eigen::Matrix4d pev_Tb2m = Eigen::Matrix4d::Identity();
-                        pev_Tb2m.block<3,3>(0,0) = pev_Cb2m.cast<double>();
-                        pev_Tb2m.block<3,1>(0,3) = pev_tb2m;
-
-                        Eigen::Vector3d currtb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),prev_lla.x(),prev_lla.y(),prev_lla.z());
-                        Eigen::Matrix4d currTb2m = Eigen::Matrix4d::Identity();
-                        currTb2m.block<3,3>(0,0) = Cb2m.cast<double>();
-                        currTb2m.block<3,1>(0,3) = currtb2m;
-
-                        Eigen::Matrix4d Tcurr2prev = pev_Tb2m.inverse() * currTb2m;
-                        gtsam::Pose3 insFactor = gtsam::Pose3(std::move(Tcurr2prev));
-
+                        gtsam::Pose3 insFactor(Tb2m);
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),1, 1, 1;
                         gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                        newEstimates.insert(Symbol('x', id), insFactor);
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                     } else {
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
                         insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),1, 1, 1;
@@ -508,8 +491,6 @@ int main() {
                     spatialArchive[key].push_back({id, timestamp});
                 // }
                 pointsArchive[id] = {pointsBody, timestamp};
-
-                prev_data_Frame = std::move(data_frame);
 
                 if (!Val.empty()) {
                     auto vizData = std::make_unique<VisualizationData>();
