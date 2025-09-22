@@ -321,8 +321,8 @@ int main() {
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
-                std::chrono::duration_cast<std::chrono::milliseconds> align_duration;
-                
+                std::chrono::milliseconds align_duration;
+                                
                 Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
                 Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
 
