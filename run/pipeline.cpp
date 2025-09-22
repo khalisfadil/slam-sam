@@ -323,6 +323,7 @@ int main() {
 
                 Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
                 Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+                Eigen::Vector<double, 6> lidarStdDev = Eigen::Vector<double, 6>::Zero();
 
                 gtsam::NonlinearFactorGraph newFactors;
                 gtsam::Values newEstimates;
@@ -370,6 +371,7 @@ int main() {
                             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                             if (regularized_hessian.determinant() > 1e-6) {
                                 lidarCov = -regularized_hessian.inverse();
+                                lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                                 std::cout << "Covariance estimated from NDT Hessian.";
                             }
                         } 
@@ -380,11 +382,12 @@ int main() {
                         Eigen::Matrix4d lidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(lidarTbs2bt));
                         lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 1.0;
+                        lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
                     // Also add a GPS prior if the data is reliable.
-                    if (data_frame->position.back().poseStdDev.norm() < 0.5f) {
+                    if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
                         gtsam::Pose3 insFactor(Tb2m);
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
                         gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
@@ -492,18 +495,19 @@ int main() {
                     vizQueue.push(std::move(vizData));
                 }
                 // ################# rebuild spatial map if loop closure found
-                std::cout << "........................................" << std::endl;
+                std::cout << ".................................................." << std::endl;
                 std::cout << "Gtsam Thread............................" << std::endl;
-                std::cout << "Position stndrdDev..................." << data_frame->position.back().poseStdDev.norm() << std::endl;
+                std::cout << "Position stndrdDev......................" << data_frame->position.back().poseStdDev.norm() << std::endl;
                 std::cout << "Frame ID................................" << id << std::endl;
-                std::cout << "Number points........................" << pointsBody->size() << std::endl;
-                std::cout << "Alignment Time......................." << align_duration.count() << " ms" << std::endl;
-                std::cout << "Number Iteration....................." << ndt_iter << std::endl;
+                std::cout << "Number points..........................." << pointsBody->size() << std::endl;
+                std::cout << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
+                std::cout << "Number Iteration........................" << ndt_iter << std::endl;
+                std::cout << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
                 std::cout << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
                 std::cout << "Tb2m....................................\n" << Tb2m << std::endl;
                 std::cout << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
-                std::cout << "........................................" << std::endl;
+                std::cout << ".................................................." << std::endl;
             }
         } catch (const std::exception& e) {
             std::cerr << "Gtsam thread error: " << e.what() << "\n";
@@ -520,7 +524,7 @@ int main() {
 
         // VoxelGrid filter...
         pcl::VoxelGrid<pcl::PointXYZI> vg;
-        vg.setLeafSize(5.0f, 5.0f, 5.0f);
+        vg.setLeafSize(1.0f, 1.0f, 1.0f);
 
         pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>());
         pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
