@@ -490,7 +490,7 @@ int main() {
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
         viewer->initCameraParameters();
-        // viewer->setCameraPosition(-50, -50, 50, 0, 0, 0, 0, 0, 1); // This initial position is no longer essential
+        viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // This initial position is no longer essential
 
         // VoxelGrid filter...
         pcl::VoxelGrid<pcl::PointXYZI> vg;
@@ -565,28 +565,28 @@ int main() {
 
             // --- ADD THIS BLOCK TO UPDATE THE CAMERA POSITION ---
             // After updating the clouds, move the camera to follow the latest pose
-            if (max_id > 0) { // Ensure we have a valid latest pose
-                const auto& current_pos = latest_pose.translation();
-                viewer->setCameraPosition(
-                    current_pos.x(), current_pos.y(), -80, // Camera position: behind and above the vehicle
-                    current_pos.x(), current_pos.y(), current_pos.z(),               // Viewpoint: where the vehicle is
-                    1, 0, 0                                                          // Up vector: Z-axis is up
-                );
+            // if (max_id > 0) { // Ensure we have a valid latest pose
+            //     const auto& current_pos = latest_pose.translation();
+            //     viewer->setCameraPosition(
+            //         current_pos.x(), current_pos.y(), -80, // Camera position: behind and above the vehicle
+            //         current_pos.x(), current_pos.y(), current_pos.z(),               // Viewpoint: where the vehicle is
+            //         1, 0, 0                                                          // Up vector: Z-axis is up
+            //     );
 
-                // 2. Convert gtsam::Pose3 to Eigen::Affine3f for the visualizer
-                Eigen::Affine3f vehicle_pose_affine = Eigen::Affine3f::Identity();
-                vehicle_pose_affine.matrix() = latest_pose.matrix().cast<float>();
+            //     // 2. Convert gtsam::Pose3 to Eigen::Affine3f for the visualizer
+            //     Eigen::Affine3f vehicle_pose_affine = Eigen::Affine3f::Identity();
+            //     vehicle_pose_affine.matrix() = latest_pose.matrix().cast<float>();
 
-                // 3. Add or update the vehicle's coordinate system
-                if (!pose_viz_added) {
-                    // Add the coordinate system with a scale of 2.0 and a unique ID
-                    viewer->addCoordinateSystem(2.0, vehicle_pose_affine, "vehicle_pose");
-                    pose_viz_added = true;
-                } else {
-                    // Update the pose of the existing coordinate system
-                    viewer->updateCoordinateSystemPose("vehicle_pose", vehicle_pose_affine);
-                }
-            }
+            //     // 3. Add or update the vehicle's coordinate system
+            //     if (!pose_viz_added) {
+            //         // Add the coordinate system with a scale of 2.0 and a unique ID
+            //         viewer->addCoordinateSystem(2.0, vehicle_pose_affine, "vehicle_pose");
+            //         pose_viz_added = true;
+            //     } else {
+            //         // Update the pose of the existing coordinate system
+            //         viewer->updateCoordinateSystemPose("vehicle_pose", vehicle_pose_affine);
+            //     }
+            // }
 
             viewer->spinOnce(100);
         }
