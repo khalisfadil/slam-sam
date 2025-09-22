@@ -528,7 +528,7 @@ int main() {
         viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0);
 
         // --- NEW: Use a deque to track the IDs of the clouds currently in the viewer ---
-        const size_t kSlidingWindowSize = 20;
+        const size_t kSlidingWindowSize = 10;
         std::deque<uint64_t> displayed_frame_ids;
         uint64_t last_processed_id = 0;
 
@@ -610,7 +610,7 @@ int main() {
             for (const auto& key_value : *(vizData->poses)) {
                 gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
                 pcl::PointXYZRGB trajectory_point;
-                trajectory_point.x = pose.translation().x();
+                trajectory_point.x = -pose.translation().x();
                 trajectory_point.y = pose.translation().y();
                 trajectory_point.z = pose.translation().z();
                 trajectory_point.r = 255;
@@ -629,3 +629,24 @@ int main() {
         }
         std::cout << "Visualization thread exiting\n";
     });
+
+    //####################################################################################################
+    // Cleanup
+    while (running) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    lidar_socket->stop();
+    comp_socket->stop();
+    lidarQueue.stop();
+    compQueue.stop();
+    dataQueue.stop();
+    vizQueue.stop();
+
+    if (lidar_iothread.joinable()) lidar_iothread.join();
+    if (comp_iothread.joinable()) comp_iothread.join();
+    if (sync_thread.joinable()) sync_thread.join();
+    if (gtsam_thread.joinable()) gtsam_thread.join();
+    if (viz_thread.joinable()) viz_thread.join();
+    
+    std::cout << "All threads have been joined. Shutdown complete." << std::endl;
+}
