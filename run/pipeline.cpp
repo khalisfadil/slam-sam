@@ -324,6 +324,7 @@ int main() {
                 Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
                 Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
                 Eigen::Vector<double, 6> lidarStdDev = Eigen::Vector<double, 6>::Zero();
+                Eigen::Vector<double, 6> insStdDev = Eigen::Vector<double, 6>::Zero();
 
                 gtsam::NonlinearFactorGraph newFactors;
                 gtsam::Values newEstimates;
@@ -372,7 +373,7 @@ int main() {
                             if (regularized_hessian.determinant() > 1e-6) {
                                 lidarCov = -regularized_hessian.inverse();
                                 lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                                std::cout << "Covariance estimated from NDT Hessian.";
+                                std::cout << "Covariance estimated from NDT Hessian.\n";
                             }
                         } 
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(lidarTbs2bt));
@@ -390,8 +391,12 @@ int main() {
                     if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
                         gtsam::Pose3 insFactor(Tb2m);
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
                         gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    } else {
+                        insStdDev = Eigen::Vector<double, 6>::Ones() * 10;
+
                     }
                 }
 
@@ -497,11 +502,11 @@ int main() {
                 // ################# rebuild spatial map if loop closure found
                 std::cout << ".................................................." << std::endl;
                 std::cout << "Gtsam Thread............................" << std::endl;
-                std::cout << "Position stndrdDev......................" << data_frame->position.back().poseStdDev.norm() << std::endl;
                 std::cout << "Frame ID................................" << id << std::endl;
                 std::cout << "Number points..........................." << pointsBody->size() << std::endl;
                 std::cout << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
                 std::cout << "Number Iteration........................" << ndt_iter << std::endl;
+                std::cout << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
                 std::cout << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
                 std::cout << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
