@@ -500,19 +500,19 @@ int main() {
                     vizQueue.push(std::move(vizData));
                 }
                 // ################# rebuild spatial map if loop closure found
-                std::cout << ".................................................." << std::endl;
-                std::cout << "Gtsam Thread............................" << std::endl;
-                std::cout << "Frame ID................................" << id << std::endl;
-                std::cout << "Number points..........................." << pointsBody->size() << std::endl;
-                std::cout << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
-                std::cout << "Number Iteration........................" << ndt_iter << std::endl;
-                std::cout << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
-                std::cout << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
-                std::cout << "New factors added this step............." << newFactors.size() << std::endl;
-                std::cout << "Total factors in graph.................." << isam2.size() << std::endl;
-                std::cout << "Tb2m....................................\n" << Tb2m << std::endl;
-                std::cout << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
-                std::cout << ".................................................." << std::endl;
+                std::cout << std::fixed << ".................................................." << std::endl;
+                std::cout << std::fixed << "Gtsam Thread............................" << std::endl;
+                std::cout << std::fixed << "Frame ID................................" << id << std::endl;
+                std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
+                std::cout << std::fixed << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
+                std::cout << std::fixed << "Number Iteration........................" << ndt_iter << std::endl;
+                std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
+                std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
+                std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
+                std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
+                std::cout << std::fixed << "Tb2m....................................\n" << Tb2m << std::endl;
+                std::cout << std::fixed << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
+                std::cout << std::fixed << ".................................................." << std::endl;
             }
         } catch (const std::exception& e) {
             std::cerr << "Gtsam thread error: " << e.what() << "\n";
