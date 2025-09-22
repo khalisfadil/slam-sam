@@ -388,7 +388,7 @@ int main() {
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
                     // Also add a GPS prior if the data is reliable.
-                    if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
+                    if (data_frame->position.back().poseStdDev.norm() < 0.5f) {
                         gtsam::Pose3 insFactor(Tb2m);
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
                         insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),1, 1, 1;
