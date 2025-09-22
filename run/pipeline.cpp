@@ -450,16 +450,16 @@ int main() {
                 }
                 // #################add single info into spatial map if loop closure not found
                 // if (loopCandidateFound){
-                //     spatialArchive.clear();
-                //     for (const auto& key_value : Val) {
-                //         uint64_t frame_id = gtsam::Symbol(key_value.key).index();
-                //         gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
-                //         Voxel key = Voxel::getKey(pose.translation().cast<float>(), VOXEL_SIZE);
-                //         spatialArchive[key].push_back({frame_id, pointsArchive.at(frame_id).timestamp});
-                //     }
+                    spatialArchive.clear();
+                    for (const auto& key_value : Val) {
+                        uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+                        gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+                        Voxel key = Voxel::getKey(pose.translation().cast<float>(), VOXEL_SIZE);
+                        spatialArchive[key].push_back({frame_id, pointsArchive.at(frame_id).timestamp});
+                     }
                 // } else {
-                    Voxel key = Voxel::getKey(currTb2m.translation().cast<float>(), VOXEL_SIZE);
-                    spatialArchive[key].push_back({id, timestamp});
+                    // Voxel key = Voxel::getKey(currTb2m.translation().cast<float>(), VOXEL_SIZE);
+                    // spatialArchive[key].push_back({id, timestamp});
                 // }
                 pointsArchive[id] = {pointsBody, timestamp};
 
