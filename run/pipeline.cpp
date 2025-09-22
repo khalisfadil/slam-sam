@@ -364,7 +364,6 @@ int main() {
                     if (registerCallback.registration->hasConverged()) {
                         std::cout << "Registration converged." << std::endl;
                         lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
-                        Eigen::Matrix4d lidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
                         if (ndt_omp) {
                             auto ndt_result = ndt_omp->getResult();
                             ndt_iter = ndt_result.iteration_num;
@@ -376,16 +375,15 @@ int main() {
                                 std::cout << "Covariance estimated from NDT Hessian.\n";
                             }
                         } 
-                        gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(lidarTbs2bt));
+                        gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     } else {
-                        Eigen::Matrix4d lidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
-                        gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(lidarTbs2bt));
-                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 1.0;
+                        gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
+                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 10.0;
                         lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', id - 1), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
                     // Also add a GPS prior if the data is reliable.
                     if (data_frame->position.back().poseStdDev.norm() < 0.5f) {
