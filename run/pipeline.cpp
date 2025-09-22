@@ -322,7 +322,7 @@ int main() {
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
                 std::chrono::milliseconds align_duration;
-                                
+
                 Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
                 Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
 
@@ -452,6 +452,7 @@ int main() {
                     Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
                     lidarFactorSourceTb2m = currTb2m.matrix() * loopTbc2bp;
                 } else {
+                    lidarFactorSourceTb2m = currTb2m.matrix();
                     is_first_keyframe = false;
                 }
                 // #################add single info into spatial map if loop closure not found
