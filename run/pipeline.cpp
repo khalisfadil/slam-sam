@@ -529,7 +529,7 @@ int main() {
 
         // VoxelGrid filter...
         pcl::VoxelGrid<pcl::PointXYZI> vg;
-        vg.setLeafSize(1.0f, 1.0f, 1.0f);
+        vg.setLeafSize(1.5f, 1.5f, 1.5f);
 
         pcl::PointCloud<pcl::PointXYZI>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZI>());
         pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
