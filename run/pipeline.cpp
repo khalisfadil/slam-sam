@@ -391,8 +391,8 @@ int main() {
                     if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
                         gtsam::Pose3 insFactor(Tb2m);
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.1, 0.1, 0.1;
-                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.1, 0.1, 0.1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
+                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                     } else {
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
@@ -572,7 +572,7 @@ int main() {
                     *map_cloud += *transformed_cloud;
 
                     pcl::PointXYZRGB trajectory_point;
-                    trajectory_point.x = pose.translation().x();
+                    trajectory_point.x = -pose.translation().x();
                     trajectory_point.y = pose.translation().y();
                     trajectory_point.z = pose.translation().z();
                     trajectory_point.r = 255;
@@ -591,6 +591,11 @@ int main() {
             if (!map_cloud->empty()) {
                 vg.setInputCloud(map_cloud);
                 vg.filter(*downsampled_map);
+                for (auto& point : downsampled_map->points) {
+                    point.x = -point.x;    // 
+                    point.y = point.y; // 
+                    point.z = point.z;   // 
+                }
                 pass_spatial.setInputCloud(downsampled_map); //
                 pass_spatial.filter(*spatial_filtered_map);
             }
