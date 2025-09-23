@@ -558,7 +558,7 @@ int main() {
                 break;
             }
             pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-            for (const auto& it : vizData->points) {
+            for (const auto& it : *vizData->points) {
                 auto pcl = it.second.points; // Access the point cloud from KeypointInfo
                 if (pcl && !pcl->empty()) {  // Check for null or empty point cloud
                     *pointsMap += *pcl;      // Concatenate point clouds
