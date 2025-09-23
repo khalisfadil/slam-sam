@@ -377,31 +377,31 @@ int main() {
                                 std::cout << "Covariance estimated from NDT Hessian.\n";
                             }
                         } 
-                        gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
-                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                        // gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
+                        // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                        // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     } else {
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
                         Eigen::Matrix<double, 6, 6> covariance;
                         lidarCov = Eigen::Matrix<double, 6, 6>::Identity();
-                        lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                        // lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+                        // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                        // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
                     // Also add a GPS prior if the data is reliable.
-                    // if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
-                    //     gtsam::Pose3 insFactor(Tb2m);
-                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                    //     insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
-                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    // } else {
-                    //     gtsam::Pose3 insFactor(Tb2m);
-                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                    //     insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
-                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
-                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    // }
+                    if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
+                        gtsam::Pose3 insFactor(Tb2m);
+                        const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
+                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    } else {
+                        gtsam::Pose3 insFactor(Tb2m);
+                        const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                        insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
+                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    }
                 }
 
                 // ###########LOOP CLOSURE
@@ -515,7 +515,7 @@ int main() {
                 std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
                 std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
-                std::cout << std::fixed << "Tb2m....................................\n" << Tb2m << std::endl;
+                std::cout << std::fixed << "Tb2m....................................\n" << lidarFactorSourceTb2m << std::endl;
                 std::cout << std::fixed << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
                 std::cout << std::fixed << ".................................................." << std::endl;
             }
