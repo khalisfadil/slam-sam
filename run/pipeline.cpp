@@ -316,6 +316,7 @@ int main() {
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
                 const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
                 Eigen::Vector3d tm2b = Eigen::Vector3d::Zero();
                 
 
@@ -337,7 +338,7 @@ int main() {
                     rlla = lla;
                     tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                    Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
+                    Tm2b = Eigen::Matrix4d::Identity();
                     Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
                     Tm2b.block<3,1>(0,3) = tm2b;
                     Tb2m = Tm2b.inverse();
@@ -351,7 +352,7 @@ int main() {
                 } else {
                     tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                    Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
+                    Tm2b = Eigen::Matrix4d::Identity();
                     Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
                     Tm2b.block<3,1>(0,3) = tm2b;
                     Tb2m = Tm2b.inverse();
@@ -473,7 +474,7 @@ int main() {
                 // }
                 // ########################
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.matrix().cast<float>());
+                pcl::transformPointCloud(*pointsBody, *pointsMap, Tm2b.matrix().cast<float>());
 
                 // isam2.update(newFactors, newEstimates);
                 
@@ -529,6 +530,7 @@ int main() {
                 std::cout << std::fixed << "lla.....................................\n" << lla.transpose() << std::endl;
                 std::cout << std::fixed << "tm2b....................................\n" << tm2b.transpose() << std::endl;
                 std::cout << std::fixed << "Tb2m....................................\n" << Tb2m << std::endl;
+                std::cout << std::fixed << "Tb2m....................................\n" << Tm2b << std::endl;
                 // std::cout << std::fixed << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
                 // std::cout << std::fixed << ".................................................." << std::endl;
             }
