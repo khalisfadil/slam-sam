@@ -335,7 +335,7 @@ int main() {
                     rlla = lla;
                     Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                    Tm2b = Eigen::Matrix4d::Identity();
+                    Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
                     Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
                     Tm2b.block<3,1>(0,3) = tm2b;
                     Tb2m = Tm2b.inverse();
@@ -349,7 +349,7 @@ int main() {
                 } else {
                     Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                    Tm2b = Eigen::Matrix4d::Identity();
+                     Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
                     Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
                     Tm2b.block<3,1>(0,3) = tm2b;
                     Tb2m = Tm2b.inverse();
