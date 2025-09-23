@@ -134,22 +134,22 @@ void LidarCallback::ParseParamdata(const json& json_param_data) {
         }
         const auto& lidar_param = parameter_["lidar_parameter"];
         // Parse position (3-element array)
-        if (!lidar_param.contains("position") || !lidar_param["position"].is_array() || lidar_param["position"].size() != 3) {
+        if (!lidar_param.contains("tb2s") || !lidar_param["tb2s"].is_array() || lidar_param["tb2s"].size() != 3) {
             throw std::runtime_error("'position' must be an array of 3 elements");
         }
         body_to_lidar_translation_ = Eigen::Vector3d(
-            lidar_param["position"][0].get<double>(),
-            lidar_param["position"][1].get<double>(),
-            lidar_param["position"][2].get<double>()
+            lidar_param["tb2s"][0].get<double>(),
+            lidar_param["tb2s"][1].get<double>(),
+            lidar_param["tb2s"][2].get<double>()
         );
         // Parse rotationMatrix (9-element array, row-major)
-        if (!lidar_param.contains("rotationMatrix") || !lidar_param["rotationMatrix"].is_array() || lidar_param["rotationMatrix"].size() != 9) {
-            throw std::runtime_error("'rotationMatrix' must be an array of 9 elements");
+        if (!lidar_param.contains("Cb2s") || !lidar_param["Cb2s"].is_array() || lidar_param["Cb2s"].size() != 9) {
+            throw std::runtime_error("'Cb2s' must be an array of 9 elements");
         }
         body_to_lidar_rotation_ = Eigen::Matrix3d();
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 3; ++j) {
-                body_to_lidar_rotation_(i, j) = lidar_param["rotationMatrix"][i * 3 + j].get<double>();
+                body_to_lidar_rotation_(i, j) = lidar_param["Cb2s"][i * 3 + j].get<double>();
             }
         }
         if (!lidar_param.contains("channelStride")) {
@@ -248,8 +248,7 @@ void LidarCallback::Initialize() {
 
     Eigen::Matrix4d lidar_to_body_transform = Eigen::Matrix4d::Identity();
     lidar_to_body_transform.block<3,3>(0,0) = body_to_lidar_rotation_.transpose();
-    lidar_to_body_transform.block<3,1>(0,3) = -body_to_lidar_rotation_.transpose() * body_to_lidar_translation_;
-    lidar_to_body_transform = lidar_to_body_transform * lidar_to_sensor_transform_; // Chain if needed, assuming this is the full transform
+    lidar_to_body_transform.block<3,1>(0,3) = -body_to_lidar_rotation_.transpose() * body_to_lidar_translation_;// Chain if needed, assuming this is the full transform
 
     for (int m_id = 0; m_id < columns_per_frame_; ++m_id) {
         float measurement_azimuth_rad = m_id * 2.0f * static_cast<float>(M_PI) / columns_per_frame_;

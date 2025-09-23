@@ -82,23 +82,23 @@ void CompCallback::ParseMetadata(const nlohmann::json& json_data) {
         );
 
         // Parse position (3-element array)
-        if (!imu_params.contains("position") || !imu_params["position"].is_array() || imu_params["position"].size() != 3) {
+        if (!imu_params.contains("tb2s") || !imu_params["tb2s"].is_array() || imu_params["tb2s"].size() != 3) {
             throw std::runtime_error("'position' must be an array of 3 elements");
         }
         body_to_imu_translation_ = Eigen::Vector3d(
-            imu_params["position"][0].get<double>(),
-            imu_params["position"][1].get<double>(),
-            imu_params["position"][2].get<double>()
+            imu_params["tb2s"][0].get<double>(),
+            imu_params["tb2s"][1].get<double>(),
+            imu_params["tb2s"][2].get<double>()
         );
 
         // Parse rotationMatrix (9-element array, row-major)
-        if (!imu_params.contains("rotationMatrix") || !imu_params["rotationMatrix"].is_array() || imu_params["rotationMatrix"].size() != 9) {
-            throw std::runtime_error("'rotationMatrix' must be an array of 9 elements");
+        if (!imu_params.contains("Cb2s") || !imu_params["Cb2s"].is_array() || imu_params["Cb2s"].size() != 9) {
+            throw std::runtime_error("'Cb2s' must be an array of 9 elements");
         }
         body_to_imu_rotation_ = Eigen::Matrix3d();
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 3; ++j) {
-                body_to_imu_rotation_(i, j) = imu_params["rotationMatrix"][i * 3 + j].get<double>();
+                body_to_imu_rotation_(i, j) = imu_params["Cb2s"][i * 3 + j].get<double>();
             }
         }
 
