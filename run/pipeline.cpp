@@ -539,17 +539,9 @@ int main() {
         viewer->initCameraParameters();
         viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0);
 
-        // --- NEW: Use a deque to track the IDs of the clouds currently in the viewer ---
-        const size_t kSlidingWindowSize = 100;
-        std::deque<uint64_t> displayed_frame_ids;
-        uint64_t last_processed_id = 0;
-
-        // VoxelGrid filter for downsampling each new cloud
+        // VoxelGrid filter for downsampling the aggregated cloud
         pcl::VoxelGrid<pcl::PointXYZI> vg;
         vg.setLeafSize(1.5f, 1.5f, 1.5f);
-
-        // The trajectory cloud is still accumulated fully
-        // pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
         while (running && !viewer->wasStopped()) {
             auto vizData = vizQueue.pop();
@@ -557,6 +549,11 @@ int main() {
                 if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
                 break;
             }
+
+            // Clear all existing point clouds from the visualizer
+            viewer->removeAllPointClouds();
+
+            // Aggregate all point clouds from vizData->points
             pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
             for (const auto& it : *vizData->points) {
                 auto pcl = it.second.points; // Access the point cloud from KeypointInfo
@@ -564,89 +561,21 @@ int main() {
                     *pointsMap += *pcl;      // Concatenate point clouds
                 }
             }
-            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMap, "intensity");
-            viewer->addPointCloud(pointsMap, color_handler, "map_cloud");
+
+            // Downsample the aggregated point cloud to reduce memory usage
+            pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapDS(new pcl::PointCloud<pcl::PointXYZI>());
+            if (!pointsMap->empty()) {
+                vg.setInputCloud(pointsMap);
+                vg.filter(*pointsMapDS);
+            } else {
+                pointsMapDS = pointsMap; // Use empty cloud if no points
+            }
+
+            // Add the downsampled point cloud to the visualizer
+            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMapDS, "intensity");
+            viewer->addPointCloud(pointsMapDS, color_handler, "map_cloud");
             viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
 
-            // --- 1. Find the newest frame in the received data ---
-            // gtsam::Pose3 Tb2m;
-            // uint64_t max_id = 0;
-            // for (const auto& key_value : *(vizData->poses)) {
-            //     uint64_t frame_id = gtsam::Symbol(key_value.key).index();
-            //     if (frame_id > max_id) {
-            //         max_id = frame_id;
-            //     }
-            // }
-            
-            // // --- 2. Process only if it's a new, unseen keyframe ---
-            // if (max_id > 0 && max_id != last_processed_id) {
-            //     last_processed_id = max_id;
-            //     Tb2m = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
-            //     auto it = vizData->points->find(max_id);
-
-            //     if (it != vizData->points->end()) {
-            //         // --- 3. Remove the oldest cloud if the window is full ---
-            //         if (displayed_frame_ids.size() >= kSlidingWindowSize) {
-            //             uint64_t id_to_remove = displayed_frame_ids.front();
-            //             std::string cloud_id_to_remove = "map_cloud_" + std::to_string(id_to_remove);
-            //             viewer->removePointCloud(cloud_id_to_remove);
-            //             displayed_frame_ids.pop_front();
-            //         }
-
-            //         // --- 4. Prepare the new cloud ---
-            //         pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody = it->second.points;
-            //         pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-            //         pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapDS(new pcl::PointCloud<pcl::PointXYZI>());
-            //         pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapS(new pcl::PointCloud<pcl::PointXYZI>());
-
-            //         // Transform and downsample the new cloud
-            //         pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.matrix().cast<float>());
-            //         vg.setInputCloud(pointsMap);
-            //         vg.filter(*pointsMapDS);
-            //         pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
-            
-            //         pass_spatial.setFilterFieldName("z");
-            //         pass_spatial.setFilterLimits(-300.0, 0.0);
-
-            //         // for (auto& point : downsampled_cloud->points) {
-            //         //     point.x = point.x;    // 
-            //         //     point.y = -point.y; // 
-            //         //     point.z = point.z;   // 
-            //         // }
-            //         pass_spatial.setInputCloud(pointsMapDS); //
-            //         pass_spatial.filter(*pointsMapS);
-
-            //         // --- 5. Add the new cloud to the viewer with a unique ID ---
-            //         std::string cloud_id_to_add = "map_cloud_" + std::to_string(max_id);
-            //         pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMapS, "intensity");
-            //         viewer->addPointCloud(pointsMapS, color_handler, cloud_id_to_add);
-            //         viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
-
-            //         // Add the new frame's ID to our tracking deque
-            //         displayed_frame_ids.push_back(max_id);
-            //     }
-            // }
-
-            // --- 6. Update the ENTIRE trajectory (this logic is correct) ---
-            // trajectory_cloud->clear();
-            // for (const auto& key_value : *(vizData->poses)) {
-            //     gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
-            //     pcl::PointXYZRGB trajectory_point;
-            //     trajectory_point.x = pose.translation().x();
-            //     trajectory_point.y = pose.translation().y();
-            //     trajectory_point.z = pose.translation().z();
-            //     trajectory_point.r = 255;
-            //     trajectory_point.g = 10;
-            //     trajectory_point.b = 10;
-            //     trajectory_cloud->push_back(trajectory_point);
-            // }
-
-            // // Use updatePointCloud for efficiency; it will add the cloud if it doesn't exist
-            // if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
-            //     viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
-            //     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
-            // }
-            
             viewer->spinOnce(100);
         }
         std::cout << "Visualization thread exiting\n";
