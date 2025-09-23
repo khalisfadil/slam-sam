@@ -501,6 +501,7 @@ int main() {
                     // Voxel key = Voxel::getKey(Tb2m.translation().cast<float>(), VOXEL_SIZE);
                     // spatialArchive[key].push_back({id, timestamp});
                 // }
+                pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, timestamp};
                 last_id = id; 
 
