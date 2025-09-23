@@ -334,8 +334,8 @@ int main() {
 
                 // Store in archives
                 pointsArchive.clear();
-                pointsArchive[id] = {pointsMap, timestamp};
-                insPosesArchive[id] = {Tm2b, timestamp};
+                pointsArchive[id] = {pointsBody, timestamp};
+                insPosesArchive[id] = {Tb2m, timestamp};
 
                 // Visualization: Clear all existing point clouds
                 viewer->removeAllPointClouds();
