@@ -78,6 +78,11 @@ struct KeypointInfo{
     pcl::PointCloud<pcl::PointXYZI>::Ptr points;
     double timestamp;
 };
+struct InsPose {
+    Eigen::Matrix4d pose; // Tb2m: body-to-map transformation in NED frame
+    double timestamp;
+};
 
 using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyframeInfo>, VoxelHash>;
 using PointsHashMap = tsl::robin_map<uint64_t, KeypointInfo, KeyframeHash>;
+using PoseHashMap = tsl::robin_map<uint64_t, InsPose, KeyframeHash>;

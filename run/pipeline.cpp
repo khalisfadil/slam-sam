@@ -24,7 +24,7 @@ int main() {
     FrameQueue<LidarFrame> lidarQueue;
     FrameQueue<std::deque<CompFrame>> compQueue;
     FrameQueue<FrameData> dataQueue;
-    FrameQueue<VisualizationData> vizQueue;
+    // FrameQueue<VisualizationData> vizQueue;
 
     std::shared_ptr<std::deque<CompFrame>> compWin = std::make_shared<std::deque<CompFrame>>(); // Changed to shared_ptr
     
@@ -262,52 +262,23 @@ int main() {
         std::cout << "Sync thread exiting\n";
     });
     //####################################################################################################
-    auto gtsam_thread = std::thread([&registerCallback, &dataQueue, &vizQueue]() {
-        // --- MAPS AND NDT ARE NOW DECLARED AND OWNED BY THIS THREAD ---
-        const double VOXEL_SIZE = 5.0; 
-        const double LOOP_CLOSURE_TIME_THRESHOLD = 180.0;
-        const int NEIGHBOR_SEARCH_SIZE = 1;
-
+    auto ins_viz_thread = std::thread([&registerCallback, &dataQueue]() {
         PointsHashMap pointsArchive;
-        VoxelHashMap spatialArchive;
-
-        Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
-        Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
-        Eigen::Vector<double, 6> lidarCovScalingVector{100, 10, 100, 1e4, 1e4, 1e4};
-        
-        pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
-        if (registerCallback.registration_method_ == "NDT") {
-            ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
-            ndt_omp->setNumThreads(registerCallback.num_threads_);
-            ndt_omp->setResolution(registerCallback.ndt_resolution_);
-            ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
-
-            if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT1") {
-                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT1);
-            } else if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT7") {
-                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
-            } else if (registerCallback.ndt_neighborhood_search_method_ == "KDTREE") {
-                ndt_omp->setNeighborhoodSearchMethod(pclomp::KDTREE);
-            } else {
-                std::cout << "Warning: Invalid NDT search method. Defaulting to DIRECT7." << std::endl;
-                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
-            }
-            registerCallback.registration = ndt_omp;
-        } 
-
+        PoseHashMap insPosesArchive;
+        Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
         bool is_first_keyframe = true;
-        uint64_t last_id = 0;
-        gtsam::ISAM2Params isam2_params;
-        isam2_params.relinearizeThreshold = 0.1;
-        isam2_params.relinearizeSkip = 1;
-        gtsam::ISAM2 isam2(isam2_params);
-        gtsam::Values Val;
+
+        auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("INS Map and Trajectory");
+        viewer->setBackgroundColor(0.1, 0.1, 0.1);
+        viewer->addCoordinateSystem(10.0, "world_origin");
+        viewer->initCameraParameters();
+        viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0);
 
         try {
-            while (running) {
+            while (running && !viewer->wasStopped()) {
                 auto data_frame = dataQueue.pop();
                 if (!data_frame) {
-                    if (!running) std::cout << "Factor queue stopped, exiting Gtsam thread.\n";
+                    if (!running) std::cout << "Data queue stopped, exiting INS viz thread.\n";
                     break;
                 }
 
@@ -318,276 +289,473 @@ int main() {
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
                 Eigen::Vector3d tm2b = Eigen::Vector3d::Zero();
-                
 
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
-                int ndt_iter = 0;
-                std::chrono::milliseconds align_duration;
-
-                Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
-                Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
-                Eigen::Vector<double, 6> lidarStdDev = Eigen::Vector<double, 6>::Zero();
-                Eigen::Vector<double, 6> insStdDev = Eigen::Vector<double, 6>::Zero();
-
-                gtsam::NonlinearFactorGraph newFactors;
-                gtsam::Values newEstimates;
-                
 
                 if (is_first_keyframe) {
                     rlla = lla;
-                    tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
-                    Tb2m = Eigen::Matrix4d::Identity();
-                    Tm2b = Eigen::Matrix4d::Identity();
-                    Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
-                    Tm2b.block<3,1>(0,3) = tm2b;
-                    Tb2m = Tm2b.inverse();
-
-                    gtsam::Pose3 insFactor(Tb2m);
-                    const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                    gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                    newEstimates.insert(Symbol('x', id), insFactor);
-                    newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                     is_first_keyframe = false;
                 } else {
-                    tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
-                    Tb2m = Eigen::Matrix4d::Identity();
-                    Tm2b = Eigen::Matrix4d::Identity();
-                    Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
-                    Tm2b.block<3,1>(0,3) = tm2b;
-                    Tb2m = Tm2b.inverse();
-
-                    // gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
-                    // newEstimates.insert(Symbol('x', id), initialFactor);
-                    // pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
-                    // pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                    // const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
-                    // gtsam::Pose3 lidarFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
-                    // pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
-                    // registerCallback.registration->setInputTarget(lidarFactorPointsTarget);
-                    // registerCallback.registration->setInputSource(pointsBody);
-                    // auto align_start = std::chrono::high_resolution_clock::now();
-                    // registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
-                    // auto align_end = std::chrono::high_resolution_clock::now();
-                    // align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
-                    // if (registerCallback.registration->hasConverged()) {
-                    //     std::cout << "Registration converged." << std::endl;
-                    //     lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
-                    //     if (ndt_omp) {
-                    //         auto ndt_result = ndt_omp->getResult();
-                    //         ndt_iter = ndt_result.iteration_num;
-                    //         const auto& hessian = ndt_result.hessian;
-                    //         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                    //         if (regularized_hessian.determinant() > 1e-6) {
-                    //             lidarCov = -regularized_hessian.inverse() * lidarCovScalingVector.asDiagonal();
-                    //             lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                    //             std::cout << "Covariance estimated from NDT Hessian.\n";
-                    //         }
-                    //     } 
-                    //     // gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
-                    //     // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                    //     // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
-                    // } else {
-                    //     gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
-                    //     Eigen::Matrix<double, 6, 6> covariance;
-                    //     lidarCov = Eigen::Matrix<double, 6, 6>::Identity();
-                    //     // lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                    //     // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                    //     // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
-                    // }
-                    // // Also add a GPS prior if the data is reliable.
-                    // if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
-                    //     gtsam::Pose3 insFactor(Tb2m);
-                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                    //     insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
-                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));}
-                    // } else {
-                    //     gtsam::Pose3 insFactor(Tb2m);
-                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                    //     insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
-                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
-                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    // }
+                    tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                 }
 
-                // ###########LOOP CLOSURE
-                // bool loopCandidateFound = false;
-                // KeyframeInfo loopTargetCandidate = {0, 0.0};
-                // gtsam::Pose3 loopFactorSourceTb2m, loopFactorTargetTb2m;
-                // if (!is_first_keyframe) {
-                //     loopFactorSourceTb2m = Val.at<gtsam::Pose3>(Symbol('x', id - 1));
-                //     Voxel loopFactorSourceVoxel = Voxel::getKey(loopFactorSourceTb2m.translation().cast<float>(), VOXEL_SIZE);
-                //     double min_distance_sq = std::numeric_limits<double>::max();
-                //     for (int dx = -NEIGHBOR_SEARCH_SIZE; dx <= NEIGHBOR_SEARCH_SIZE; ++dx) {
-                //         for (int dy = -NEIGHBOR_SEARCH_SIZE; dy <= NEIGHBOR_SEARCH_SIZE; ++dy) {
-                //             for (int dz = -NEIGHBOR_SEARCH_SIZE; dz <= NEIGHBOR_SEARCH_SIZE; ++dz) {
-                //                 Voxel loopFactorQueryVoxel{loopFactorSourceVoxel.x + dx, loopFactorSourceVoxel.y + dy, loopFactorSourceVoxel.z + dz};
-                //                 auto it = spatialArchive.find(loopFactorQueryVoxel);
-                //                 if (it != spatialArchive.end()) {
-                //                     for (const auto& loopFactorCandidate : it->second) {
-                //                         if (std::abs(timestamp - loopFactorCandidate.timestamp) < LOOP_CLOSURE_TIME_THRESHOLD) {
-                //                             continue; 
-                //                         }
-                //                         if (Val.exists(Symbol('x', loopFactorCandidate.id))) {
-                //                             loopFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', loopFactorCandidate.id));
-                //                             double dist_sq = (loopFactorSourceTb2m.translation() - loopFactorTargetTb2m.translation()).squaredNorm();
-                //                             if (dist_sq < min_distance_sq) {
-                //                                 min_distance_sq = dist_sq;
-                //                                 loopTargetCandidate = loopFactorCandidate;
-                //                                 loopCandidateFound = true;
-                //                             }
-                //                         }
-                //                     }
-                //                 }
-                //             }
-                //         }
-                //     }
-                // }
+                // Compute Tm2b (map to body)
+                Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
+                Tm2b.block<3,1>(0,3) = -Tm2b.block<3,3>(0,0) * tm2b; // Correct translation
 
-                // if (loopCandidateFound) {
-                //     std::cout << "Found loop closure.";
-                //     const auto& loopFactorSourcePointsArchive = pointsArchive.at(id - 1);
-                //     const auto& loopFactorTargetPointsArchive = pointsArchive.at(loopTargetCandidate.id);
-                //     pcl::PointCloud<pcl::PointXYZI>::Ptr loopFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                //     pcl::PointCloud<pcl::PointXYZI>::Ptr loopFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
-                //     pcl::transformPointCloud(*loopFactorTargetPointsArchive.points,*loopFactorPointsTarget,loopFactorTargetTb2m.matrix());
+                // Compute Tb2m (body to map) as inverse
+                Tb2m = Tm2b.inverse();
 
-                //     registerCallback.registration->setInputTarget(loopFactorPointsTarget);
-                //     registerCallback.registration->setInputSource(loopFactorSourcePointsArchive.points);
-                //     registerCallback.registration->align(*loopFactorPointsSource, loopFactorSourceTb2m.matrix().cast<float>());
-                //     if (registerCallback.registration->hasConverged()) {
-                //         Eigen::Matrix4d loopFactorUpdatedSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
-                //         Eigen::Matrix4d loopTbs2bt = loopFactorTargetTb2m.matrix().inverse()*loopFactorUpdatedSourceTb2m;
-                //         if (ndt_omp) {
-                //             auto ndt_result = ndt_omp->getResult();
-                //             const auto& hessian = ndt_result.hessian;
-                //             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                //             if (regularized_hessian.determinant() > 1e-6) {
-                //                 loopCov = -regularized_hessian.inverse();
-                //             }
-                //         }
-                //         gtsam::Pose3 loopFactor = gtsam::Pose3(std::move(loopTbs2bt));
-                //         gtsam::SharedNoiseModel loopNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(loopCov)));
-                //         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', loopTargetCandidate.id), Symbol('x', id - 1), std::move(loopFactor), std::move(loopNoiseModel)));
-                //     }
-                // }
-                // ########################
+                // Transform point cloud to map frame (NED)
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*pointsBody, *pointsMap, Tm2b.matrix().cast<float>());
+                pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
-                // isam2.update(newFactors, newEstimates);
-                
-                // Periodically print a more detailed summary
-                // Val = isam2.calculateEstimate();
-
-                // gtsam::Pose3 currTb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
-
-                // if (!is_first_keyframe) {
-                //     gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
-                //     Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
-                //     lidarFactorSourceTb2m = currTb2m.matrix() * loopTbc2bp;
-                // } else {
-                //     lidarFactorSourceTb2m = currTb2m.matrix();
-                //     is_first_keyframe = false;
-                // }
-                // #################add single info into spatial map if loop closure not found
-                // if (loopCandidateFound){
-                    // spatialArchive.clear();
-                    // for (const auto& key_value : Val) {
-                    //     uint64_t frame_id = gtsam::Symbol(key_value.key).index();
-                    //     gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
-                    //     Voxel key = Voxel::getKey(pose.translation().cast<float>(), VOXEL_SIZE);
-                    //     spatialArchive[key].push_back({frame_id, pointsArchive.at(frame_id).timestamp});
-                    //  }
-                // } else {
-                    // Voxel key = Voxel::getKey(Tb2m.translation().cast<float>(), VOXEL_SIZE);
-                    // spatialArchive[key].push_back({id, timestamp});
-                // }
-                pointsArchive.clear();
+                // Store in archives
                 pointsArchive[id] = {pointsMap, timestamp};
-                last_id = id; 
+                insPosesArchive[id] = {Tb2m, timestamp};
 
-                // if (!Val.empty()) {
-                    auto vizData = std::make_unique<VisualizationData>();
-                    vizData->poses = std::make_shared<gtsam::Values>(Val);
-                    // Pass a deep copy of the points archive for thread safety
-                    vizData->points = std::make_shared<PointsHashMap>(pointsArchive);
-                    vizQueue.push(std::move(vizData));
-                // }
-                // ################# rebuild spatial map if loop closure found
-                // std::cout << std::fixed << ".................................................." << std::endl;
-                // std::cout << std::fixed << "Gtsam Thread............................" << std::endl;
-                // std::cout << std::fixed << "Frame ID................................" << id << std::endl;
-                // std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
-                // std::cout << std::fixed << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
-                // std::cout << std::fixed << "Number Iteration........................" << ndt_iter << std::endl;
-                // std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
-                // std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
-                // std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
-                // std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
-                std::cout << std::fixed << "rlla....................................\n" << rlla.transpose() << std::endl;
-                std::cout << std::fixed << "lla.....................................\n" << lla.transpose() << std::endl;
-                std::cout << std::fixed << "tm2b....................................\n" << tm2b.transpose() << std::endl;
-                std::cout << std::fixed << "Tb2m....................................\n" << Tb2m << std::endl;
-                std::cout << std::fixed << "Tb2m....................................\n" << Tm2b << std::endl;
-                // std::cout << std::fixed << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
-                // std::cout << std::fixed << ".................................................." << std::endl;
+                // Visualize
+                auto pointsArchiveShared = std::make_shared<PointsHashMap>(pointsArchive);
+                auto insPosesArchiveShared = std::make_shared<PoseHashMap>(insPosesArchive);
+
+                // Clear all existing point clouds from the visualizer
+                viewer->removeAllPointClouds();
+
+                // Aggregate all point clouds from pointsArchive
+                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+                for (const auto& it : *pointsArchiveShared) {
+                    auto pcl = it.second.points; // Access the point cloud from KeypointInfo
+                    if (pcl && !pcl->empty()) {  // Check for null or empty point cloud
+                        *pointsMap += *pcl;      // Concatenate point clouds
+                    }
+                }
+
+                // Downsample the aggregated point cloud
+                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapDS(new pcl::PointCloud<pcl::PointXYZI>());
+                pcl::VoxelGrid<pcl::PointXYZI> vg;
+                vg.setLeafSize(1.5f, 1.5f, 1.5f);
+                if (!pointsMap->empty()) {
+                    vg.setInputCloud(pointsMap);
+                    vg.filter(*pointsMapDS);
+                } else {
+                    pointsMapDS = pointsMap; // Use empty cloud if no points
+                }
+
+                // Add the map point cloud (in NED frame)
+                pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(pointsMapDS, "intensity");
+                viewer->addPointCloud(pointsMapDS, map_color_handler, "map_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
+
+                // Create INS trajectory point cloud from insPosesArchive
+                pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+                for (const auto& kv : *insPosesArchiveShared) {
+                    const auto& pose = kv.second.pose;
+                    pcl::PointXYZRGB point;
+                    point.x = pose(0, 3); // Translation x
+                    point.y = pose(1, 3); // Translation y
+                    point.z = pose(2, 3); // Translation z
+                    point.r = 255; // Red for trajectory
+                    point.g = 10;
+                    point.b = 10;
+                    trajectory_cloud->push_back(point);
+                }
+
+                // Add the trajectory
+                if (!trajectory_cloud->empty()) {
+                    viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
+                    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
+                }
+                
+                // Debug output
+                std::cout << std::fixed << "Frame ID: " << id << "\n";
+                std::cout << std::fixed << "rlla: " << rlla.transpose() << "\n";
+                std::cout << std::fixed << "lla: " << lla.transpose() << "\n";
+                std::cout << std::fixed << "tm2b: " << tm2b.transpose() << "\n";
+                std::cout << std::fixed << "Tb2m:\n" << Tb2m << "\n";
+                std::cout << std::fixed << "Tm2b:\n" << Tm2b << "\n";
+
+                viewer->spinOnce(100);
             }
         } catch (const std::exception& e) {
-            std::cerr << "Gtsam thread error: " << e.what() << "\n";
+            std::cerr << "INS viz thread error: " << e.what() << "\n";
         }
-        std::cout << "Gtsam thread exiting\n";
+        std::cout << "INS viz thread exiting\n";
     });
     //####################################################################################################
-    auto viz_thread = std::thread([&vizQueue]() {
-        auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("GTSAM Optimized Map");
-        viewer->setBackgroundColor(0.1, 0.1, 0.1);
-        viewer->addCoordinateSystem(10.0, "world_origin");
-        viewer->initCameraParameters();
-        viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0);
+    // auto gtsam_thread = std::thread([&registerCallback, &dataQueue, &vizQueue]() {
+    //     // --- MAPS AND NDT ARE NOW DECLARED AND OWNED BY THIS THREAD ---
+    //     const double VOXEL_SIZE = 5.0; 
+    //     const double LOOP_CLOSURE_TIME_THRESHOLD = 180.0;
+    //     const int NEIGHBOR_SEARCH_SIZE = 1;
 
-        // VoxelGrid filter for downsampling the aggregated cloud
-        pcl::VoxelGrid<pcl::PointXYZI> vg;
-        vg.setLeafSize(1.5f, 1.5f, 1.5f);
+    //     PointsHashMap pointsArchive;
+    //     VoxelHashMap spatialArchive;
 
-        while (running && !viewer->wasStopped()) {
-            auto vizData = vizQueue.pop();
-            if (!vizData) {
-                if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
-                break;
-            }
+    //     Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
+    //     Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
+    //     Eigen::Vector<double, 6> lidarCovScalingVector{100, 10, 100, 1e4, 1e4, 1e4};
+        
+    //     pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
+    //     if (registerCallback.registration_method_ == "NDT") {
+    //         ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+    //         ndt_omp->setNumThreads(registerCallback.num_threads_);
+    //         ndt_omp->setResolution(registerCallback.ndt_resolution_);
+    //         ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
 
-            // Clear all existing point clouds from the visualizer
-            viewer->removeAllPointClouds();
+    //         if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT1") {
+    //             ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT1);
+    //         } else if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT7") {
+    //             ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
+    //         } else if (registerCallback.ndt_neighborhood_search_method_ == "KDTREE") {
+    //             ndt_omp->setNeighborhoodSearchMethod(pclomp::KDTREE);
+    //         } else {
+    //             std::cout << "Warning: Invalid NDT search method. Defaulting to DIRECT7." << std::endl;
+    //             ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
+    //         }
+    //         registerCallback.registration = ndt_omp;
+    //     } 
 
-            // Aggregate all point clouds from vizData->points
-            pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-            for (const auto& it : *vizData->points) {
-                auto pcl = it.second.points; // Access the point cloud from KeypointInfo
-                if (pcl && !pcl->empty()) {  // Check for null or empty point cloud
-                    *pointsMap += *pcl;      // Concatenate point clouds
-                }
-            }
+    //     bool is_first_keyframe = true;
+    //     uint64_t last_id = 0;
+    //     gtsam::ISAM2Params isam2_params;
+    //     isam2_params.relinearizeThreshold = 0.1;
+    //     isam2_params.relinearizeSkip = 1;
+    //     gtsam::ISAM2 isam2(isam2_params);
+    //     gtsam::Values Val;
 
-            // Downsample the aggregated point cloud to reduce memory usage
-            pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapDS(new pcl::PointCloud<pcl::PointXYZI>());
-            if (!pointsMap->empty()) {
-                vg.setInputCloud(pointsMap);
-                vg.filter(*pointsMapDS);
-            } else {
-                pointsMapDS = pointsMap; // Use empty cloud if no points
-            }
+    //     try {
+    //         while (running) {
+    //             auto data_frame = dataQueue.pop();
+    //             if (!data_frame) {
+    //                 if (!running) std::cout << "Factor queue stopped, exiting Gtsam thread.\n";
+    //                 break;
+    //             }
 
-            // Add the downsampled point cloud to the visualizer
-            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMapDS, "intensity");
-            viewer->addPointCloud(pointsMapDS, color_handler, "map_cloud");
-            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
+    //             pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
+    //             *pointsBody = std::move(data_frame->points.pointsBody);
+    //             const Eigen::Vector3d& lla = data_frame->position.back().pose;
+    //             const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
+    //             Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                
 
-            viewer->spinOnce(100);
-        }
-        std::cout << "Visualization thread exiting\n";
-    });
+    //             uint64_t id = data_frame->points.frame_id;
+    //             double timestamp = data_frame->timestamp;
+    //             int ndt_iter = 0;
+    //             std::chrono::milliseconds align_duration;
+
+    //             Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+    //             Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+    //             Eigen::Vector<double, 6> lidarStdDev = Eigen::Vector<double, 6>::Zero();
+    //             Eigen::Vector<double, 6> insStdDev = Eigen::Vector<double, 6>::Zero();
+
+    //             gtsam::NonlinearFactorGraph newFactors;
+    //             gtsam::Values newEstimates;
+
+    //             if (is_first_keyframe) {
+    //                 rlla = lla;
+    //                 Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+    //                 Tb2m = Eigen::Matrix4d::Identity();
+    //                 Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
+    //                 Tb2m.block<3,1>(0,3) = tb2m;
+
+    //                 gtsam::Pose3 insFactor(Tb2m);
+    //                 const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+    //                 gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+    //                 newEstimates.insert(Symbol('x', id), insFactor);
+    //                 newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+
+    //             } else {
+    //                 Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+    //                 Tb2m = Eigen::Matrix4d::Identity();
+    //                 Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
+    //                 Tb2m.block<3,1>(0,3) = tb2m;
+
+    //                 gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
+    //                 newEstimates.insert(Symbol('x', id), initialFactor);
+    //                 pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
+    //                 pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+    //                 const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
+    //                 gtsam::Pose3 lidarFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
+    //                 pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
+    //                 registerCallback.registration->setInputTarget(lidarFactorPointsTarget);
+    //                 registerCallback.registration->setInputSource(pointsBody);
+    //                 auto align_start = std::chrono::high_resolution_clock::now();
+    //                 registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
+    //                 auto align_end = std::chrono::high_resolution_clock::now();
+    //                 align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
+    //                 if (registerCallback.registration->hasConverged()) {
+    //                     std::cout << "Registration converged." << std::endl;
+    //                     lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
+    //                     if (ndt_omp) {
+    //                         auto ndt_result = ndt_omp->getResult();
+    //                         ndt_iter = ndt_result.iteration_num;
+    //                         const auto& hessian = ndt_result.hessian;
+    //                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+    //                         if (regularized_hessian.determinant() > 1e-6) {
+    //                             lidarCov = -regularized_hessian.inverse() * lidarCovScalingVector.asDiagonal();
+    //                             lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+    //                             std::cout << "Covariance estimated from NDT Hessian.\n";
+    //                         }
+    //                     } 
+    //                     // gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
+    //                     // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+    //                     // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+    //                 } else {
+    //                     gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
+    //                     Eigen::Matrix<double, 6, 6> covariance;
+    //                     lidarCov = Eigen::Matrix<double, 6, 6>::Identity();
+    //                     // lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+    //                     // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+    //                     // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+    //                 }
+    //                 // Also add a GPS prior if the data is reliable.
+    //                 if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
+    //                     gtsam::Pose3 insFactor(Tb2m);
+    //                     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+    //                     insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
+    //                     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+    //                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+    //                 } else {
+    //                     gtsam::Pose3 insFactor(Tb2m);
+    //                     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+    //                     insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
+    //                     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
+    //                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+    //                 }
+    //             }
+
+    //             // ###########LOOP CLOSURE
+    //             // bool loopCandidateFound = false;
+    //             // KeyframeInfo loopTargetCandidate = {0, 0.0};
+    //             // gtsam::Pose3 loopFactorSourceTb2m, loopFactorTargetTb2m;
+    //             // if (!is_first_keyframe) {
+    //             //     loopFactorSourceTb2m = Val.at<gtsam::Pose3>(Symbol('x', id - 1));
+    //             //     Voxel loopFactorSourceVoxel = Voxel::getKey(loopFactorSourceTb2m.translation().cast<float>(), VOXEL_SIZE);
+    //             //     double min_distance_sq = std::numeric_limits<double>::max();
+    //             //     for (int dx = -NEIGHBOR_SEARCH_SIZE; dx <= NEIGHBOR_SEARCH_SIZE; ++dx) {
+    //             //         for (int dy = -NEIGHBOR_SEARCH_SIZE; dy <= NEIGHBOR_SEARCH_SIZE; ++dy) {
+    //             //             for (int dz = -NEIGHBOR_SEARCH_SIZE; dz <= NEIGHBOR_SEARCH_SIZE; ++dz) {
+    //             //                 Voxel loopFactorQueryVoxel{loopFactorSourceVoxel.x + dx, loopFactorSourceVoxel.y + dy, loopFactorSourceVoxel.z + dz};
+    //             //                 auto it = spatialArchive.find(loopFactorQueryVoxel);
+    //             //                 if (it != spatialArchive.end()) {
+    //             //                     for (const auto& loopFactorCandidate : it->second) {
+    //             //                         if (std::abs(timestamp - loopFactorCandidate.timestamp) < LOOP_CLOSURE_TIME_THRESHOLD) {
+    //             //                             continue; 
+    //             //                         }
+    //             //                         if (Val.exists(Symbol('x', loopFactorCandidate.id))) {
+    //             //                             loopFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', loopFactorCandidate.id));
+    //             //                             double dist_sq = (loopFactorSourceTb2m.translation() - loopFactorTargetTb2m.translation()).squaredNorm();
+    //             //                             if (dist_sq < min_distance_sq) {
+    //             //                                 min_distance_sq = dist_sq;
+    //             //                                 loopTargetCandidate = loopFactorCandidate;
+    //             //                                 loopCandidateFound = true;
+    //             //                             }
+    //             //                         }
+    //             //                     }
+    //             //                 }
+    //             //             }
+    //             //         }
+    //             //     }
+    //             // }
+
+    //             // if (loopCandidateFound) {
+    //             //     std::cout << "Found loop closure.";
+    //             //     const auto& loopFactorSourcePointsArchive = pointsArchive.at(id - 1);
+    //             //     const auto& loopFactorTargetPointsArchive = pointsArchive.at(loopTargetCandidate.id);
+    //             //     pcl::PointCloud<pcl::PointXYZI>::Ptr loopFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+    //             //     pcl::PointCloud<pcl::PointXYZI>::Ptr loopFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
+    //             //     pcl::transformPointCloud(*loopFactorTargetPointsArchive.points,*loopFactorPointsTarget,loopFactorTargetTb2m.matrix());
+
+    //             //     registerCallback.registration->setInputTarget(loopFactorPointsTarget);
+    //             //     registerCallback.registration->setInputSource(loopFactorSourcePointsArchive.points);
+    //             //     registerCallback.registration->align(*loopFactorPointsSource, loopFactorSourceTb2m.matrix().cast<float>());
+    //             //     if (registerCallback.registration->hasConverged()) {
+    //             //         Eigen::Matrix4d loopFactorUpdatedSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
+    //             //         Eigen::Matrix4d loopTbs2bt = loopFactorTargetTb2m.matrix().inverse()*loopFactorUpdatedSourceTb2m;
+    //             //         if (ndt_omp) {
+    //             //             auto ndt_result = ndt_omp->getResult();
+    //             //             const auto& hessian = ndt_result.hessian;
+    //             //             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+    //             //             if (regularized_hessian.determinant() > 1e-6) {
+    //             //                 loopCov = -regularized_hessian.inverse();
+    //             //             }
+    //             //         }
+    //             //         gtsam::Pose3 loopFactor = gtsam::Pose3(std::move(loopTbs2bt));
+    //             //         gtsam::SharedNoiseModel loopNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(loopCov)));
+    //             //         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', loopTargetCandidate.id), Symbol('x', id - 1), std::move(loopFactor), std::move(loopNoiseModel)));
+    //             //     }
+    //             // }
+    //             // ########################
+    //             isam2.update(newFactors, newEstimates);
+                
+    //             // Periodically print a more detailed summary
+    //             Val = isam2.calculateEstimate();
+
+    //             gtsam::Pose3 currTb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
+
+    //             if (!is_first_keyframe) {
+    //                 gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
+    //                 Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
+    //                 lidarFactorSourceTb2m = currTb2m.matrix() * loopTbc2bp;
+    //             } else {
+    //                 lidarFactorSourceTb2m = currTb2m.matrix();
+    //                 is_first_keyframe = false;
+    //             }
+    //             // #################add single info into spatial map if loop closure not found
+    //             // if (loopCandidateFound){
+    //                 // spatialArchive.clear();
+    //                 // for (const auto& key_value : Val) {
+    //                 //     uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+    //                 //     gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+    //                 //     Voxel key = Voxel::getKey(pose.translation().cast<float>(), VOXEL_SIZE);
+    //                 //     spatialArchive[key].push_back({frame_id, pointsArchive.at(frame_id).timestamp});
+    //                 //  }
+    //             // } else {
+    //                 Voxel key = Voxel::getKey(currTb2m.translation().cast<float>(), VOXEL_SIZE);
+    //                 spatialArchive[key].push_back({id, timestamp});
+    //             // }
+    //             pointsArchive[id] = {pointsBody, timestamp};
+    //             last_id = id; 
+
+    //             if (!Val.empty()) {
+    //                 auto vizData = std::make_unique<VisualizationData>();
+    //                 vizData->poses = std::make_shared<gtsam::Values>(Val);
+    //                 // Pass a deep copy of the points archive for thread safety
+    //                 vizData->points = std::make_shared<PointsHashMap>(pointsArchive);
+    //                 vizQueue.push(std::move(vizData));
+    //             }
+    //             // ################# rebuild spatial map if loop closure found
+    //             std::cout << std::fixed << ".................................................." << std::endl;
+    //             std::cout << std::fixed << "Gtsam Thread............................" << std::endl;
+    //             std::cout << std::fixed << "Frame ID................................" << id << std::endl;
+    //             std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
+    //             std::cout << std::fixed << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
+    //             std::cout << std::fixed << "Number Iteration........................" << ndt_iter << std::endl;
+    //             std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
+    //             std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
+    //             std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
+    //             std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
+    //             std::cout << std::fixed << "Tb2m....................................\n" << lidarFactorSourceTb2m << std::endl;
+    //             std::cout << std::fixed << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
+    //             std::cout << std::fixed << ".................................................." << std::endl;
+    //         }
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "Gtsam thread error: " << e.what() << "\n";
+    //     }
+    //     std::cout << "Gtsam thread exiting\n";
+    // });
+    // //####################################################################################################
+    // auto viz_thread = std::thread([&vizQueue]() {
+    //     auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("GTSAM Optimized Map");
+    //     viewer->setBackgroundColor(0.1, 0.1, 0.1);
+    //     viewer->addCoordinateSystem(10.0, "world_origin");
+    //     viewer->initCameraParameters();
+    //     viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0);
+
+    //     // --- NEW: Use a deque to track the IDs of the clouds currently in the viewer ---
+    //     const size_t kSlidingWindowSize = 100;
+    //     std::deque<uint64_t> displayed_frame_ids;
+    //     uint64_t last_processed_id = 0;
+
+    //     // VoxelGrid filter for downsampling each new cloud
+    //     pcl::VoxelGrid<pcl::PointXYZI> vg;
+    //     vg.setLeafSize(1.5f, 1.5f, 1.5f);
+
+    //     // The trajectory cloud is still accumulated fully
+    //     pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+
+    //     while (running && !viewer->wasStopped()) {
+    //         auto vizData = vizQueue.pop();
+    //         if (!vizData) {
+    //             if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
+    //             break;
+    //         }
+
+    //         // --- 1. Find the newest frame in the received data ---
+    //         gtsam::Pose3 latest_pose;
+    //         uint64_t max_id = 0;
+    //         for (const auto& key_value : *(vizData->poses)) {
+    //             uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+    //             if (frame_id > max_id) {
+    //                 max_id = frame_id;
+    //             }
+    //         }
+            
+    //         // --- 2. Process only if it's a new, unseen keyframe ---
+    //         if (max_id > 0 && max_id != last_processed_id) {
+    //             last_processed_id = max_id;
+    //             latest_pose = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
+    //             auto it = vizData->points->find(max_id);
+
+    //             if (it != vizData->points->end()) {
+    //                 // --- 3. Remove the oldest cloud if the window is full ---
+    //                 if (displayed_frame_ids.size() >= kSlidingWindowSize) {
+    //                     uint64_t id_to_remove = displayed_frame_ids.front();
+    //                     std::string cloud_id_to_remove = "map_cloud_" + std::to_string(id_to_remove);
+    //                     viewer->removePointCloud(cloud_id_to_remove);
+    //                     displayed_frame_ids.pop_front();
+    //                 }
+
+    //                 // --- 4. Prepare the new cloud ---
+    //                 pcl::PointCloud<pcl::PointXYZI>::Ptr raw_cloud = it->second.points;
+    //                 pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+    //                 pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+    //                 pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+
+    //                 // Transform and downsample the new cloud
+    //                 pcl::transformPointCloud(*raw_cloud, *transformed_cloud, latest_pose.matrix().cast<float>());
+    //                 vg.setInputCloud(transformed_cloud);
+    //                 vg.filter(*downsampled_cloud);
+    //                 pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
+            
+    //                 pass_spatial.setFilterFieldName("z");
+    //                 pass_spatial.setFilterLimits(-300.0, 0.0);
+
+    //                 // for (auto& point : downsampled_cloud->points) {
+    //                 //     point.x = point.x;    // 
+    //                 //     point.y = -point.y; // 
+    //                 //     point.z = point.z;   // 
+    //                 // }
+    //                 pass_spatial.setInputCloud(downsampled_cloud); //
+    //                 pass_spatial.filter(*spatial_cloud);
+
+    //                 // --- 5. Add the new cloud to the viewer with a unique ID ---
+    //                 std::string cloud_id_to_add = "map_cloud_" + std::to_string(max_id);
+    //                 pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(spatial_cloud, "intensity");
+    //                 viewer->addPointCloud(spatial_cloud, color_handler, cloud_id_to_add);
+    //                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
+
+    //                 // Add the new frame's ID to our tracking deque
+    //                 displayed_frame_ids.push_back(max_id);
+    //             }
+    //         }
+
+    //         // --- 6. Update the ENTIRE trajectory (this logic is correct) ---
+    //         trajectory_cloud->clear();
+    //         for (const auto& key_value : *(vizData->poses)) {
+    //             gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+    //             pcl::PointXYZRGB trajectory_point;
+    //             trajectory_point.x = pose.translation().x();
+    //             trajectory_point.y = pose.translation().y();
+    //             trajectory_point.z = pose.translation().z();
+    //             trajectory_point.r = 255;
+    //             trajectory_point.g = 10;
+    //             trajectory_point.b = 10;
+    //             trajectory_cloud->push_back(trajectory_point);
+    //         }
+
+    //         // Use updatePointCloud for efficiency; it will add the cloud if it doesn't exist
+    //         if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
+    //             viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
+    //             viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
+    //         }
+            
+    //         viewer->spinOnce(100);
+    //     }
+    //     std::cout << "Visualization thread exiting\n";
+    // });
 
     //####################################################################################################
     // Cleanup
@@ -599,13 +767,13 @@ int main() {
     lidarQueue.stop();
     compQueue.stop();
     dataQueue.stop();
-    vizQueue.stop();
+    // vizQueue.stop();
 
     if (lidar_iothread.joinable()) lidar_iothread.join();
     if (comp_iothread.joinable()) comp_iothread.join();
     if (sync_thread.joinable()) sync_thread.join();
-    if (gtsam_thread.joinable()) gtsam_thread.join();
-    if (viz_thread.joinable()) viz_thread.join();
+    // if (gtsam_thread.joinable()) gtsam_thread.join();
+    // if (viz_thread.joinable()) viz_thread.join();
     
     std::cout << "All threads have been joined. Shutdown complete." << std::endl;
 }
