@@ -398,14 +398,14 @@ int main() {
                         const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
                         insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
                         gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    } else {
-                        gtsam::Pose3 insFactor(Tb2m);
-                        const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
-                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    }
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));}
+                    // } else {
+                    //     gtsam::Pose3 insFactor(Tb2m);
+                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                    //     insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
+                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
+                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    // }
                 }
 
                 // ###########LOOP CLOSURE
