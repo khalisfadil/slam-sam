@@ -333,10 +333,10 @@ int main() {
 
                 if (is_first_keyframe) {
                     rlla = lla;
-                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
                     Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
-                    Tb2m.block<3,1>(0,3) = tb2m;
+                    Tb2m.block<3,1>(0,3) = -Cb2m*tm2b;
 
                     gtsam::Pose3 insFactor(Tb2m);
                     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
@@ -345,10 +345,10 @@ int main() {
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
 
                 } else {
-                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
                     Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
-                    Tb2m.block<3,1>(0,3) = tb2m;
+                    Tb2m.block<3,1>(0,3) = -Cb2m*tm2b;
 
                     gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
                     newEstimates.insert(Symbol('x', id), initialFactor);
