@@ -247,8 +247,10 @@ void LidarCallback::Initialize() {
     }
 
     Eigen::Matrix4d lidar_to_body_transform = Eigen::Matrix4d::Identity();
-    lidar_to_body_transform.block<3,3>(0,0) = body_to_lidar_rotation_.transpose();
-    lidar_to_body_transform.block<3,1>(0,3) = -body_to_lidar_rotation_.transpose() * body_to_lidar_translation_;// Chain if needed, assuming this is the full transform
+    Eigen::Matrix4d body_to_lidar_transform = Eigen::Matrix4d::Identity();
+    body_to_lidar_transform.block<3,3>(0,0) = body_to_lidar_rotation_;
+    body_to_lidar_transform.block<3,1>(0,3) = body_to_lidar_translation_;// Chain if needed, assuming this is the full transform
+    lidar_to_body_transform = body_to_lidar_transform.inverse();
 
     for (int m_id = 0; m_id < columns_per_frame_; ++m_id) {
         float measurement_azimuth_rad = m_id * 2.0f * static_cast<float>(M_PI) / columns_per_frame_;
