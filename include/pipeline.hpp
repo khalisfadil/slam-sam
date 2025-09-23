@@ -93,8 +93,8 @@ void manualTransformPointCloud_RowBased(
             Eigen::RowVector3f p_out_row_vec = p_in_row_vec * rotation_matrix.transpose() + translation_row_vector;
 
             auto& p_out = cloud_out.points[i];
-            p_out.x = -p_out_row_vec.x();
-            p_out.y = p_out_row_vec.y();
+            p_out.y = p_out_row_vec.x();
+            p_out.x = p_out_row_vec.y();
             p_out.z = p_out_row_vec.z();
             p_out.intensity = p_in.intensity;
         }
