@@ -252,6 +252,8 @@ void LidarCallback::Initialize() {
     body_to_lidar_transform.block<3,1>(0,3) = body_to_lidar_translation_;// Chain if needed, assuming this is the full transform
     lidar_to_body_transform = body_to_lidar_transform.inverse();
 
+    Eigen::Matrix3d lidar_to_body_rotation = lidar_to_body_transform.block<3,3>(0,0);
+
     for (int m_id = 0; m_id < columns_per_frame_; ++m_id) {
         float measurement_azimuth_rad = m_id * 2.0f * static_cast<float>(M_PI) / columns_per_frame_;
         float cos_meas_az = std::cos(measurement_azimuth_rad);
@@ -276,8 +278,12 @@ void LidarCallback::Initialize() {
             float cos_alt = cos_beam_altitudes_[ch];
             float sin_alt = sin_beam_altitudes_[ch];
 
-            Eigen::Vector4d dir_lidar_frame(cos_alt * cos_total_az, cos_alt * sin_total_az, sin_alt, 0.0);
-            Eigen::Vector4d dir_transformed = lidar_to_body_transform * dir_lidar_frame;
+            // --- FIX: Use 3x3 rotation for the 3D direction vector ---
+            Eigen::Vector3d dir_lidar_frame(cos_alt * cos_total_az, cos_alt * sin_total_az, sin_alt);
+            Eigen::Vector3d dir_transformed = lidar_to_body_rotation * dir_lidar_frame; // Correct transformation
+
+            // Eigen::Vector4d dir_lidar_frame(cos_alt * cos_total_az, cos_alt * sin_total_az, sin_alt, 0.0);
+            // Eigen::Vector4d dir_transformed = lidar_to_body_transform * dir_lidar_frame;
             x_1_[m_id][ch] = static_cast<float>(dir_transformed.x());
             y_1_[m_id][ch] = static_cast<float>(dir_transformed.y());
             z_1_[m_id][ch] = static_cast<float>(dir_transformed.z());
