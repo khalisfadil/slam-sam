@@ -36,7 +36,7 @@ struct ImuData{
 // %            ... struct representing single frame in position data (GPS,GNSS,INS, etc..)
 struct PositionData{
     Eigen::Vector3d pose = Eigen::Vector3d::Zero();                 // position latitude[rad],longitude[rad],altitude[m] in sensor frame                          ([rad],[rad],[m])
-    Eigen::Vector3f euler = Eigen::Vector3d::Zero();
+    Eigen::Vector3f euler = Eigen::Vector3f::Zero();
     Eigen::Quaternionf orientation = Eigen::Quaternionf::Identity(); // orientation as quaternion (w, x, y, z)
     Eigen::Vector3f poseStdDev = Eigen::Vector3f::Zero();           // standard deviation in north,east,down in sensor frame   
     Eigen::Vector3f eulerStdDev = Eigen::Vector3f::Zero();          // standard deviation in north,east,down in sensor frame                                   [m]
