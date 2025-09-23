@@ -339,7 +339,8 @@ int main() {
                 Tb2m.block<3,1>(0,3) = tm2b;
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
+                // pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
+                manualTransformPointCloud_RowBased(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
                 // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
@@ -396,6 +397,37 @@ int main() {
         }
         std::cout << "INS viz thread exiting\n";
     });
+
+    void manualTransformPointCloud_RowBased(
+        const pcl::PointCloud<pcl::PointXYZI>& cloud_in,
+        pcl::PointCloud<pcl::PointXYZI>& cloud_out,
+        const Eigen::Matrix4f& transform)
+    {
+        cloud_out.clear();
+        cloud_out.resize(cloud_in.size());
+
+        // Extract the 3x3 rotation matrix (R).
+        Eigen::Matrix3f rotation_matrix = transform.block<3, 3>(0, 0);
+        // Extract the translation vector and represent it as a 1x3 row vector.
+        Eigen::RowVector3f translation_row_vector = transform.block<3, 1>(0, 3).transpose();
+
+        for (size_t i = 0; i < cloud_in.size(); ++i) {
+            const auto& p_in = cloud_in.points[i];
+
+            // Represent the input point as a 1x3 Eigen Row Vector.
+            Eigen::RowVector3f p_in_row_vec(p_in.x, p_in.y, p_in.z);
+
+            // --- THE CORE ROW-BASED TRANSFORMATION ---
+            // Mimics MATLAB: p' = p * R' + t
+            Eigen::RowVector3f p_out_row_vec = p_in_row_vec * rotation_matrix.transpose() + translation_row_vector;
+
+            auto& p_out = cloud_out.points[i];
+            p_out.x = p_out_row_vec.x();
+            p_out.y = p_out_row_vec.y();
+            p_out.z = p_out_row_vec.z();
+            p_out.intensity = p_in.intensity;
+        }
+    }
     //####################################################################################################
     // auto gtsam_thread = std::thread([&registerCallback, &dataQueue, &vizQueue]() {
     //     // --- MAPS AND NDT ARE NOW DECLARED AND OWNED BY THIS THREAD ---
