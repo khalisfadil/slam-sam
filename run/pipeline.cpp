@@ -263,13 +263,11 @@ int main() {
     });
     //####################################################################################################
     auto ins_viz_thread = std::thread([&registerCallback, &dataQueue]() {
-        // --- ARCHIVES & STATE VARIABLES ---
         PointsHashMap pointsArchive;
         PoseHashMap insPosesArchive;
         Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
         bool is_first_keyframe = true;
 
-        // --- PCL VIEWER SETUP ---
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("INS Map and Trajectory");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
@@ -278,7 +276,6 @@ int main() {
 
         try {
             while (running && !viewer->wasStopped()) {
-                // --- DATA ACQUISITION ---
                 auto data_frame = dataQueue.pop();
                 if (!data_frame) {
                     if (!running) std::cout << "Data queue stopped, exiting INS viz thread.\n";
@@ -290,7 +287,7 @@ int main() {
                     continue;
                 }
 
-                // --- DATA EXTRACTION ---
+                // --- DATA EXTRACTION & POSE CALCULATION (No changes here) ---
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
@@ -302,9 +299,6 @@ int main() {
                 }
 
                 uint64_t id = data_frame->points.frame_id;
-                double timestamp = data_frame->timestamp;
-
-                // --- POSE CALCULATION ---
                 Eigen::Vector3d t_body_in_map = Eigen::Vector3d::Zero();
                 if (is_first_keyframe) {
                     rlla = lla;
@@ -323,48 +317,39 @@ int main() {
                 Tb2m.block<3,3>(0,0) = Cb2m;
                 Tb2m.block<3,1>(0,3) = t_body_in_map;
 
-                // --- POINT CLOUD TRANSFORMATION ---
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
-                // --- DATA ARCHIVING ---
+                // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
-                pointsArchive[id] = {pointsMap, timestamp};
-                insPosesArchive[id] = {Tb2m, timestamp};
+                pointsArchive[id] = {pointsMap, data_frame->timestamp};
+                insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
-                viewer->addCoordinateSystem(10.0, "world_origin");
 
                 // Display the latest point cloud scan (map).
-                pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMap(new pcl::PointCloud<pcl::PointXYZI>());
-                for (const auto& it : pointsArchive) {
-                    auto pcl = it.second.points;
-                    if (pcl && !pcl->empty()) {
-                        *aggregatedMap += *pcl;
-                    }
-                }
-
                 pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMapDS(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::VoxelGrid<pcl::PointXYZI> vg;
-                vg.setLeafSize(1.5f, 1.5f, 1.5f);
-                if (!aggregatedMap->empty()) {
-                    vg.setInputCloud(aggregatedMap);
-                    vg.filter(*aggregatedMapDS);
+                if(!pointsArchive.empty()){
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMap = pointsArchive.begin()->second.points;
+                    pcl::VoxelGrid<pcl::PointXYZI> vg;
+                    vg.setLeafSize(1.5f, 1.5f, 1.5f);
+                    if (!aggregatedMap->empty()) {
+                        vg.setInputCloud(aggregatedMap);
+                        vg.filter(*aggregatedMapDS);
+                    }
                 }
 
                 pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(aggregatedMapDS, "intensity");
                 viewer->addPointCloud(aggregatedMapDS, map_color_handler, "map_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
 
-                // --- FIX: Access the latest pose directly by its key (id) ---
-                if (insPosesArchive.count(id)) { // Check if the key exists
-                    const auto& latest_pose_matrix = insPosesArchive.at(id).pose;
-                    
-                    Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
-                    vehicle_pose.matrix() = latest_pose_matrix.cast<float>();
-                    viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
-                }
+                // --- FIX: Remove the old coordinate system before adding the new one ---
+                viewer->removeCoordinateSystem("vehicle_pose"); // Remove the previous frame
+                
+                Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
+                vehicle_pose.matrix() = Tb2m.cast<float>();
+                viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose"); // Add the new one
 
                 // Display the full accumulated trajectory.
                 pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
@@ -374,9 +359,7 @@ int main() {
                     point.x = pose(0, 3);
                     point.y = pose(1, 3);
                     point.z = pose(2, 3);
-                    point.r = 255;
-                    point.g = 10;
-                    point.b = 10;
+                    point.r = 255; point.g = 10; point.b = 10;
                     trajectory_cloud->push_back(point);
                 }
 
