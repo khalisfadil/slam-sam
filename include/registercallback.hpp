@@ -23,7 +23,9 @@ class RegisterCallback {
         Eigen::Vector3d lla2ned(double lat, double lon, double alt, double rlat, double rlon, double ralt);
         Eigen::Vector3d ned2lla(double n, double e, double d, double rlat, double rlon, double ralt);
         double SymmetricalAngle(double x);
+        Eigen::Matrix3f Cb2n(const Eigen::Quaternionf& q) ;
         Eigen::Matrix<double, 6, 6> reorderCovarianceForGTSAM(const Eigen::Matrix<double, 6, 6>& ndt_covariance);
+
 
         pcl::Registration <pcl::PointXYZI, pcl::PointXYZI>::Ptr registration;
 

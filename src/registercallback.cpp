@@ -156,3 +156,40 @@ Eigen::Matrix<double, 6, 6> RegisterCallback::reorderCovarianceForGTSAM(
     return gtsam_covariance;
 }
 
+Eigen::Matrix3f RegisterCallback::Cb2n(const Eigen::Quaternionf& q) {
+    // Extract quaternion components. Eigen's convention is (w, x, y, z).
+    float w = q.w();
+    float x = q.x();
+    float y = q.y();
+    float z = q.z();
+
+    // Pre-calculate squared terms and products
+    float q0q0 = w * w;
+    float q1q1 = x * x;
+    float q2q2 = y * y;
+    float q3q3 = z * z;
+    float q1q2 = x * y;
+    float q0q3 = w * z;
+    float q1q3 = x * z;
+    float q0q2 = w * y;
+    float q2q3 = y * z;
+    float q0q1 = w * x;
+
+    Eigen::Matrix3f C;
+    
+    // Assemble the matrix using the same formula as the MATLAB script
+    C(0, 0) = q0q0 + q1q1 - q2q2 - q3q3;
+    C(0, 1) = 2.0f * (q1q2 - q0q3);
+    C(0, 2) = 2.0f * (q1q3 + q0q2);
+
+    C(1, 0) = 2.0f * (q1q2 + q0q3);
+    C(1, 1) = q0q0 - q1q1 + q2q2 - q3q3;
+    C(1, 2) = 2.0f * (q2q3 - q0q1);
+
+    C(2, 0) = 2.0f * (q1q3 - q0q2);
+    C(2, 1) = 2.0f * (q2q3 + q0q1);
+    C(2, 2) = q0q0 - q1q1 - q2q2 + q3q3;
+            
+    return C;
+}
+
