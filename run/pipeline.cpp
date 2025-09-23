@@ -316,6 +316,7 @@ int main() {
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
                 const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                Eigen::Vector3d tm2b = Eigen::Vector3d::Zero();
                 
 
                 uint64_t id = data_frame->points.frame_id;
@@ -330,10 +331,11 @@ int main() {
 
                 gtsam::NonlinearFactorGraph newFactors;
                 gtsam::Values newEstimates;
+                
 
                 if (is_first_keyframe) {
                     rlla = lla;
-                    Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
                     Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
                     Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
@@ -347,9 +349,9 @@ int main() {
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
 
                 } else {
-                    Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                     Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
+                    Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
                     Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
                     Tm2b.block<3,1>(0,3) = tm2b;
                     Tb2m = Tm2b.inverse();
