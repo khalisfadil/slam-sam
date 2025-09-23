@@ -472,8 +472,8 @@ int main() {
                 //     }
                 // }
                 // ########################
-                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.matrix().cast<float>());
+                // pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+                // pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.matrix().cast<float>());
 
                 // isam2.update(newFactors, newEstimates);
                 
@@ -504,7 +504,7 @@ int main() {
                     // spatialArchive[key].push_back({id, timestamp});
                 // }
                 pointsArchive.clear();
-                pointsArchive[id] = {pointsMap, timestamp};
+                pointsArchive[id] = {pointsBody, timestamp};
                 last_id = id; 
 
                 // if (!Val.empty()) {
