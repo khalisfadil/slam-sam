@@ -336,7 +336,7 @@ int main() {
 
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 Tb2m.block<3,3>(0,0) = Cb2m.transpose();
-                Tb2m.block<3,1>(0,3) = -Cb2m.transpose() *tm2b;
+                Tb2m.block<3,1>(0,3) = tm2b;
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
