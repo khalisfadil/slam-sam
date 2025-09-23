@@ -523,7 +523,7 @@ int main() {
                 // std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
                 // std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
                 // std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
-                // std::cout << std::fixed << "Tb2m....................................\n" << lidarFactorSourceTb2m << std::endl;
+                std::cout << std::fixed << "Tb2m....................................\n" << Tb2m << std::endl;
                 // std::cout << std::fixed << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
                 // std::cout << std::fixed << ".................................................." << std::endl;
             }
