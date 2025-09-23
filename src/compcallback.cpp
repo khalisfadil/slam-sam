@@ -193,10 +193,9 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
     std::memcpy(&frame.velocityDown, packet.data() + 49, sizeof(float));
 
     // Body Acceleration X, Y, Z (Bytes 53-64, fp32, treat as sensor frame IMU data)
-    float accelX_raw, accelY_raw, accelZ_raw;
-    std::memcpy(&accelX_raw, packet.data() + 53, sizeof(float));
-    std::memcpy(&accelY_raw, packet.data() + 57, sizeof(float));
-    std::memcpy(&accelZ_raw, packet.data() + 61, sizeof(float));
+    std::memcpy(&frame.accelX, packet.data() + 53, sizeof(float));
+    std::memcpy(&frame.accelY, packet.data() + 57, sizeof(float));
+    std::memcpy(&frame.accelZ, packet.data() + 61, sizeof(float));
 
     // G Force (Bytes 65-68, fp32)
     std::memcpy(&frame.gForce, packet.data() + 65, sizeof(float));
@@ -208,37 +207,17 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
     std::memcpy(&yaw, packet.data() + 77, sizeof(float));
 
     // Angular Velocity X, Y, Z (Bytes 81-92, fp32, treat as sensor frame IMU data)
-    float angularVelocityX_raw, angularVelocityY_raw, angularVelocityZ_raw;
-    std::memcpy(&angularVelocityX_raw, packet.data() + 81, sizeof(float));
-    std::memcpy(&angularVelocityY_raw, packet.data() + 85, sizeof(float));
-    std::memcpy(&angularVelocityZ_raw, packet.data() + 89, sizeof(float));
+    std::memcpy(&frame.angularVelocityX, packet.data() + 81, sizeof(float));
+    std::memcpy(&frame.angularVelocityY, packet.data() + 85, sizeof(float));
+    std::memcpy(&frame.angularVelocityZ, packet.data() + 89, sizeof(float));
 
     // Standard Deviations (Bytes 93-104, fp32)
     std::memcpy(&frame.sigmaLatitude, packet.data() + 93, sizeof(float));
     std::memcpy(&frame.sigmaLongitude, packet.data() + 97, sizeof(float));
     std::memcpy(&frame.sigmaAltitude, packet.data() + 101, sizeof(float));
 
-    // Process IMU data: subtract biases
-    Eigen::Vector3d acc_sensor(accelX_raw, accelY_raw, accelZ_raw);
-    // acc_sensor -= biasAccelerometer_; // Subtract accelerometer bias
-
     // Convert Euler angles (ZYX convention) to quaternion
-    frame.orientation = Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()) * 
-                    Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) * 
-                    Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX());
-
-    Eigen::Vector3d acc_body = body_to_imu_rotation_.transpose() * acc_sensor;
-    frame.accelX = static_cast<float>(acc_body(0));
-    frame.accelY = static_cast<float>(acc_body(1));
-    frame.accelZ = static_cast<float>(acc_body(2));
-
-    Eigen::Vector3d ang_sensor(angularVelocityX_raw, angularVelocityY_raw, angularVelocityZ_raw);
-    // ang_sensor -= biasGyroscope_; // Subtract gyroscope bias
-
-    Eigen::Vector3d ang_body = body_to_imu_rotation_.transpose() * ang_sensor;
-    frame.angularVelocityX = static_cast<float>(ang_body(0));
-    frame.angularVelocityY = static_cast<float>(ang_body(1));
-    frame.angularVelocityZ = static_cast<float>(ang_body(2));
+    frame.orientation = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
 
     // Compute standard deviations in sensor frame
     double dt = 1.0 / updateRate_;

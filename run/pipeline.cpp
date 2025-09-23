@@ -231,9 +231,9 @@ int main() {
                 dataFrame->position.reserve(current_comp_window->size() + 2);
 
                 // Add interpolated start point
-                // CompFrame start_frame = getInterpolated(start_interval, current_comp_window);
-                // dataFrame->imu.push_back(start_frame.toImuData()); //
-                // dataFrame->position.push_back(start_frame.toPositionData()); //
+                CompFrame start_frame = getInterpolated(start_interval, current_comp_window);
+                dataFrame->imu.push_back(start_frame.toImuData()); //
+                dataFrame->position.push_back(start_frame.toPositionData()); //
 
                 // Add intermediate points
                 for (const auto& data : *current_comp_window) {
@@ -244,9 +244,9 @@ int main() {
                 }
 
                 // Add interpolated end point
-                // CompFrame end_frame = getInterpolated(end_interval, current_comp_window);
-                // dataFrame->imu.push_back(end_frame.toImuData()); //
-                // dataFrame->position.push_back(end_frame.toPositionData()); //
+                CompFrame end_frame = getInterpolated(end_interval, current_comp_window);
+                dataFrame->imu.push_back(end_frame.toImuData()); //
+                dataFrame->position.push_back(end_frame.toPositionData()); //
 
                 // std::cout << "Generated compass data with " << dataFrame->imu.size() << " frames for the interval.\n";
                 // std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
