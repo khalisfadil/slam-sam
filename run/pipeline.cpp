@@ -263,11 +263,15 @@ int main() {
     });
     //####################################################################################################
     auto ins_viz_thread = std::thread([&registerCallback, &dataQueue]() {
+        // --- ARCHIVES & STATE VARIABLES ---
+        // Per your request, pointsArchive is cleared each frame to only show the latest scan.
+        // insPosesArchive accumulates to show the full trajectory.
         PointsHashMap pointsArchive;
         PoseHashMap insPosesArchive;
         Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
         bool is_first_keyframe = true;
 
+        // --- PCL VIEWER SETUP ---
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("INS Map and Trajectory");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
@@ -276,122 +280,117 @@ int main() {
 
         try {
             while (running && !viewer->wasStopped()) {
+                // --- DATA ACQUISITION ---
                 auto data_frame = dataQueue.pop();
                 if (!data_frame) {
                     if (!running) std::cout << "Data queue stopped, exiting INS viz thread.\n";
                     break;
                 }
 
-                // Validate input data
                 if (data_frame->position.empty()) {
                     std::cerr << "Frame ID: " << data_frame->points.frame_id << " has empty position data, skipping.\n";
                     continue;
                 }
 
+                // --- DATA EXTRACTION ---
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
+
+                // ##############################################################################
+                // # CRITICAL NOTE: This thread ASSUMES the orientation data is correct.         #
+                // # The root cause of the rotational error ("map horizontal, trajectory north")  #
+                // # is the incorrect Euler-to-quaternion conversion in `compcallback.cpp`.       #
+                // # That bug MUST be fixed for this visualization to display correctly.          #
+                // ##############################################################################
                 const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
 
-                // Validate orientation matrix
                 if (!Cb2m.allFinite() || std::abs(Cb2m.determinant() - 1.0) > 1e-6) {
                     std::cerr << "Frame ID: " << data_frame->points.frame_id << " has invalid orientation matrix, skipping.\n";
                     continue;
                 }
 
-                Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
-                Eigen::Vector3d tm2b = Eigen::Vector3d::Zero();
-
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
 
-                // Convert LLA to NED
+                // --- POSE CALCULATION ---
+                // Convert LLA to a local NED frame.
+                Eigen::Vector3d t_body_in_map = Eigen::Vector3d::Zero();
                 if (is_first_keyframe) {
                     rlla = lla;
-                    tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
+                    t_body_in_map = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                     is_first_keyframe = false;
                 } else {
-                    tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
+                    t_body_in_map = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                 }
 
-                // Validate NED coordinates
-                if (!tm2b.allFinite()) {
+                if (!t_body_in_map.allFinite()) {
                     std::cerr << "Frame ID: " << id << " has invalid NED coordinates, skipping.\n";
                     continue;
                 }
 
-                // Compute Tm2b (map to body)
-                Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
-                Tm2b.block<3,1>(0,3) = -Tm2b.block<3,3>(0,0) * tm2b; // Correct translation
+                // Direct construction of the body-to-map transformation matrix (Tb2m).
+                Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                Tb2m.block<3,3>(0,0) = Cb2m;
+                Tb2m.block<3,1>(0,3) = t_body_in_map;
 
-                // Compute Tb2m (body to map) as inverse
-                Tb2m = Tm2b.inverse();
-
-                // Transform point cloud to map frame (NED)
+                // --- POINT CLOUD TRANSFORMATION ---
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
-                // Store in archives
+                // --- DATA ARCHIVING ---
                 pointsArchive.clear();
-                pointsArchive[id] = {pointsBody, timestamp};
+                pointsArchive[id] = {pointsMap, timestamp};
                 insPosesArchive[id] = {Tb2m, timestamp};
 
-                // Visualization: Clear all existing point clouds
+                // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
+                viewer->addCoordinateSystem(10.0, "world_origin");
 
-                // Aggregate all point clouds from pointsArchive
+                // Display the latest point cloud scan (map).
                 pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMap(new pcl::PointCloud<pcl::PointXYZI>());
-                for (const auto& it : pointsArchive) {
+                for (const auto& it : pointsArchive) { // This loop will only run once.
                     auto pcl = it.second.points;
                     if (pcl && !pcl->empty()) {
                         *aggregatedMap += *pcl;
                     }
                 }
 
-                // Downsample the aggregated point cloud
                 pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMapDS(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::VoxelGrid<pcl::PointXYZI> vg;
                 vg.setLeafSize(1.5f, 1.5f, 1.5f);
                 if (!aggregatedMap->empty()) {
                     vg.setInputCloud(aggregatedMap);
                     vg.filter(*aggregatedMapDS);
-                } else {
-                    aggregatedMapDS = aggregatedMap;
                 }
 
-                // Add the map point cloud (in NED frame)
                 pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(aggregatedMapDS, "intensity");
                 viewer->addPointCloud(aggregatedMapDS, map_color_handler, "map_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
+                
+                // Display the vehicle's coordinate frame at its latest pose.
+                Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
+                vehicle_pose.matrix() = Tb2m.cast<float>();
+                viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
 
-                // Create INS trajectory point cloud from insPosesArchive
+                // Display the full accumulated trajectory.
                 pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
                 for (const auto& kv : insPosesArchive) {
                     const auto& pose = kv.second.pose;
                     pcl::PointXYZRGB point;
-                    point.x = pose(0, 3); // Translation x
-                    point.y = pose(1, 3); // Translation y
-                    point.z = pose(2, 3); // Translation z
-                    point.r = 255; // Red for trajectory
+                    point.x = pose(0, 3);
+                    point.y = pose(1, 3);
+                    point.z = pose(2, 3);
+                    point.r = 255;
                     point.g = 10;
                     point.b = 10;
                     trajectory_cloud->push_back(point);
                 }
 
-                // Add the trajectory
                 if (!trajectory_cloud->empty()) {
                     viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
                     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
                 }
-
-                // Debug output
-                std::cout << std::fixed << "Frame ID: " << id << "\n";
-                std::cout << std::fixed << "rlla: " << rlla.transpose() << "\n";
-                std::cout << std::fixed << "lla: " << lla.transpose() << "\n";
-                std::cout << std::fixed << "tm2b: " << tm2b.transpose() << "\n";
-                std::cout << std::fixed << "Tb2m:\n" << Tb2m << "\n";
-                std::cout << std::fixed << "Tm2b:\n" << Tm2b << "\n";
 
                 viewer->spinOnce(100);
             }
