@@ -264,8 +264,6 @@ int main() {
     //####################################################################################################
     auto ins_viz_thread = std::thread([&registerCallback, &dataQueue]() {
         // --- ARCHIVES & STATE VARIABLES ---
-        // Per your request, pointsArchive is cleared each frame to only show the latest scan.
-        // insPosesArchive accumulates to show the full trajectory.
         PointsHashMap pointsArchive;
         PoseHashMap insPosesArchive;
         Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
@@ -297,12 +295,6 @@ int main() {
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
 
-                // ##############################################################################
-                // # CRITICAL NOTE: This thread ASSUMES the orientation data is correct.         #
-                // # The root cause of the rotational error ("map horizontal, trajectory north")  #
-                // # is the incorrect Euler-to-quaternion conversion in `compcallback.cpp`.       #
-                // # That bug MUST be fixed for this visualization to display correctly.          #
-                // ##############################################################################
                 const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
 
                 if (!Cb2m.allFinite() || std::abs(Cb2m.determinant() - 1.0) > 1e-6) {
@@ -314,7 +306,6 @@ int main() {
                 double timestamp = data_frame->timestamp;
 
                 // --- POSE CALCULATION ---
-                // Convert LLA to a local NED frame.
                 Eigen::Vector3d t_body_in_map = Eigen::Vector3d::Zero();
                 if (is_first_keyframe) {
                     rlla = lla;
@@ -329,7 +320,6 @@ int main() {
                     continue;
                 }
 
-                // Direct construction of the body-to-map transformation matrix (Tb2m).
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 Tb2m.block<3,3>(0,0) = Cb2m;
                 Tb2m.block<3,1>(0,3) = t_body_in_map;
@@ -349,7 +339,7 @@ int main() {
 
                 // Display the latest point cloud scan (map).
                 pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMap(new pcl::PointCloud<pcl::PointXYZI>());
-                for (const auto& it : pointsArchive) { // This loop will only run once.
+                for (const auto& it : pointsArchive) {
                     auto pcl = it.second.points;
                     if (pcl && !pcl->empty()) {
                         *aggregatedMap += *pcl;
@@ -367,11 +357,16 @@ int main() {
                 pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(aggregatedMapDS, "intensity");
                 viewer->addPointCloud(aggregatedMapDS, map_color_handler, "map_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
-                
+
                 // Display the vehicle's coordinate frame at its latest pose.
-                Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
-                vehicle_pose.matrix() = Tb2m.cast<float>();
-                viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
+                if (!insPosesArchive.empty()) {
+                    // Find the latest pose in the map (C++ maps are sorted by key)
+                    const auto& latest_pose_matrix = insPosesArchive.rbegin()->second.pose;
+                    
+                    Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
+                    vehicle_pose.matrix() = latest_pose_matrix.cast<float>();
+                    viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
+                }
 
                 // Display the full accumulated trajectory.
                 pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
