@@ -263,14 +263,14 @@ int main() {
     });
     //####################################################################################################
     auto ins_viz_thread = std::thread([&registerCallback, &dataQueue]() {
-    // --- ARCHIVES & STATE VARIABLES ---
-    PointsHashMap pointsArchive;
-    PoseHashMap insPosesArchive;
-    Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
-    bool is_first_keyframe = true;
+        // --- ARCHIVES & STATE VARIABLES ---
+        PointsHashMap pointsArchive;
+        PoseHashMap insPosesArchive;
+        Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
+        bool is_first_keyframe = true;
 
-    // --- PCL VIEWER SETUP ---
-    auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("INS Map and Trajectory");
+        // --- PCL VIEWER SETUP ---
+        auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("INS Map and Trajectory");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
         viewer->initCameraParameters();
