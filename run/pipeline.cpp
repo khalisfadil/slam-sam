@@ -263,14 +263,14 @@ int main() {
     });
     //####################################################################################################
     auto ins_viz_thread = std::thread([&registerCallback, &dataQueue]() {
-        // --- ARCHIVES & STATE VARIABLES ---
-        PointsHashMap pointsArchive;
-        PoseHashMap insPosesArchive;
-        Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
-        bool is_first_keyframe = true;
+    // --- ARCHIVES & STATE VARIABLES ---
+    PointsHashMap pointsArchive;
+    PoseHashMap insPosesArchive;
+    Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
+    bool is_first_keyframe = true;
 
-        // --- PCL VIEWER SETUP ---
-        auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("INS Map and Trajectory");
+    // --- PCL VIEWER SETUP ---
+    auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("INS Map and Trajectory");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
         viewer->initCameraParameters();
@@ -294,7 +294,6 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
-
                 const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
 
                 if (!Cb2m.allFinite() || std::abs(Cb2m.determinant() - 1.0) > 1e-6) {
@@ -358,10 +357,9 @@ int main() {
                 viewer->addPointCloud(aggregatedMapDS, map_color_handler, "map_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
 
-                // Display the vehicle's coordinate frame at its latest pose.
-                if (!insPosesArchive.empty()) {
-                    // Find the latest pose in the map (C++ maps are sorted by key)
-                    const auto& latest_pose_matrix = insPosesArchive.rbegin()->second.pose;
+                // --- FIX: Access the latest pose directly by its key (id) ---
+                if (insPosesArchive.count(id)) { // Check if the key exists
+                    const auto& latest_pose_matrix = insPosesArchive.at(id).pose;
                     
                     Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
                     vehicle_pose.matrix() = latest_pose_matrix.cast<float>();
