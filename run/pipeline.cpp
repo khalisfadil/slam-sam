@@ -299,23 +299,23 @@ int main() {
                 }
 
                 uint64_t id = data_frame->points.frame_id;
-                Eigen::Vector3d t_body_in_map = Eigen::Vector3d::Zero();
+                Eigen::Vector3d tm2b = Eigen::Vector3d::Zero();
                 if (is_first_keyframe) {
                     rlla = lla;
-                    t_body_in_map = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
+                    tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                     is_first_keyframe = false;
                 } else {
-                    t_body_in_map = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
+                    tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                 }
 
-                if (!t_body_in_map.allFinite()) {
+                if (!tm2b.allFinite()) {
                     std::cerr << "Frame ID: " << id << " has invalid NED coordinates, skipping.\n";
                     continue;
                 }
 
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                Tb2m.block<3,3>(0,0) = Cb2m;
-                Tb2m.block<3,1>(0,3) = t_body_in_map;
+                Tb2m.block<3,3>(0,0) = Cb2m.transpose();
+                Tb2m.block<3,1>(0,3) = tm2b;
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
