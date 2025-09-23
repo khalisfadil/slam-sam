@@ -354,51 +354,51 @@ int main() {
                     Tm2b.block<3,1>(0,3) = tm2b;
                     Tb2m = Tm2b.inverse();
 
-                    gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
-                    newEstimates.insert(Symbol('x', id), initialFactor);
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                    const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
-                    gtsam::Pose3 lidarFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
-                    pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
-                    registerCallback.registration->setInputTarget(lidarFactorPointsTarget);
-                    registerCallback.registration->setInputSource(pointsBody);
-                    auto align_start = std::chrono::high_resolution_clock::now();
-                    registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
-                    auto align_end = std::chrono::high_resolution_clock::now();
-                    align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
-                    if (registerCallback.registration->hasConverged()) {
-                        std::cout << "Registration converged." << std::endl;
-                        lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
-                        if (ndt_omp) {
-                            auto ndt_result = ndt_omp->getResult();
-                            ndt_iter = ndt_result.iteration_num;
-                            const auto& hessian = ndt_result.hessian;
-                            Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                            if (regularized_hessian.determinant() > 1e-6) {
-                                lidarCov = -regularized_hessian.inverse() * lidarCovScalingVector.asDiagonal();
-                                lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                                std::cout << "Covariance estimated from NDT Hessian.\n";
-                            }
-                        } 
-                        // gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
-                        // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
-                    } else {
-                        gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
-                        Eigen::Matrix<double, 6, 6> covariance;
-                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity();
-                        // lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                        // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
-                    }
-                    // Also add a GPS prior if the data is reliable.
-                    if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
-                        gtsam::Pose3 insFactor(Tb2m);
-                        const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
-                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));}
+                    // gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
+                    // newEstimates.insert(Symbol('x', id), initialFactor);
+                    // pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
+                    // pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+                    // const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
+                    // gtsam::Pose3 lidarFactorTargetTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
+                    // pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
+                    // registerCallback.registration->setInputTarget(lidarFactorPointsTarget);
+                    // registerCallback.registration->setInputSource(pointsBody);
+                    // auto align_start = std::chrono::high_resolution_clock::now();
+                    // registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
+                    // auto align_end = std::chrono::high_resolution_clock::now();
+                    // align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
+                    // if (registerCallback.registration->hasConverged()) {
+                    //     std::cout << "Registration converged." << std::endl;
+                    //     lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
+                    //     if (ndt_omp) {
+                    //         auto ndt_result = ndt_omp->getResult();
+                    //         ndt_iter = ndt_result.iteration_num;
+                    //         const auto& hessian = ndt_result.hessian;
+                    //         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                    //         if (regularized_hessian.determinant() > 1e-6) {
+                    //             lidarCov = -regularized_hessian.inverse() * lidarCovScalingVector.asDiagonal();
+                    //             lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+                    //             std::cout << "Covariance estimated from NDT Hessian.\n";
+                    //         }
+                    //     } 
+                    //     // gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
+                    //     // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                    //     // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                    // } else {
+                    //     gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
+                    //     Eigen::Matrix<double, 6, 6> covariance;
+                    //     lidarCov = Eigen::Matrix<double, 6, 6>::Identity();
+                    //     // lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+                    //     // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                    //     // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                    // }
+                    // // Also add a GPS prior if the data is reliable.
+                    // if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
+                    //     gtsam::Pose3 insFactor(Tb2m);
+                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                    //     insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
+                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));}
                     // } else {
                     //     gtsam::Pose3 insFactor(Tb2m);
                     //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
@@ -470,21 +470,24 @@ int main() {
                 //     }
                 // }
                 // ########################
-                isam2.update(newFactors, newEstimates);
+                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+                pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.matrix().cast<float>());
+
+                // isam2.update(newFactors, newEstimates);
                 
                 // Periodically print a more detailed summary
-                Val = isam2.calculateEstimate();
+                // Val = isam2.calculateEstimate();
 
-                gtsam::Pose3 currTb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
+                // gtsam::Pose3 currTb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
 
-                if (!is_first_keyframe) {
-                    gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
-                    Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
-                    lidarFactorSourceTb2m = currTb2m.matrix() * loopTbc2bp;
-                } else {
-                    lidarFactorSourceTb2m = currTb2m.matrix();
-                    is_first_keyframe = false;
-                }
+                // if (!is_first_keyframe) {
+                //     gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
+                //     Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
+                //     lidarFactorSourceTb2m = currTb2m.matrix() * loopTbc2bp;
+                // } else {
+                //     lidarFactorSourceTb2m = currTb2m.matrix();
+                //     is_first_keyframe = false;
+                // }
                 // #################add single info into spatial map if loop closure not found
                 // if (loopCandidateFound){
                     // spatialArchive.clear();
@@ -495,19 +498,19 @@ int main() {
                     //     spatialArchive[key].push_back({frame_id, pointsArchive.at(frame_id).timestamp});
                     //  }
                 // } else {
-                    Voxel key = Voxel::getKey(currTb2m.translation().cast<float>(), VOXEL_SIZE);
-                    spatialArchive[key].push_back({id, timestamp});
+                    // Voxel key = Voxel::getKey(Tb2m.translation().cast<float>(), VOXEL_SIZE);
+                    // spatialArchive[key].push_back({id, timestamp});
                 // }
-                pointsArchive[id] = {pointsBody, timestamp};
+                pointsArchive[id] = {pointsMap, timestamp};
                 last_id = id; 
 
-                if (!Val.empty()) {
+                // if (!Val.empty()) {
                     auto vizData = std::make_unique<VisualizationData>();
                     vizData->poses = std::make_shared<gtsam::Values>(Val);
                     // Pass a deep copy of the points archive for thread safety
                     vizData->points = std::make_shared<PointsHashMap>(pointsArchive);
                     vizQueue.push(std::move(vizData));
-                }
+                // }
                 // ################# rebuild spatial map if loop closure found
                 std::cout << std::fixed << ".................................................." << std::endl;
                 std::cout << std::fixed << "Gtsam Thread............................" << std::endl;
@@ -554,85 +557,93 @@ int main() {
                 if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
                 break;
             }
+            pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+            for(points: vizData->points){
+                pointsMap += points;
+                
+            }
+            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMap, "intensity");
+            viewer->addPointCloud(pointsMap, color_handler, cloud_id_to_add);
+            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
 
             // --- 1. Find the newest frame in the received data ---
-            gtsam::Pose3 Tb2m;
-            uint64_t max_id = 0;
-            for (const auto& key_value : *(vizData->poses)) {
-                uint64_t frame_id = gtsam::Symbol(key_value.key).index();
-                if (frame_id > max_id) {
-                    max_id = frame_id;
-                }
-            }
+            // gtsam::Pose3 Tb2m;
+            // uint64_t max_id = 0;
+            // for (const auto& key_value : *(vizData->poses)) {
+            //     uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+            //     if (frame_id > max_id) {
+            //         max_id = frame_id;
+            //     }
+            // }
             
-            // --- 2. Process only if it's a new, unseen keyframe ---
-            if (max_id > 0 && max_id != last_processed_id) {
-                last_processed_id = max_id;
-                Tb2m = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
-                auto it = vizData->points->find(max_id);
+            // // --- 2. Process only if it's a new, unseen keyframe ---
+            // if (max_id > 0 && max_id != last_processed_id) {
+            //     last_processed_id = max_id;
+            //     Tb2m = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
+            //     auto it = vizData->points->find(max_id);
 
-                if (it != vizData->points->end()) {
-                    // --- 3. Remove the oldest cloud if the window is full ---
-                    if (displayed_frame_ids.size() >= kSlidingWindowSize) {
-                        uint64_t id_to_remove = displayed_frame_ids.front();
-                        std::string cloud_id_to_remove = "map_cloud_" + std::to_string(id_to_remove);
-                        viewer->removePointCloud(cloud_id_to_remove);
-                        displayed_frame_ids.pop_front();
-                    }
+            //     if (it != vizData->points->end()) {
+            //         // --- 3. Remove the oldest cloud if the window is full ---
+            //         if (displayed_frame_ids.size() >= kSlidingWindowSize) {
+            //             uint64_t id_to_remove = displayed_frame_ids.front();
+            //             std::string cloud_id_to_remove = "map_cloud_" + std::to_string(id_to_remove);
+            //             viewer->removePointCloud(cloud_id_to_remove);
+            //             displayed_frame_ids.pop_front();
+            //         }
 
-                    // --- 4. Prepare the new cloud ---
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody = it->second.points;
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapDS(new pcl::PointCloud<pcl::PointXYZI>());
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapS(new pcl::PointCloud<pcl::PointXYZI>());
+            //         // --- 4. Prepare the new cloud ---
+            //         pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody = it->second.points;
+            //         pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+            //         pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapDS(new pcl::PointCloud<pcl::PointXYZI>());
+            //         pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapS(new pcl::PointCloud<pcl::PointXYZI>());
 
-                    // Transform and downsample the new cloud
-                    pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.matrix().cast<float>());
-                    vg.setInputCloud(pointsMap);
-                    vg.filter(*pointsMapDS);
-                    pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
+            //         // Transform and downsample the new cloud
+            //         pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.matrix().cast<float>());
+            //         vg.setInputCloud(pointsMap);
+            //         vg.filter(*pointsMapDS);
+            //         pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
             
-                    pass_spatial.setFilterFieldName("z");
-                    pass_spatial.setFilterLimits(-300.0, 0.0);
+            //         pass_spatial.setFilterFieldName("z");
+            //         pass_spatial.setFilterLimits(-300.0, 0.0);
 
-                    // for (auto& point : downsampled_cloud->points) {
-                    //     point.x = point.x;    // 
-                    //     point.y = -point.y; // 
-                    //     point.z = point.z;   // 
-                    // }
-                    pass_spatial.setInputCloud(pointsMapDS); //
-                    pass_spatial.filter(*pointsMapS);
+            //         // for (auto& point : downsampled_cloud->points) {
+            //         //     point.x = point.x;    // 
+            //         //     point.y = -point.y; // 
+            //         //     point.z = point.z;   // 
+            //         // }
+            //         pass_spatial.setInputCloud(pointsMapDS); //
+            //         pass_spatial.filter(*pointsMapS);
 
-                    // --- 5. Add the new cloud to the viewer with a unique ID ---
-                    std::string cloud_id_to_add = "map_cloud_" + std::to_string(max_id);
-                    pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMapS, "intensity");
-                    viewer->addPointCloud(pointsMapS, color_handler, cloud_id_to_add);
-                    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
+            //         // --- 5. Add the new cloud to the viewer with a unique ID ---
+            //         std::string cloud_id_to_add = "map_cloud_" + std::to_string(max_id);
+            //         pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMapS, "intensity");
+            //         viewer->addPointCloud(pointsMapS, color_handler, cloud_id_to_add);
+            //         viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
 
-                    // Add the new frame's ID to our tracking deque
-                    displayed_frame_ids.push_back(max_id);
-                }
-            }
+            //         // Add the new frame's ID to our tracking deque
+            //         displayed_frame_ids.push_back(max_id);
+            //     }
+            // }
 
             // --- 6. Update the ENTIRE trajectory (this logic is correct) ---
-            trajectory_cloud->clear();
-            for (const auto& key_value : *(vizData->poses)) {
-                gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
-                pcl::PointXYZRGB trajectory_point;
-                trajectory_point.x = pose.translation().x();
-                trajectory_point.y = pose.translation().y();
-                trajectory_point.z = pose.translation().z();
-                trajectory_point.r = 255;
-                trajectory_point.g = 10;
-                trajectory_point.b = 10;
-                trajectory_cloud->push_back(trajectory_point);
-            }
+            // trajectory_cloud->clear();
+            // for (const auto& key_value : *(vizData->poses)) {
+            //     gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+            //     pcl::PointXYZRGB trajectory_point;
+            //     trajectory_point.x = pose.translation().x();
+            //     trajectory_point.y = pose.translation().y();
+            //     trajectory_point.z = pose.translation().z();
+            //     trajectory_point.r = 255;
+            //     trajectory_point.g = 10;
+            //     trajectory_point.b = 10;
+            //     trajectory_cloud->push_back(trajectory_point);
+            // }
 
-            // Use updatePointCloud for efficiency; it will add the cloud if it doesn't exist
-            if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
-                viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
-                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
-            }
+            // // Use updatePointCloud for efficiency; it will add the cloud if it doesn't exist
+            // if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
+            //     viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
+            //     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
+            // }
             
             viewer->spinOnce(100);
         }
