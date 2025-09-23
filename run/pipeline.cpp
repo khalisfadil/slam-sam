@@ -304,7 +304,7 @@ int main() {
                 Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
 
                 // 3. Combine them in ZYX order to get the final rotation matrix
-                Eigen::Matrix3d Cb2m = (rollAngle  * pitchAngle * yawAngle).toRotationMatrix();
+                Eigen::Matrix3d Cb2m = (yawAngle * pitchAngle * rollAngle).toRotationMatrix();
 
                 const auto& quat = data_frame->position.back().orientation;
                 Eigen::Matrix3d Cb2m_from_quat = quat.cast<double>().toRotationMatrix();
@@ -335,8 +335,8 @@ int main() {
                 }
 
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                Tb2m.block<3,3>(0,0) = Cb2m;
-                Tb2m.block<3,1>(0,3) = tm2b;
+                Tb2m.block<3,3>(0,0) = Cb2m.transpose();
+                Tb2m.block<3,1>(0,3) = -Cb2m.transpose() *tm2b;
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
