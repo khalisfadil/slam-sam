@@ -315,14 +315,14 @@ int main() {
 
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 Tb2m.block<3,3>(0,0) = Cb2m;
-                Tb2m.block<3,1>(0,3) = -Cb2m*tm2b;
+                Tb2m.block<3,1>(0,3) = tm2b;
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
                 // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
-                pointsArchive[id] = {pointsMap, data_frame->timestamp};
+                pointsArchive[id] = {pointsBody, data_frame->timestamp};
                 insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
