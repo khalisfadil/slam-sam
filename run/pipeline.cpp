@@ -335,8 +335,10 @@ int main() {
                     rlla = lla;
                     Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                    Tb2m.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
-                    Tb2m.block<3,1>(0,3) = tm2b;
+                    Tm2b = Eigen::Matrix4d::Identity();
+                    Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
+                    Tm2b.block<3,1>(0,3) = tm2b;
+                    Tb2m = Tm2b.inverse();
 
                     gtsam::Pose3 insFactor(Tb2m);
                     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
@@ -347,8 +349,10 @@ int main() {
                 } else {
                     Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                    Tb2m.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
-                    Tb2m.block<3,1>(0,3) = tm2b;
+                    Tm2b = Eigen::Matrix4d::Identity();
+                    Tm2b.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
+                    Tm2b.block<3,1>(0,3) = tm2b;
+                    Tb2m = Tm2b.inverse();
 
                     gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
                     newEstimates.insert(Symbol('x', id), initialFactor);
