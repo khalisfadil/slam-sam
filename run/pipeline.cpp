@@ -291,7 +291,28 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
-                const Eigen::Matrix3d& Cb2m = registerCallback.Cb2n(data_frame->position.back().orientation).cast<double>();
+
+                // 1. Extract Euler angles (assuming vector is [roll, pitch, yaw])
+                const auto& euler_angles_rad = data_frame->position.back().euler.cast<double>();
+                double roll  = euler_angles_rad.x();
+                double pitch = euler_angles_rad.y();
+                double yaw   = euler_angles_rad.z();
+
+                // 2. Create individual rotation objects
+                Eigen::AngleAxisd rollAngle(roll, Eigen::Vector3d::UnitX());
+                Eigen::AngleAxisd pitchAngle(pitch, Eigen::Vector3d::UnitY());
+                Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
+
+                // 3. Combine them in ZYX order to get the final rotation matrix
+                Eigen::Matrix3d Cb2m = (yawAngle * pitchAngle * rollAngle).toRotationMatrix();
+
+                const auto& quat = data_frame->position.back().orientation;
+                Eigen::Matrix3d Cb2m_from_quat = quat.cast<double>().toRotationMatrix();
+
+                std::cout << "--- Rotation Matrix Comparison (Frame ID: " << data_frame->points.frame_id << ") ---\n"
+                << "From Euler (ZYX):\n" << Cb2m << "\n\n"
+                << "From Quaternion:\n" << Cb2m_from_quat << "\n"
+                << "-----------------------------------------------------\n";
 
                 if (!Cb2m.allFinite() || std::abs(Cb2m.determinant() - 1.0) > 1e-6) {
                     std::cerr << "Frame ID: " << data_frame->points.frame_id << " has invalid orientation matrix, skipping.\n";

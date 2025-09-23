@@ -36,6 +36,7 @@ struct ImuData{
 // %            ... struct representing single frame in position data (GPS,GNSS,INS, etc..)
 struct PositionData{
     Eigen::Vector3d pose = Eigen::Vector3d::Zero();                 // position latitude[rad],longitude[rad],altitude[m] in sensor frame                          ([rad],[rad],[m])
+    Eigen::Vector3f euler = Eigen::Vector3d::Zero();
     Eigen::Quaternionf orientation = Eigen::Quaternionf::Identity(); // orientation as quaternion (w, x, y, z)
     Eigen::Vector3f poseStdDev = Eigen::Vector3f::Zero();           // standard deviation in north,east,down in sensor frame   
     Eigen::Vector3f eulerStdDev = Eigen::Vector3f::Zero();          // standard deviation in north,east,down in sensor frame                                   [m]
@@ -168,6 +169,9 @@ struct CompFrame {
     float accelY = 0.0f;        // Body acceleration Y in m/s^2
     float accelZ = 0.0f;        // Body acceleration Z in m/s^2
     float gForce = 0.0f;        // G force in g
+    float roll = 0.0f;
+    float pitch = 0.0f;
+    float yaw = 0.0f;
     Eigen::Quaternionf orientation = Eigen::Quaternionf::Identity();
     float angularVelocityX = 0.0f; // Angular velocity X in rad/s
     float angularVelocityY = 0.0f; // Angular velocity Y in rad/s
@@ -222,6 +226,9 @@ struct CompFrame {
         accelY = 0.0f;
         accelZ = 0.0f;
         gForce = 0.0f;
+        roll = 0.0f;
+        pitch = 0.0f;
+        yaw = 0.0f;
         orientation = Eigen::Quaternionf::Identity();
         angularVelocityX = 0.0f;
         angularVelocityY = 0.0f;
@@ -237,15 +244,16 @@ struct CompFrame {
         ImuData imudata;
         imudata.acc = Eigen::Vector3f(this->accelX, this->accelY, this->accelZ);
         imudata.gyr = Eigen::Vector3f(this->angularVelocityX, this->angularVelocityY, this->angularVelocityZ);
-        imudata.accStdDev = this->accStdDev; // Now compatible (both Eigen::Vector3f)
-        imudata.gyrStdDev = this->gyrStdDev; // Now compatible (both Eigen::Vector3f)
+        imudata.accStdDev = this->accStdDev;
+        imudata.gyrStdDev = this->gyrStdDev;
         imudata.timestamp = this->timestamp;
         return imudata;
     }
 
     [[nodiscard]] PositionData toPositionData() const {
         PositionData positiondata;
-        positiondata.pose = Eigen::Vector3d(this->latitude, this->longitude, this->altitude); 
+        positiondata.pose = Eigen::Vector3d(this->latitude, this->longitude, this->altitude);
+        positiondata.euler = Eigen::Vector3f(this->roll, this->pitch, this->yaw);
         positiondata.orientation = this->orientation;
         positiondata.poseStdDev = Eigen::Vector3f(this->sigmaLatitude, this->sigmaLongitude, this->sigmaAltitude);
         positiondata.timestamp = this->timestamp;
@@ -270,6 +278,9 @@ struct CompFrame {
         result.accelY = a.accelY + t * (b.accelY - a.accelY);
         result.accelZ = a.accelZ + t * (b.accelZ - a.accelZ);
         result.gForce = a.gForce + t * (b.gForce - a.gForce);
+        result.roll = a.roll + t * (b.roll - a.roll);
+        result.pitch = a.pitch + t * (b.pitch - a.pitch);
+        result.yaw = a.yaw + t * (b.yaw - a.yaw);
 
         // Quaternion: Spherical linear interpolation
         result.orientation = a.orientation.slerp(t, b.orientation);
@@ -282,8 +293,8 @@ struct CompFrame {
         result.sigmaAltitude = a.sigmaAltitude + t * (b.sigmaAltitude - a.sigmaAltitude);
 
         // Eigen vectors: Linear interpolation
-        result.accStdDev = a.accStdDev + t * (b.accStdDev - a.accStdDev); // Now Eigen::Vector3f
-        result.gyrStdDev = a.gyrStdDev + t * (b.gyrStdDev - a.gyrStdDev); // Now Eigen::Vector3f
+        result.accStdDev = a.accStdDev + t * (b.accStdDev - a.accStdDev);
+        result.gyrStdDev = a.gyrStdDev + t * (b.gyrStdDev - a.gyrStdDev);
 
         // System Status: Set to true if either frame indicates an issue (conservative)
         result.SystemFailure = a.SystemFailure || b.SystemFailure;
@@ -321,7 +332,6 @@ struct CompFrame {
         return result;
     }
 };
-
 
 
 

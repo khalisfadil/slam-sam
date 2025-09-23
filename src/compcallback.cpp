@@ -201,10 +201,9 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
     std::memcpy(&frame.gForce, packet.data() + 65, sizeof(float));
 
     // Roll, Pitch, Yaw (Bytes 69-80, fp32)
-    float roll, pitch, yaw;
-    std::memcpy(&roll, packet.data() + 69, sizeof(float));
-    std::memcpy(&pitch, packet.data() + 73, sizeof(float));
-    std::memcpy(&yaw, packet.data() + 77, sizeof(float));
+    std::memcpy(&frame.roll, packet.data() + 69, sizeof(float));
+    std::memcpy(&frame.pitch, packet.data() + 73, sizeof(float));
+    std::memcpy(&frame.yaw, packet.data() + 77, sizeof(float));
 
     // Angular Velocity X, Y, Z (Bytes 81-92, fp32, treat as sensor frame IMU data)
     std::memcpy(&frame.angularVelocityX, packet.data() + 81, sizeof(float));
@@ -216,29 +215,19 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
     std::memcpy(&frame.sigmaLongitude, packet.data() + 97, sizeof(float));
     std::memcpy(&frame.sigmaAltitude, packet.data() + 101, sizeof(float));
 
-    // Convert Euler angles (ZYX convention) to quaternion
-    float phi = 0.5 * roll;
-    float theta = 0.5 * pitch;
-    float psi = 0.5 * yaw;
-    float c1 = cos(phi);
-    float c2 = cos(theta);
-    float c3 = cos(psi);
-    float s1 = sin(phi);
-    float s2 = sin(theta);
-    float s3 = sin(psi);
-    frame.orientation.w() = c1*c2*c3 + s1*s2*s3;
-    frame.orientation.x() = s1*c2*c3 - c1*s2*s3;
-    frame.orientation.y() = c1*s2*c3 + s1*c2*s3;
-    frame.orientation.z() = c1*c2*s3 - s1*s2*c3;
+    // Convert Euler angles (ZYX convention) to quaternion using Eigen
+    Eigen::AngleAxisf rollAngle(frame.roll, Eigen::Vector3f::UnitX());
+    Eigen::AngleAxisf pitchAngle(frame.pitch, Eigen::Vector3f::UnitY());
+    Eigen::AngleAxisf yawAngle(frame.yaw, Eigen::Vector3f::UnitZ());
+
+    frame.orientation = yawAngle * pitchAngle * rollAngle;
 
     // Compute standard deviations in sensor frame
     double dt = 1.0 / updateRate_;
-    double std_acc = velocityRandomWalk_(0) / std::sqrt(dt);  // e.g., 0.000333333 / sqrt(1/200) ≈ 0.004714 m/s²
-    double std_gyro = angularRandomWalk_(0) / std::sqrt(dt);  // e.g., 0.000023271 / sqrt(1/200) ≈ 0.000329 rad/s
+    double std_acc = velocityRandomWalk_(0) / std::sqrt(dt);
+    double std_gyro = angularRandomWalk_(0) / std::sqrt(dt);
     frame.accStdDev = (Eigen::Vector3d(std_acc, std_acc, std_acc)).cast<float>();
     frame.gyrStdDev = (Eigen::Vector3d(std_gyro, std_gyro, std_gyro)).cast<float>();
-
-    // std::cout<<"raw imu-z: "<<accelZ_raw<<", update accel-z: "<< frame.accelZ<<  std::endl;
 }
 // %             ... WGS84 Gravity function
 double CompCallback::GravityWGS84(double latitude, double longitude, double altitude) {
