@@ -343,7 +343,7 @@ int main() {
 
                 // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
-                pointsArchive[id] = {pointsBody, data_frame->timestamp};
+                pointsArchive[id] = {pointsMap, data_frame->timestamp};
                 insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
