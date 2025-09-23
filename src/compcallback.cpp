@@ -220,7 +220,7 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
 
     // Process IMU data: subtract biases
     Eigen::Vector3d acc_sensor(accelX_raw, accelY_raw, accelZ_raw);
-    acc_sensor -= biasAccelerometer_; // Subtract accelerometer bias
+    // acc_sensor -= biasAccelerometer_; // Subtract accelerometer bias
 
     // Convert Euler angles (ZYX convention) to quaternion
     frame.orientation = Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()) * 
@@ -233,7 +233,7 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
     frame.accelZ = static_cast<float>(acc_body(2));
 
     Eigen::Vector3d ang_sensor(angularVelocityX_raw, angularVelocityY_raw, angularVelocityZ_raw);
-    ang_sensor -= biasGyroscope_; // Subtract gyroscope bias
+    // ang_sensor -= biasGyroscope_; // Subtract gyroscope bias
 
     Eigen::Vector3d ang_body = body_to_imu_rotation_.transpose() * ang_sensor;
     frame.angularVelocityX = static_cast<float>(ang_body(0));
