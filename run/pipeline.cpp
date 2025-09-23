@@ -512,19 +512,19 @@ int main() {
                     vizQueue.push(std::move(vizData));
                 // }
                 // ################# rebuild spatial map if loop closure found
-                std::cout << std::fixed << ".................................................." << std::endl;
-                std::cout << std::fixed << "Gtsam Thread............................" << std::endl;
-                std::cout << std::fixed << "Frame ID................................" << id << std::endl;
-                std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
-                std::cout << std::fixed << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
-                std::cout << std::fixed << "Number Iteration........................" << ndt_iter << std::endl;
-                std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
-                std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
-                std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
-                std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
-                std::cout << std::fixed << "Tb2m....................................\n" << lidarFactorSourceTb2m << std::endl;
-                std::cout << std::fixed << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
-                std::cout << std::fixed << ".................................................." << std::endl;
+                // std::cout << std::fixed << ".................................................." << std::endl;
+                // std::cout << std::fixed << "Gtsam Thread............................" << std::endl;
+                // std::cout << std::fixed << "Frame ID................................" << id << std::endl;
+                // std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
+                // std::cout << std::fixed << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
+                // std::cout << std::fixed << "Number Iteration........................" << ndt_iter << std::endl;
+                // std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
+                // std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
+                // std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
+                // std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
+                // std::cout << std::fixed << "Tb2m....................................\n" << lidarFactorSourceTb2m << std::endl;
+                // std::cout << std::fixed << "Optimized Tb2m..........................\n" << currTb2m.matrix() << std::endl;
+                // std::cout << std::fixed << ".................................................." << std::endl;
             }
         } catch (const std::exception& e) {
             std::cerr << "Gtsam thread error: " << e.what() << "\n";
@@ -549,7 +549,7 @@ int main() {
         vg.setLeafSize(1.5f, 1.5f, 1.5f);
 
         // The trajectory cloud is still accumulated fully
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        // pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
         while (running && !viewer->wasStopped()) {
             auto vizData = vizQueue.pop();
@@ -558,13 +558,15 @@ int main() {
                 break;
             }
             pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-            for(points: vizData->points){
-                pointsMap += points;
-                
+            for (const auto& it : vizData->points) {
+                auto pcl = it.second.points; // Access the point cloud from KeypointInfo
+                if (pcl && !pcl->empty()) {  // Check for null or empty point cloud
+                    *pointsMap += *pcl;      // Concatenate point clouds
+                }
             }
             pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMap, "intensity");
-            viewer->addPointCloud(pointsMap, color_handler, cloud_id_to_add);
-            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
+            viewer->addPointCloud(pointsMap, color_handler, "map_cloud");
+            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
 
             // --- 1. Find the newest frame in the received data ---
             // gtsam::Pose3 Tb2m;
