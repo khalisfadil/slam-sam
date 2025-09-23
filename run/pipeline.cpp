@@ -335,7 +335,7 @@ int main() {
                     rlla = lla;
                     Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                    Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
+                    Tb2m.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
                     Tb2m.block<3,1>(0,3) = tm2b;
 
                     gtsam::Pose3 insFactor(Tb2m);
@@ -347,7 +347,7 @@ int main() {
                 } else {
                     Eigen::Vector3d tm2b = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
-                    Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
+                    Tb2m.block<3,3>(0,0) = Cb2m.transpose().cast<double>();
                     Tb2m.block<3,1>(0,3) = tm2b;
 
                     gtsam::Pose3 initialFactor(lidarFactorSourceTb2m);
@@ -552,7 +552,7 @@ int main() {
             }
 
             // --- 1. Find the newest frame in the received data ---
-            gtsam::Pose3 latest_pose;
+            gtsam::Pose3 Tb2m;
             uint64_t max_id = 0;
             for (const auto& key_value : *(vizData->poses)) {
                 uint64_t frame_id = gtsam::Symbol(key_value.key).index();
@@ -564,7 +564,7 @@ int main() {
             // --- 2. Process only if it's a new, unseen keyframe ---
             if (max_id > 0 && max_id != last_processed_id) {
                 last_processed_id = max_id;
-                latest_pose = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
+                Tb2m = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
                 auto it = vizData->points->find(max_id);
 
                 if (it != vizData->points->end()) {
@@ -577,15 +577,15 @@ int main() {
                     }
 
                     // --- 4. Prepare the new cloud ---
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr raw_cloud = it->second.points;
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody = it->second.points;
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapDS(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapS(new pcl::PointCloud<pcl::PointXYZI>());
 
                     // Transform and downsample the new cloud
-                    pcl::transformPointCloud(*raw_cloud, *transformed_cloud, latest_pose.matrix().cast<float>());
-                    vg.setInputCloud(transformed_cloud);
-                    vg.filter(*downsampled_cloud);
+                    pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.matrix().cast<float>());
+                    vg.setInputCloud(pointsMap);
+                    vg.filter(*pointsMapDS);
                     pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
             
                     pass_spatial.setFilterFieldName("z");
@@ -596,13 +596,13 @@ int main() {
                     //     point.y = -point.y; // 
                     //     point.z = point.z;   // 
                     // }
-                    pass_spatial.setInputCloud(downsampled_cloud); //
-                    pass_spatial.filter(*spatial_cloud);
+                    pass_spatial.setInputCloud(pointsMapDS); //
+                    pass_spatial.filter(*pointsMapS);
 
                     // --- 5. Add the new cloud to the viewer with a unique ID ---
                     std::string cloud_id_to_add = "map_cloud_" + std::to_string(max_id);
-                    pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(spatial_cloud, "intensity");
-                    viewer->addPointCloud(spatial_cloud, color_handler, cloud_id_to_add);
+                    pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(pointsMapS, "intensity");
+                    viewer->addPointCloud(pointsMapS, color_handler, cloud_id_to_add);
                     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
 
                     // Add the new frame's ID to our tracking deque
