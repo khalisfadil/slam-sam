@@ -333,7 +333,7 @@ int main() {
 
                 if (is_first_keyframe) {
                     rlla = lla;
-                    Eigen::Vector3d tb2m = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
                     Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
                     Tb2m.block<3,1>(0,3) = tb2m;
@@ -345,7 +345,7 @@ int main() {
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
 
                 } else {
-                    Eigen::Vector3d tb2m = registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
+                    Eigen::Vector3d tb2m = -registerCallback.lla2ned(lla.x(),lla.y(),lla.z(),rlla.x(),rlla.y(),rlla.z());
                     Tb2m = Eigen::Matrix4d::Identity();
                     Tb2m.block<3,3>(0,0) = Cb2m.cast<double>();
                     Tb2m.block<3,1>(0,3) = tb2m;
