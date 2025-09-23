@@ -217,7 +217,19 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
     std::memcpy(&frame.sigmaAltitude, packet.data() + 101, sizeof(float));
 
     // Convert Euler angles (ZYX convention) to quaternion
-    frame.orientation = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
+    float phi = 0.5 * roll;
+    float theta = 0.5 * pitch;
+    float psi = 0.5 * yaw;
+    float c1 = cos(phi);
+    float c2 = cos(theta);
+    float c3 = cos(psi);
+    float s1 = sin(phi);
+    float s2 = sin(theta);
+    float s3 = sin(psi);
+    frame.orientation.w() = c1*c2*c3 + s1*s2*s3;
+    frame.orientation.x() = s1*c2*c3 - c1*s2*s3;
+    frame.orientation.y() = c1*s2*c3 + s1*c2*s3;
+    frame.orientation.z() = c1*c2*s3 - s1*s2*c3;
 
     // Compute standard deviations in sensor frame
     double dt = 1.0 / updateRate_;

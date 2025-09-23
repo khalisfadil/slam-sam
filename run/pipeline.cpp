@@ -333,6 +333,7 @@ int main() {
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
                 // Store in archives
+                pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, timestamp};
                 insPosesArchive[id] = {Tb2m, timestamp};
 
