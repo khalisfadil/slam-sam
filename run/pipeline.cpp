@@ -304,7 +304,7 @@ int main() {
                 Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
 
                 // 3. Combine them in ZYX order to get the final rotation matrix
-                Eigen::Matrix3d Cb2m = (yawAngle * pitchAngle * rollAngle).toRotationMatrix();
+                Eigen::Matrix3d Cb2m = (rollAngle  * pitchAngle * yawAngle).toRotationMatrix();
 
                 const auto& quat = data_frame->position.back().orientation;
                 Eigen::Matrix3d Cb2m_from_quat = quat.cast<double>().toRotationMatrix();
