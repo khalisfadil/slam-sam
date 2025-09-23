@@ -282,10 +282,23 @@ int main() {
                     break;
                 }
 
+                // Validate input data
+                if (data_frame->position.empty()) {
+                    std::cerr << "Frame ID: " << data_frame->points.frame_id << " has empty position data, skipping.\n";
+                    continue;
+                }
+
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
                 const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
+
+                // Validate orientation matrix
+                if (!Cb2m.allFinite() || std::abs(Cb2m.determinant() - 1.0) > 1e-6) {
+                    std::cerr << "Frame ID: " << data_frame->points.frame_id << " has invalid orientation matrix, skipping.\n";
+                    continue;
+                }
+
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
                 Eigen::Vector3d tm2b = Eigen::Vector3d::Zero();
@@ -293,12 +306,19 @@ int main() {
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
 
+                // Convert LLA to NED
                 if (is_first_keyframe) {
                     rlla = lla;
                     tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                     is_first_keyframe = false;
                 } else {
                     tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
+                }
+
+                // Validate NED coordinates
+                if (!tm2b.allFinite()) {
+                    std::cerr << "Frame ID: " << id << " has invalid NED coordinates, skipping.\n";
+                    continue;
                 }
 
                 // Compute Tm2b (map to body)
@@ -316,41 +336,37 @@ int main() {
                 pointsArchive[id] = {pointsMap, timestamp};
                 insPosesArchive[id] = {Tb2m, timestamp};
 
-                // Visualize
-                auto pointsArchiveShared = std::make_shared<PointsHashMap>(pointsArchive);
-                auto insPosesArchiveShared = std::make_shared<PoseHashMap>(insPosesArchive);
-
-                // Clear all existing point clouds from the visualizer
+                // Visualization: Clear all existing point clouds
                 viewer->removeAllPointClouds();
 
                 // Aggregate all point clouds from pointsArchive
-                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                for (const auto& it : *pointsArchiveShared) {
-                    auto pcl = it.second.points; // Access the point cloud from KeypointInfo
-                    if (pcl && !pcl->empty()) {  // Check for null or empty point cloud
-                        *pointsMap += *pcl;      // Concatenate point clouds
+                pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMap(new pcl::PointCloud<pcl::PointXYZI>());
+                for (const auto& it : pointsArchive) {
+                    auto pcl = it.second.points;
+                    if (pcl && !pcl->empty()) {
+                        *aggregatedMap += *pcl;
                     }
                 }
 
                 // Downsample the aggregated point cloud
-                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMapDS(new pcl::PointCloud<pcl::PointXYZI>());
+                pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMapDS(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::VoxelGrid<pcl::PointXYZI> vg;
                 vg.setLeafSize(1.5f, 1.5f, 1.5f);
-                if (!pointsMap->empty()) {
-                    vg.setInputCloud(pointsMap);
-                    vg.filter(*pointsMapDS);
+                if (!aggregatedMap->empty()) {
+                    vg.setInputCloud(aggregatedMap);
+                    vg.filter(*aggregatedMapDS);
                 } else {
-                    pointsMapDS = pointsMap; // Use empty cloud if no points
+                    aggregatedMapDS = aggregatedMap;
                 }
 
                 // Add the map point cloud (in NED frame)
-                pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(pointsMapDS, "intensity");
-                viewer->addPointCloud(pointsMapDS, map_color_handler, "map_cloud");
+                pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(aggregatedMapDS, "intensity");
+                viewer->addPointCloud(aggregatedMapDS, map_color_handler, "map_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
 
                 // Create INS trajectory point cloud from insPosesArchive
                 pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-                for (const auto& kv : *insPosesArchiveShared) {
+                for (const auto& kv : insPosesArchive) {
                     const auto& pose = kv.second.pose;
                     pcl::PointXYZRGB point;
                     point.x = pose(0, 3); // Translation x
@@ -367,7 +383,7 @@ int main() {
                     viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
                     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
                 }
-                
+
                 // Debug output
                 std::cout << std::fixed << "Frame ID: " << id << "\n";
                 std::cout << std::fixed << "rlla: " << rlla.transpose() << "\n";
@@ -774,6 +790,7 @@ int main() {
     if (sync_thread.joinable()) sync_thread.join();
     // if (gtsam_thread.joinable()) gtsam_thread.join();
     // if (viz_thread.joinable()) viz_thread.join();
+    if (ins_viz_thread.joinable()) ins_viz_thread.join();
     
     std::cout << "All threads have been joined. Shutdown complete." << std::endl;
 }
