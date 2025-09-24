@@ -357,8 +357,8 @@ int main() {
                 // --- DATA ARCHIVING ---
                 // Remove clear() to accumulate full map
                 pointsArchive.clear();
-                pointsArchive.emplace(id, {pointsMap, data_frame->timestamp});
-                insPosesArchive.emplace(id, {Tb2mn, data_frame->timestamp});
+                pointsArchive[id] = {pointsMap, data_frame->timestamp};
+                insPosesArchive[id] = {Tb2mn, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
