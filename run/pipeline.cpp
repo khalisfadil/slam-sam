@@ -782,25 +782,25 @@ int main() {
                 }
             }
 
-            // // --- 6. Update the ENTIRE trajectory (this logic is correct) ---
-            // trajectory_cloud->clear();
-            // for (const auto& key_value : *(vizData->poses)) {
-            //     gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
-            //     pcl::PointXYZRGB trajectory_point;
-            //     trajectory_point.x = pose.translation().x();
-            //     trajectory_point.y = pose.translation().y();
-            //     trajectory_point.z = pose.translation().z();
-            //     trajectory_point.r = 255;
-            //     trajectory_point.g = 10;
-            //     trajectory_point.b = 10;
-            //     trajectory_cloud->push_back(trajectory_point);
-            // }
+            // --- 6. Update the ENTIRE trajectory (this logic is correct) ---
+            trajectory_cloud->clear();
+            for (const auto& key_value : *(vizData->poses)) {
+                gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+                pcl::PointXYZRGB trajectory_point;
+                trajectory_point.x = pose.translation().x();
+                trajectory_point.y = pose.translation().y();
+                trajectory_point.z = pose.translation().z();
+                trajectory_point.r = 255;
+                trajectory_point.g = 10;
+                trajectory_point.b = 10;
+                trajectory_cloud->push_back(trajectory_point);
+            }
 
-            // // Use updatePointCloud for efficiency; it will add the cloud if it doesn't exist
-            // if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
-            //     viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
-            //     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
-            // }
+            // Use updatePointCloud for efficiency; it will add the cloud if it doesn't exist
+            if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
+                viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
+            }
             
             viewer->spinOnce(100);
         }
