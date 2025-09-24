@@ -317,14 +317,15 @@ int main() {
                 double roll = euler_angles_rad.x();
                 double pitch = euler_angles_rad.y();
                 double yaw = euler_angles_rad.z();
+                constexpr double RAD_TO_DEG = 180.0 / M_PI;
+                double roll_deg = euler_angles_rad.x() * RAD_TO_DEG;
+                double pitch_deg = euler_angles_rad.y() * RAD_TO_DEG;
+                double yaw_deg = euler_angles_rad.z() * RAD_TO_DEG;
+                Eigen::Vector3d Eulerdeg{roll_deg, pitch_deg, yaw_deg};
                 Eigen::AngleAxisd rollAngle(roll, Eigen::Vector3d::UnitX());
                 Eigen::AngleAxisd pitchAngle(pitch, Eigen::Vector3d::UnitY());
                 Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
                 Eigen::Matrix3d Cb2m_from_euler = (yawAngle * pitchAngle * rollAngle).toRotationMatrix();
-                std::cout << "--- Rotation Matrix Comparison (Frame ID: " << data_frame->points.frame_id << ") ---\n"
-                        << "From Euler (ZYX):\n" << Cb2m_from_euler << "\n\n"
-                        << "From Quaternion:\n" << Cb2m << "\n"
-                        << "-----------------------------------------------------\n";
 
                 if (!Cb2m.allFinite() || std::abs(Cb2m.determinant() - 1.0) > 1e-6) {
                     std::cerr << "Frame ID: " << data_frame->points.frame_id << " has invalid orientation matrix, skipping.\n";
@@ -349,6 +350,16 @@ int main() {
                 Eigen::Matrix4d Tl2m = Tb2m * Tl2b;
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2b.cast<float>());
+
+                td::cout << std::fixed << ".................................................." << std::endl;
+                std::cout << std::fixed << "Viz Thread............................" << std::endl;
+                std::cout << std::fixed << "Frame ID................................" << id << std::endl;
+                std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
+                std::cout << std::fixed << "From Euler Deg..........................\n" << Eulerdeg.transpose() << std::endl;
+                std::cout << std::fixed << "From Euler (ZYX)........................\n" << Cb2m_from_euler << std::endl;
+                std::cout << std::fixed << "From Quaternion.........................\n" << Cb2m << std::endl;
+                std::cout << std::fixed << "tb2m....................................\n" << tb2m.transpose() << std::endl;
+                std::cout << std::fixed << ".................................................." << std::endl;
 
                 // Eigen::Matrix4d Tm2b = Tb2m.inverse();
 
