@@ -350,7 +350,7 @@ int main() {
 
                 Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
                 
-                Tm2b.block<3,3>(0,0) = Cb2m.transpose();
+                Tm2b.block<3,3>(0,0) = Cb2m;
                 Tm2b.block<3,1>(0,3) = tm2b;
                 Eigen::Matrix4d Tb2m = Tm2b.inverse();
 
