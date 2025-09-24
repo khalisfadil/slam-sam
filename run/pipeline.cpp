@@ -816,7 +816,7 @@ int main() {
     lidarQueue.stop();
     compQueue.stop();
     dataQueue.stop();
-    // vizQueue.stop();
+    vizQueue.stop();
 
     if (lidar_iothread.joinable()) lidar_iothread.join();
     if (comp_iothread.joinable()) comp_iothread.join();
