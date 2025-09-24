@@ -375,7 +375,7 @@ int main() {
                     for (auto& point : aggregatedMapDS->points) {
                         point.x = point.x;    // 
                         point.y = -point.y; // 
-                        point.z = -point.z;   // 
+                        point.z = point.z;   // 
                     }
                 }
                 if (!aggregatedMapDS->empty()) {
