@@ -444,7 +444,7 @@ int main() {
 
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
-        Eigen::Vector<double, 6> lidarCovScalingVector{100, 10, 100, 1e4, 1e4, 1e4};
+        Eigen::Vector<double, 6> lidarCovScalingVector{10, 1, 1, 1e3, 1e3, 1e3};
         
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
         if (registerCallback.registration_method_ == "NDT") {
@@ -537,6 +537,7 @@ int main() {
                     if (registerCallback.registration->hasConverged()) {
                         std::cout << "Registration converged." << std::endl;
                         lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
+                        Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
                         if (ndt_omp) {
                             auto ndt_result = ndt_omp->getResult();
                             ndt_iter = ndt_result.iteration_num;
@@ -548,9 +549,9 @@ int main() {
                                 std::cout << "Covariance estimated from NDT Hessian.\n";
                             }
                         } 
-                        gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
-                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                        gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
+                        gtsam::SharedNoiseModel loopNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(loopNoiseModel)));
                     } else {
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
                         Eigen::Matrix<double, 6, 6> covariance;
@@ -566,13 +567,14 @@ int main() {
                         insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
                         gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    } else {
-                        gtsam::Pose3 insFactor(Tb2m);
-                        const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                        insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
-                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    }
+                    } 
+                    // else {
+                    //     gtsam::Pose3 insFactor(Tb2m);
+                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
+                    //     insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
+                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
+                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    // }
                 }
 
                 // ###########LOOP CLOSURE
