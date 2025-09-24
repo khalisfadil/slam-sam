@@ -391,6 +391,7 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
                 for (const auto& kv : insPosesArchive) {
                     const auto& pose = kv.second.pose;
+                    pose = pose.inverse();
                     pcl::PointXYZRGB point;
                     point.x = pose(0, 3);
                     point.y = pose(1, 3);
