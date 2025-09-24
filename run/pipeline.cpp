@@ -334,10 +334,10 @@ int main() {
                 Eigen::Vector3d tb2m = Eigen::Vector3d::Zero();
                 if (is_first_keyframe) {
                     rlla = lla;
-                    tb2m = registerCallback.lla2ned(rlla.x(), rlla.y(), rlla.z(), lla.x(), lla.y(), lla.z());
+                    tb2m = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                     is_first_keyframe = false;
                 } else {
-                    tb2m = registerCallback.lla2ned(rlla.x(), rlla.y(), rlla.z(), lla.x(), lla.y(), lla.z());
+                    tb2m = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                 }
                 if (!tb2m.allFinite()) {
                     std::cerr << "Frame ID: " << id << " has invalid NED coordinates, skipping.\n";
@@ -354,7 +354,7 @@ int main() {
 
                 // --- DATA ARCHIVING ---
                 // Remove clear() to accumulate full map
-                pointsArchive.clear();
+                // pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, data_frame->timestamp};
                 insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
@@ -386,26 +386,26 @@ int main() {
                 viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
 
                 // Display the full accumulated trajectory
-                pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-                for (const auto& kv : insPosesArchive) {
-                    // Get a const reference to the original pose
-                    const auto& original_pose = kv.second.pose;
+                // pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+                // for (const auto& kv : insPosesArchive) {
+                //     // Get a const reference to the original pose
+                //     const auto& original_pose = kv.second.pose;
 
-                    // Declare a NEW matrix to store the inverted result
-                    // Eigen::Matrix4d inverted_pose = original_pose.inverse().eval();
+                //     // Declare a NEW matrix to store the inverted result
+                //     // Eigen::Matrix4d inverted_pose = original_pose.inverse().eval();
 
-                    // Now, use the new 'inverted_pose' variable
-                    pcl::PointXYZRGB point;
-                    point.x = original_pose(0, 3);
-                    point.y = original_pose(1, 3);
-                    point.z = original_pose(2, 3);
-                    point.r = 255; point.g = 10; point.b = 10;
-                    trajectory_cloud->push_back(point);
-                }
-                if (!trajectory_cloud->empty()) {
-                    viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
-                    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
-                }
+                //     // Now, use the new 'inverted_pose' variable
+                //     pcl::PointXYZRGB point;
+                //     point.x = original_pose(0, 3);
+                //     point.y = original_pose(1, 3);
+                //     point.z = original_pose(2, 3);
+                //     point.r = 255; point.g = 10; point.b = 10;
+                //     trajectory_cloud->push_back(point);
+                // }
+                // if (!trajectory_cloud->empty()) {
+                //     viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
+                //     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
+                // }
                 viewer->spinOnce(100);
             }
         } catch (const std::exception& e) {
