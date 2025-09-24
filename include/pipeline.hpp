@@ -11,6 +11,8 @@
 #include <memory>
 #include <functional>
 
+#include <Eigen/Dense>
+
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/navigation/ImuFactor.h>

@@ -705,7 +705,28 @@ int main() {
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
         viewer->initCameraParameters();
-        // viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // Removed initial static position
+
+        // --- NEW: Camera Following & Smoothing Logic ---
+        // This factor controls how quickly the camera catches up to the target.
+        // Lower values (e.g., 0.05) are smoother but have more lag.
+        // Higher values (e.g., 0.2) are more responsive but can be jumpy.
+        const double kSmoothingFactor = 0.1;
+
+        // This defines the camera's position relative to the focal point (view from above).
+        const Eigen::Vector3d kCameraOffset(0.0, 0.0, -50.0);
+
+        // The "up" vector for the camera. Your original code used (1,0,0), which is non-standard but preserved here.
+        // A more common "up" vector would be (0, -1, 0) for Z-forward or (0, 0, 1) for Y-forward systems.
+        const Eigen::Vector3d kUpVector(1.0, 0.0, 0.0);
+
+        // State variables to hold the camera's current and target focus points.
+        // Initialize them to the starting view.
+        Eigen::Vector3d target_focal_point(0.0, 0.0, 0.0);
+        Eigen::Vector3d current_focal_point = target_focal_point;
+        Eigen::Vector3d current_cam_pos = target_focal_point + kCameraOffset;
+
+        // --- MODIFIED: The initial setCameraPosition is now managed by the loop ---
+        // viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // This is now handled dynamically
 
         const size_t kSlidingWindowSize = 100;
         std::deque<uint64_t> displayed_frame_ids;
@@ -716,71 +737,40 @@ int main() {
 
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
-        // <<< MODIFIED: Add state variables for camera smoothing
-        // This is the target point the camera will try to look at. It's updated with each new pose.
-        gtsam::Point3 camera_target_viewpoint(0, 0, 0);
-        // These store the camera's current, interpolated position and viewpoint for smooth movement.
-        gtsam::Point3 smoothed_camera_pos(0, 0, -50); // Initialize to a starting view
-        gtsam::Point3 smoothed_viewpoint_pos(0, 0, 0);
-        // The smoothing factor. Lower values mean smoother, slower camera movement.
-        // A good range is [0.05, 0.2].
-        const double kSmoothingFactor = 0.08;
-        // <<< END MODIFICATION
-
         while (running && !viewer->wasStopped()) {
             auto vizData = vizQueue.pop();
             if (!vizData) {
                 if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
                 break;
             }
-            
-            // <<< MODIFIED: The camera update logic is now outside the 'new frame' check.
-            // This ensures the camera moves smoothly every frame, even between new keyframe updates.
-            
-            // 1. Define the desired camera position based on the target viewpoint
-            const double cam_dist_behind = 40.0;
-            const double cam_height_above = 20.0;
-            gtsam::Point3 camera_pos_goal(
-                camera_target_viewpoint.x() - cam_dist_behind,
-                camera_target_viewpoint.y(),
-                camera_target_viewpoint.z() + cam_height_above
-            );
-
-            // 2. Interpolate the current camera and viewpoint positions towards their goals
-            smoothed_camera_pos = smoothed_camera_pos + (camera_pos_goal - smoothed_camera_pos) * kSmoothingFactor;
-            smoothed_viewpoint_pos = smoothed_viewpoint_pos + (camera_target_viewpoint - smoothed_viewpoint_pos) * kSmoothingFactor;
-            
-            // 3. Set the viewer's camera to the new smoothed position
-            viewer->setCameraPosition(
-                smoothed_camera_pos.x(), smoothed_camera_pos.y(), smoothed_camera_pos.z(),
-                smoothed_viewpoint_pos.x(), smoothed_viewpoint_pos.y(), smoothed_viewpoint_pos.z(),
-                0, 0, 1 // Z-axis is "up"
-            );
-            // <<< END MODIFICATION
 
             gtsam::Pose3 latest_pose;
             uint64_t max_id = 0;
-            for (const auto& key_value : *(vizData->poses)) {
-                uint64_t frame_id = gtsam::Symbol(key_value.key).index();
-                if (frame_id > max_id) {
-                    max_id = frame_id;
+            if (!vizData->poses->empty()) { // Ensure poses are not empty before finding max
+                for (const auto& key_value : *(vizData->poses)) {
+                    uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+                    if (frame_id > max_id) {
+                        max_id = frame_id;
+                    }
                 }
             }
             
             if (max_id > 0 && max_id != last_processed_id) {
                 last_processed_id = max_id;
                 latest_pose = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
-
-                // <<< MODIFIED: We ONLY update the target here. The smoothing logic handles the rest.
-                camera_target_viewpoint = latest_pose.translation();
-                // <<< END MODIFICATION
                 
+                // --- NEW: Update the target focal point when a new pose is available ---
+                target_focal_point = latest_pose.translation();
+
                 auto it = vizData->points->find(max_id);
                 if (it != vizData->points->end()) {
+                    // ... (your existing point cloud processing logic is unchanged)
                     if (displayed_frame_ids.size() >= kSlidingWindowSize) {
                         uint64_t id_to_remove = displayed_frame_ids.front();
                         std::string cloud_id_to_remove = "map_cloud_" + std::to_string(id_to_remove);
-                        viewer->removePointCloud(cloud_id_to_remove);
+                        if (viewer->contains(cloud_id_to_remove)) {
+                            viewer->removePointCloud(cloud_id_to_remove);
+                        }
                         displayed_frame_ids.pop_front();
                     }
 
@@ -788,7 +778,7 @@ int main() {
                     pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
                     pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
                     pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-
+                    
                     pcl::transformPointCloud(*raw_cloud, *transformed_cloud, latest_pose.matrix().cast<float>());
                     vg.setInputCloud(transformed_cloud);
                     vg.filter(*downsampled_cloud);
@@ -803,11 +793,12 @@ int main() {
                     pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(spatial_cloud, "intensity");
                     viewer->addPointCloud(spatial_cloud, color_handler, cloud_id_to_add);
                     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
-
+                    
                     displayed_frame_ids.push_back(max_id);
                 }
             }
 
+            // ... (your existing trajectory update logic is unchanged)
             trajectory_cloud->clear();
             for (const auto& key_value : *(vizData->poses)) {
                 gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
@@ -825,6 +816,21 @@ int main() {
                 viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
             }
+
+            // --- NEW: Smoothly update camera on every spin ---
+            // Interpolate the focal point
+            current_focal_point = current_focal_point + (target_focal_point - current_focal_point) * kSmoothingFactor;
+            // Calculate the desired camera position based on the smoothed focal point
+            Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
+            // Interpolate the camera's actual position
+            current_cam_pos = current_cam_pos + (target_cam_pos - current_cam_pos) * kSmoothingFactor;
+
+            // Set the new camera position and view direction in the visualizer
+            viewer->setCameraPosition(
+                current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
+                current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
+                kUpVector.x(), kUpVector.y(), kUpVector.z()
+            );
             
             viewer->spinOnce(100);
         }
