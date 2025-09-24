@@ -550,15 +550,16 @@ int main() {
                             }
                         } 
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
-                        gtsam::SharedNoiseModel loopNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(loopNoiseModel)));
+                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     } else {
-                        gtsam::Pose3 lidarFactor = gtsam::Pose3(lidarFactorSourceTb2m);
+                        Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
+                        gtsam::Pose3 lidarFactor = gtsam::Pose3(LidarTbs2bt);
                         Eigen::Matrix<double, 6, 6> covariance;
                         lidarCov = Eigen::Matrix<double, 6, 6>::Identity();
                         lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
                     // Also add a GPS prior if the data is reliable.
                     if (data_frame->position.back().poseStdDev.norm() < 0.1f) {
