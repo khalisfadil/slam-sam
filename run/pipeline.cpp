@@ -360,14 +360,14 @@ int main() {
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2m.cast<float>());
                 // manualTransformPointCloud_RowBased(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
-                // Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                // Tb2m.block<3,3>(0,0) = Cb2m;
-                // Tb2m.block<3,1>(0,3) = tm2b;
+                Eigen::Matrix4d Tb2mn = Eigen::Matrix4d::Identity();
+                Tb2m.block<3,3>(0,0) = Cb2m;
+                Tb2m.block<3,1>(0,3) = tm2b;
 
                 // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, data_frame->timestamp};
-                insPosesArchive[id] = {Tb2m, data_frame->timestamp};
+                insPosesArchive[id] = {Tb2mn, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
@@ -400,9 +400,9 @@ int main() {
                 for (const auto& kv : insPosesArchive) {
                     const auto& pose = kv.second.pose;
                     pcl::PointXYZRGB point;
-                    point.x = -pose(0, 3);
-                    point.y = -pose(1, 3);
-                    point.z = -pose(2, 3);
+                    point.x = pose(0, 3);
+                    point.y = pose(1, 3);
+                    point.z = pose(2, 3);
                     point.r = 255; point.g = 10; point.b = 10;
                     trajectory_cloud->push_back(point);
                 }
