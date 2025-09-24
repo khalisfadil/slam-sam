@@ -292,6 +292,20 @@ int main() {
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
 
+                double rollAl2b = 0;
+                double pitchAl2b = 0;
+                double yawAl2b = 3.141592653589793;
+                Eigen::AngleAxisd rollAnglel2b(rollAl2b, Eigen::Vector3d::UnitX());
+                Eigen::AngleAxisd pitchAnglel2b(pitchAl2b, Eigen::Vector3d::UnitY());
+                Eigen::AngleAxisd yawAnglel2b(yawAl2b, Eigen::Vector3d::UnitZ()); 
+
+                Eigen::Matrix3d Cl2b = (yawAnglel2b * pitchAnglel2b * rollAnglel2b).toRotationMatrix();
+                Eigen::Vector3d tl2b{0.135, 0.0, -0.1243};
+
+                Eigen::Matrix4d Tl2b = Eigen::Matrix4d::Identity();
+                Tl2b.block<3,3>(0,0) = Cl2b;
+                Tl2b.block<3,1>(0,3) = tl2b;
+
                 // 1. Extract Euler angles (assuming vector is [roll, pitch, yaw])
                 const auto& euler_angles_rad = data_frame->position.back().euler.cast<double>();
                 double roll  = euler_angles_rad.x();
@@ -334,13 +348,21 @@ int main() {
                     continue;
                 }
 
-                Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                Tb2m.block<3,3>(0,0) = Cb2m;
-                Tb2m.block<3,1>(0,3) = tm2b;
+                Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
+                
+                Tm2b.block<3,3>(0,0) = Cb2m.transpose();
+                Tm2b.block<3,1>(0,3) = tm2b;
+                Eigen::Matrix4d Tb2m = Tm2b.inverse();
+
+                Eigen::Matrix4d Tl2m = Tb2m * Tl2b;
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                // pcl::transformPointCloud(*pointsBody, *pointsMap, Tb2m.cast<float>());
-                manualTransformPointCloud_RowBased(*pointsBody, *pointsMap, Tb2m.cast<float>());
+                pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2m.cast<float>());
+                // manualTransformPointCloud_RowBased(*pointsBody, *pointsMap, Tb2m.cast<float>());
+
+                // Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                // Tb2m.block<3,3>(0,0) = Cb2m;
+                // Tb2m.block<3,1>(0,3) = tm2b;
 
                 // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
