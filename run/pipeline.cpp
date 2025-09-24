@@ -351,7 +351,7 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2b.cast<float>());
 
-                td::cout << std::fixed << ".................................................." << std::endl;
+                std::cout << std::fixed << ".................................................." << std::endl;
                 std::cout << std::fixed << "Viz Thread............................" << std::endl;
                 std::cout << std::fixed << "Frame ID................................" << id << std::endl;
                 std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
