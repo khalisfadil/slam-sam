@@ -367,7 +367,7 @@ int main() {
                 // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, data_frame->timestamp};
-                insPosesArchive[id] = {Tm2b, data_frame->timestamp};
+                insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
@@ -400,9 +400,9 @@ int main() {
                 for (const auto& kv : insPosesArchive) {
                     const auto& pose = kv.second.pose;
                     pcl::PointXYZRGB point;
-                    point.x = pose(0, 3);
-                    point.y = pose(1, 3);
-                    point.z = pose(2, 3);
+                    point.x = -pose(0, 3);
+                    point.y = -pose(1, 3);
+                    point.z = -pose(2, 3);
                     point.r = 255; point.g = 10; point.b = 10;
                     trajectory_cloud->push_back(point);
                 }
