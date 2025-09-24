@@ -361,8 +361,8 @@ int main() {
                 // manualTransformPointCloud_RowBased(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
                 Eigen::Matrix4d Tb2mn = Eigen::Matrix4d::Identity();
-                Tb2m.block<3,3>(0,0) = Cb2m;
-                Tb2m.block<3,1>(0,3) = tm2b;
+                Tb2mn.block<3,3>(0,0) = Cb2m;
+                Tb2mn.block<3,1>(0,3) = tm2b;
 
                 // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
