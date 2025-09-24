@@ -355,10 +355,12 @@ int main() {
                 std::cout << std::fixed << "Viz Thread............................" << std::endl;
                 std::cout << std::fixed << "Frame ID................................" << id << std::endl;
                 std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
-                std::cout << std::fixed << "From Euler Deg..........................\n" << Eulerdeg.transpose() << std::endl;
-                std::cout << std::fixed << "From Euler (ZYX)........................\n" << Cb2m_from_euler << std::endl;
-                std::cout << std::fixed << "From Quaternion.........................\n" << Cb2m << std::endl;
+                std::cout << std::fixed << std::setprecision(12) << "LLA......................................" << lla << std::endl;
+                std::cout << std::fixed << std::setprecision(12) << "From Euler Deg..........................\n" << Eulerdeg.transpose() << std::endl;
+                std::cout << std::fixed << "Cb2m Euler (ZYX)........................\n" << Cb2m_from_euler << std::endl;
+                std::cout << std::fixed << "Cb2m....................................\n" << Cb2m << std::endl;
                 std::cout << std::fixed << "tb2m....................................\n" << tb2m.transpose() << std::endl;
+                std::cout << std::fixed << "Tl2m....................................\n" << Tl2m << std::endl;
                 std::cout << std::fixed << ".................................................." << std::endl;
 
                 // Eigen::Matrix4d Tm2b = Tb2m.inverse();
