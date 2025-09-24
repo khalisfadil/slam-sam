@@ -390,12 +390,17 @@ int main() {
                 // Display the full accumulated trajectory
                 pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
                 for (const auto& kv : insPosesArchive) {
-                    const auto& pose = kv.second.pose;
-                    pose = pose.inverse();
+                    // Get a const reference to the original pose
+                    const auto& original_pose = kv.second.pose;
+
+                    // Declare a NEW matrix to store the inverted result
+                    Eigen::Matrix4d inverted_pose = original_pose.inverse().eval();
+
+                    // Now, use the new 'inverted_pose' variable
                     pcl::PointXYZRGB point;
-                    point.x = pose(0, 3);
-                    point.y = pose(1, 3);
-                    point.z = pose(2, 3);
+                    point.x = inverted_pose(0, 3);
+                    point.y = inverted_pose(1, 3);
+                    point.z = inverted_pose(2, 3);
                     point.r = 255; point.g = 10; point.b = 10;
                     trajectory_cloud->push_back(point);
                 }
