@@ -705,19 +705,27 @@ int main() {
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
         viewer->initCameraParameters();
-        viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0);
+        // viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // Removed initial static position
 
-        // --- NEW: Use a deque to track the IDs of the clouds currently in the viewer ---
         const size_t kSlidingWindowSize = 100;
         std::deque<uint64_t> displayed_frame_ids;
         uint64_t last_processed_id = 0;
 
-        // VoxelGrid filter for downsampling each new cloud
         pcl::VoxelGrid<pcl::PointXYZI> vg;
         vg.setLeafSize(1.5f, 1.5f, 1.5f);
 
-        // The trajectory cloud is still accumulated fully
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+
+        // <<< MODIFIED: Add state variables for camera smoothing
+        // This is the target point the camera will try to look at. It's updated with each new pose.
+        gtsam::Point3 camera_target_viewpoint(0, 0, 0);
+        // These store the camera's current, interpolated position and viewpoint for smooth movement.
+        gtsam::Point3 smoothed_camera_pos(0, 0, -50); // Initialize to a starting view
+        gtsam::Point3 smoothed_viewpoint_pos(0, 0, 0);
+        // The smoothing factor. Lower values mean smoother, slower camera movement.
+        // A good range is [0.05, 0.2].
+        const double kSmoothingFactor = 0.08;
+        // <<< END MODIFICATION
 
         while (running && !viewer->wasStopped()) {
             auto vizData = vizQueue.pop();
@@ -725,8 +733,31 @@ int main() {
                 if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
                 break;
             }
+            
+            // <<< MODIFIED: The camera update logic is now outside the 'new frame' check.
+            // This ensures the camera moves smoothly every frame, even between new keyframe updates.
+            
+            // 1. Define the desired camera position based on the target viewpoint
+            const double cam_dist_behind = 40.0;
+            const double cam_height_above = 20.0;
+            gtsam::Point3 camera_pos_goal(
+                camera_target_viewpoint.x() - cam_dist_behind,
+                camera_target_viewpoint.y(),
+                camera_target_viewpoint.z() + cam_height_above
+            );
 
-            // --- 1. Find the newest frame in the received data ---
+            // 2. Interpolate the current camera and viewpoint positions towards their goals
+            smoothed_camera_pos = smoothed_camera_pos + (camera_pos_goal - smoothed_camera_pos) * kSmoothingFactor;
+            smoothed_viewpoint_pos = smoothed_viewpoint_pos + (camera_target_viewpoint - smoothed_viewpoint_pos) * kSmoothingFactor;
+            
+            // 3. Set the viewer's camera to the new smoothed position
+            viewer->setCameraPosition(
+                smoothed_camera_pos.x(), smoothed_camera_pos.y(), smoothed_camera_pos.z(),
+                smoothed_viewpoint_pos.x(), smoothed_viewpoint_pos.y(), smoothed_viewpoint_pos.z(),
+                0, 0, 1 // Z-axis is "up"
+            );
+            // <<< END MODIFICATION
+
             gtsam::Pose3 latest_pose;
             uint64_t max_id = 0;
             for (const auto& key_value : *(vizData->poses)) {
@@ -736,14 +767,16 @@ int main() {
                 }
             }
             
-            // --- 2. Process only if it's a new, unseen keyframe ---
             if (max_id > 0 && max_id != last_processed_id) {
                 last_processed_id = max_id;
                 latest_pose = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
-                auto it = vizData->points->find(max_id);
 
+                // <<< MODIFIED: We ONLY update the target here. The smoothing logic handles the rest.
+                camera_target_viewpoint = latest_pose.translation();
+                // <<< END MODIFICATION
+                
+                auto it = vizData->points->find(max_id);
                 if (it != vizData->points->end()) {
-                    // --- 3. Remove the oldest cloud if the window is full ---
                     if (displayed_frame_ids.size() >= kSlidingWindowSize) {
                         uint64_t id_to_remove = displayed_frame_ids.front();
                         std::string cloud_id_to_remove = "map_cloud_" + std::to_string(id_to_remove);
@@ -751,41 +784,30 @@ int main() {
                         displayed_frame_ids.pop_front();
                     }
 
-                    // --- 4. Prepare the new cloud ---
                     pcl::PointCloud<pcl::PointXYZI>::Ptr raw_cloud = it->second.points;
                     pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
                     pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
                     pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_cloud(new pcl::PointCloud<pcl::PointXYZI>());
 
-                    // Transform and downsample the new cloud
                     pcl::transformPointCloud(*raw_cloud, *transformed_cloud, latest_pose.matrix().cast<float>());
                     vg.setInputCloud(transformed_cloud);
                     vg.filter(*downsampled_cloud);
-                    pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
-            
+                    
+                    pcl::PassThrough<pcl::PointXYZI> pass_spatial;
                     pass_spatial.setFilterFieldName("z");
                     pass_spatial.setFilterLimits(-300.0, 0.0);
-
-                    // for (auto& point : downsampled_cloud->points) {
-                    //     point.x = point.x;    // 
-                    //     point.y = -point.y; // 
-                    //     point.z = point.z;   // 
-                    // }
-                    pass_spatial.setInputCloud(downsampled_cloud); //
+                    pass_spatial.setInputCloud(downsampled_cloud);
                     pass_spatial.filter(*spatial_cloud);
 
-                    // --- 5. Add the new cloud to the viewer with a unique ID ---
                     std::string cloud_id_to_add = "map_cloud_" + std::to_string(max_id);
                     pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(spatial_cloud, "intensity");
                     viewer->addPointCloud(spatial_cloud, color_handler, cloud_id_to_add);
                     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
 
-                    // Add the new frame's ID to our tracking deque
                     displayed_frame_ids.push_back(max_id);
                 }
             }
 
-            // --- 6. Update the ENTIRE trajectory (this logic is correct) ---
             trajectory_cloud->clear();
             for (const auto& key_value : *(vizData->poses)) {
                 gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
@@ -799,7 +821,6 @@ int main() {
                 trajectory_cloud->push_back(trajectory_point);
             }
 
-            // Use updatePointCloud for efficiency; it will add the cloud if it doesn't exist
             if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
                 viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
