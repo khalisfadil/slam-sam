@@ -334,7 +334,7 @@ int main() {
                 Eigen::Vector3d tb2m = Eigen::Vector3d::Zero();
                 if (is_first_keyframe) {
                     rlla = lla;
-                    tb2m = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
+                    // tb2m = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                     is_first_keyframe = false;
                 } else {
                     tb2m = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
@@ -354,8 +354,8 @@ int main() {
 
                 // --- DATA ARCHIVING ---
                 // Remove clear() to accumulate full map
-                pointsArchive.clear();
-                pointsArchive[id] = {pointsMap, data_frame->timestamp};
+                // pointsArchive.clear();
+                pointsArchive[id] = {pointsBody, data_frame->timestamp};
                 insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
@@ -380,10 +380,10 @@ int main() {
                 }
 
                 // Fix: Remove old coordinate system before adding new one (for latest pose)
-                viewer->removeCoordinateSystem("vehicle_pose");
-                Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
-                vehicle_pose.matrix() = Tb2m.cast<float>();
-                viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
+                // viewer->removeCoordinateSystem("vehicle_pose");
+                // Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
+                // vehicle_pose.matrix() = Tb2m.cast<float>();
+                // viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
 
                 // Display the full accumulated trajectory
                 // pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
