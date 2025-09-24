@@ -372,6 +372,11 @@ int main() {
                     vg.setLeafSize(1.0f, 1.0f, 1.0f);
                     vg.setInputCloud(aggregatedMap);
                     vg.filter(*aggregatedMapDS);
+                    for (auto& point : aggregatedMapDS->points) {
+                        point.x = point.x;    // 
+                        point.y = -point.y; // 
+                        point.z = -point.z;   // 
+                    }
                 }
                 if (!aggregatedMapDS->empty()) {
                     pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(aggregatedMapDS, "intensity");
