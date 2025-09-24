@@ -394,13 +394,13 @@ int main() {
                     const auto& original_pose = kv.second.pose;
 
                     // Declare a NEW matrix to store the inverted result
-                    Eigen::Matrix4d inverted_pose = original_pose.inverse().eval();
+                    // Eigen::Matrix4d inverted_pose = original_pose.inverse().eval();
 
                     // Now, use the new 'inverted_pose' variable
                     pcl::PointXYZRGB point;
-                    point.x = inverted_pose(0, 3);
-                    point.y = inverted_pose(1, 3);
-                    point.z = inverted_pose(2, 3);
+                    point.x = original_pose(0, 3);
+                    point.y = original_pose(1, 3);
+                    point.z = original_pose(2, 3);
                     point.r = 255; point.g = 10; point.b = 10;
                     trajectory_cloud->push_back(point);
                 }
