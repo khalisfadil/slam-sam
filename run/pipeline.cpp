@@ -398,7 +398,7 @@ int main() {
 
                     // Now, use the new 'inverted_pose' variable
                     pcl::PointXYZRGB point;
-                    point.x = -original_pose(0, 3);
+                    point.x = original_pose(0, 3);
                     point.y = original_pose(1, 3);
                     point.z = original_pose(2, 3);
                     point.r = 255; point.g = 10; point.b = 10;
