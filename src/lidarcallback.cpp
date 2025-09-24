@@ -255,7 +255,7 @@ void LidarCallback::Initialize() {
     Eigen::Matrix3d lidar_to_body_rotation = lidar_to_body_transform.block<3,3>(0,0);
 
     for (int m_id = 0; m_id < columns_per_frame_; ++m_id) {
-        float measurement_azimuth_rad = m_id * 2.0f * static_cast<float>(M_PI) / columns_per_frame_;
+        float measurement_azimuth_rad = 2.0f * static_cast<float>(M_PI) * (1.0f - (static_cast<float>(m_id) / static_cast<float>(columns_per_frame_)));
         float cos_meas_az = std::cos(measurement_azimuth_rad);
         float sin_meas_az = std::sin(measurement_azimuth_rad);
 

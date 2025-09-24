@@ -349,7 +349,7 @@ int main() {
                 Tb2m.block<3,1>(0,3) = tb2m;
                 Eigen::Matrix4d Tl2m = Tb2m * Tl2b;
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2b.cast<float>());
+                pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2m.cast<float>());
 
                 std::cout << std::fixed << ".................................................." << std::endl;
                 std::cout << std::fixed << "Viz Thread.............................." << std::endl;
