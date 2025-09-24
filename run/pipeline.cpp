@@ -367,7 +367,7 @@ int main() {
                 // --- DATA ARCHIVING (No changes here) ---
                 pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, data_frame->timestamp};
-                insPosesArchive[id] = {Tb2m, data_frame->timestamp};
+                insPosesArchive[id] = {Tm2b, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
@@ -389,11 +389,11 @@ int main() {
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
 
                 // --- FIX: Remove the old coordinate system before adding the new one ---
-                viewer->removeCoordinateSystem("vehicle_pose"); // Remove the previous frame
+                // viewer->removeCoordinateSystem("vehicle_pose"); // Remove the previous frame
                 
-                Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
-                vehicle_pose.matrix() = Tb2m.cast<float>();
-                viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose"); // Add the new one
+                // Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
+                // vehicle_pose.matrix() = Tb2m.cast<float>();
+                // viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose"); // Add the new one
 
                 // Display the full accumulated trajectory.
                 pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
