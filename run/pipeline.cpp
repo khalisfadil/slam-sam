@@ -267,12 +267,30 @@ int main() {
         PoseHashMap insPosesArchive;
         Eigen::Vector3d rlla = Eigen::Vector3d::Zero();
         bool is_first_keyframe = true;
-
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("INS Map and Trajectory");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
         viewer->initCameraParameters();
         viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0);
+
+        // Static LiDAR-to-body transformation with validation
+        static Eigen::Matrix4d Tl2b = []() {
+            double rollAl2b = 0;
+            double pitchAl2b = 0;
+            double yawAl2b = 3.141592653589793;
+            Eigen::AngleAxisd rollAnglel2b(rollAl2b, Eigen::Vector3d::UnitX());
+            Eigen::AngleAxisd pitchAnglel2b(pitchAl2b, Eigen::Vector3d::UnitY());
+            Eigen::AngleAxisd yawAnglel2b(yawAl2b, Eigen::Vector3d::UnitZ());
+            Eigen::Matrix3d Cl2b = (yawAnglel2b * pitchAnglel2b * rollAnglel2b).toRotationMatrix();
+            if (!Cl2b.allFinite() || std::abs(Cl2b.determinant() - 1.0) > 1e-6) {
+                throw std::runtime_error("Invalid LiDAR-to-body rotation matrix");
+            }
+            Eigen::Vector3d tl2b{0.135, 0.0, -0.1243};
+            Eigen::Matrix4d Tl2b_init = Eigen::Matrix4d::Identity();
+            Tl2b_init.block<3,3>(0,0) = Cl2b;
+            Tl2b_init.block<3,1>(0,3) = tl2b;
+            return Tl2b_init;
+        }();
 
         try {
             while (running && !viewer->wasStopped()) {
@@ -281,58 +299,37 @@ int main() {
                     if (!running) std::cout << "Data queue stopped, exiting INS viz thread.\n";
                     break;
                 }
-
                 if (data_frame->position.empty()) {
                     std::cerr << "Frame ID: " << data_frame->points.frame_id << " has empty position data, skipping.\n";
                     continue;
                 }
-
-                // --- DATA EXTRACTION & POSE CALCULATION (No changes here) ---
+                // --- DATA EXTRACTION & POSE CALCULATION ---
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
 
-                double rollAl2b = 0;
-                double pitchAl2b = 0;
-                double yawAl2b = 3.141592653589793;
-                Eigen::AngleAxisd rollAnglel2b(rollAl2b, Eigen::Vector3d::UnitX());
-                Eigen::AngleAxisd pitchAnglel2b(pitchAl2b, Eigen::Vector3d::UnitY());
-                Eigen::AngleAxisd yawAnglel2b(yawAl2b, Eigen::Vector3d::UnitZ()); 
+                // Use quaternion directly for rotation matrix (avoid redundant Euler computation)
+                const auto& quat = data_frame->position.back().orientation;
+                Eigen::Matrix3d Cb2m = quat.cast<double>().toRotationMatrix();
 
-                Eigen::Matrix3d Cl2b = (yawAnglel2b * pitchAnglel2b * rollAnglel2b).toRotationMatrix();
-                Eigen::Vector3d tl2b{0.135, 0.0, 0.1243};
-
-                Eigen::Matrix4d Tl2b = Eigen::Matrix4d::Identity();
-                Tl2b.block<3,3>(0,0) = Cl2b;
-                Tl2b.block<3,1>(0,3) = tl2b;
-
-                // 1. Extract Euler angles (assuming vector is [roll, pitch, yaw])
+                // For debugging: Optionally compute from Euler and compare
                 const auto& euler_angles_rad = data_frame->position.back().euler.cast<double>();
-                double roll  = euler_angles_rad.x();
+                double roll = euler_angles_rad.x();
                 double pitch = euler_angles_rad.y();
-                double yaw   = euler_angles_rad.z();
-
-                // 2. Create individual rotation objects
+                double yaw = euler_angles_rad.z();
                 Eigen::AngleAxisd rollAngle(roll, Eigen::Vector3d::UnitX());
                 Eigen::AngleAxisd pitchAngle(pitch, Eigen::Vector3d::UnitY());
                 Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
-
-                // 3. Combine them in ZYX order to get the final rotation matrix
-                Eigen::Matrix3d Cb2m = (yawAngle * pitchAngle * rollAngle).toRotationMatrix();
-
-                const auto& quat = data_frame->position.back().orientation;
-                Eigen::Matrix3d Cb2m_from_quat = quat.cast<double>().toRotationMatrix();
-
+                Eigen::Matrix3d Cb2m_from_euler = (yawAngle * pitchAngle * rollAngle).toRotationMatrix();
                 std::cout << "--- Rotation Matrix Comparison (Frame ID: " << data_frame->points.frame_id << ") ---\n"
-                << "From Euler (ZYX):\n" << Cb2m << "\n\n"
-                << "From Quaternion:\n" << Cb2m_from_quat << "\n"
-                << "-----------------------------------------------------\n";
+                        << "From Euler (ZYX):\n" << Cb2m_from_euler << "\n\n"
+                        << "From Quaternion:\n" << Cb2m << "\n"
+                        << "-----------------------------------------------------\n";
 
                 if (!Cb2m.allFinite() || std::abs(Cb2m.determinant() - 1.0) > 1e-6) {
                     std::cerr << "Frame ID: " << data_frame->points.frame_id << " has invalid orientation matrix, skipping.\n";
                     continue;
                 }
-
                 uint64_t id = data_frame->points.frame_id;
                 Eigen::Vector3d tm2b = Eigen::Vector3d::Zero();
                 if (is_first_keyframe) {
@@ -342,60 +339,55 @@ int main() {
                 } else {
                     tm2b = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
                 }
-
                 if (!tm2b.allFinite()) {
                     std::cerr << "Frame ID: " << id << " has invalid NED coordinates, skipping.\n";
                     continue;
                 }
-
-                Eigen::Matrix4d Tm2b = Eigen::Matrix4d::Identity();
-                
-                Tm2b.block<3,3>(0,0) = Cb2m;
-                Tm2b.block<3,1>(0,3) = tm2b;
-                Eigen::Matrix4d Tb2m = Tm2b.inverse();
-
+                Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
+                Tb2m.block<3,3>(0,0) = Cb2m;
+                Tb2m.block<3,1>(0,3) = tm2b;
                 Eigen::Matrix4d Tl2m = Tb2m * Tl2b;
-
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2m.cast<float>());
-                // manualTransformPointCloud_RowBased(*pointsBody, *pointsMap, Tb2m.cast<float>());
 
                 Eigen::Matrix4d Tb2mn = Eigen::Matrix4d::Identity();
                 Tb2mn.block<3,3>(0,0) = Cb2m;
                 Tb2mn.block<3,1>(0,3) = tm2b;
 
-                // --- DATA ARCHIVING (No changes here) ---
+                // --- DATA ARCHIVING ---
+                // Remove clear() to accumulate full map
                 pointsArchive.clear();
-                pointsArchive[id] = {pointsMap, data_frame->timestamp};
-                insPosesArchive[id] = {Tb2mn, data_frame->timestamp};
+                pointsArchive.emplace(id, {pointsMap, data_frame->timestamp});
+                insPosesArchive.emplace(id, {Tb2mn, data_frame->timestamp});
 
                 // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
 
-                // Display the latest point cloud scan (map).
+                // Aggregate and display the full accumulated map (downsampled)
+                pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMap(new pcl::PointCloud<pcl::PointXYZI>());
+                for (const auto& kv : pointsArchive) {
+                    *aggregatedMap += *(kv.second.points);
+                }
                 pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMapDS(new pcl::PointCloud<pcl::PointXYZI>());
-                if(!pointsArchive.empty()){
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMap = pointsArchive.begin()->second.points;
+                if (!aggregatedMap->empty()) {
                     pcl::VoxelGrid<pcl::PointXYZI> vg;
                     vg.setLeafSize(1.5f, 1.5f, 1.5f);
-                    if (!aggregatedMap->empty()) {
-                        vg.setInputCloud(aggregatedMap);
-                        vg.filter(*aggregatedMapDS);
-                    }
+                    vg.setInputCloud(aggregatedMap);
+                    vg.filter(*aggregatedMapDS);
+                }
+                if (!aggregatedMapDS->empty()) {
+                    pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(aggregatedMapDS, "intensity");
+                    viewer->addPointCloud(aggregatedMapDS, map_color_handler, "map_cloud");
+                    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
                 }
 
-                pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> map_color_handler(aggregatedMapDS, "intensity");
-                viewer->addPointCloud(aggregatedMapDS, map_color_handler, "map_cloud");
-                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "map_cloud");
+                // Fix: Remove old coordinate system before adding new one (for latest pose)
+                viewer->removeCoordinateSystem("vehicle_pose");
+                Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
+                vehicle_pose.matrix() = Tb2m.cast<float>();
+                viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
 
-                // --- FIX: Remove the old coordinate system before adding the new one ---
-                // viewer->removeCoordinateSystem("vehicle_pose"); // Remove the previous frame
-                
-                // Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
-                // vehicle_pose.matrix() = Tb2m.cast<float>();
-                // viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose"); // Add the new one
-
-                // Display the full accumulated trajectory.
+                // Display the full accumulated trajectory
                 pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
                 for (const auto& kv : insPosesArchive) {
                     const auto& pose = kv.second.pose;
@@ -406,12 +398,10 @@ int main() {
                     point.r = 255; point.g = 10; point.b = 10;
                     trajectory_cloud->push_back(point);
                 }
-
                 if (!trajectory_cloud->empty()) {
                     viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
                     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
                 }
-
                 viewer->spinOnce(100);
             }
         } catch (const std::exception& e) {
