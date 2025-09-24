@@ -367,7 +367,7 @@ int main() {
 
                 // --- DATA ARCHIVING ---
                 // Remove clear() to accumulate full map
-                pointsArchive.clear();
+                // pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, data_frame->timestamp};
                 insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
