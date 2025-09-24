@@ -348,14 +348,14 @@ int main() {
                 Tb2m.block<3,1>(0,3) = tb2m;
                 Eigen::Matrix4d Tl2m = Tb2m * Tl2b;
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2m.cast<float>());
+                pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2b.cast<float>());
 
                 // Eigen::Matrix4d Tm2b = Tb2m.inverse();
 
                 // --- DATA ARCHIVING ---
                 // Remove clear() to accumulate full map
                 pointsArchive.clear();
-                pointsArchive[id] = {pointsBody, data_frame->timestamp};
+                pointsArchive[id] = {pointsMap, data_frame->timestamp};
                 insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
