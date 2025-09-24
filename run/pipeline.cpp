@@ -24,7 +24,7 @@ int main() {
     FrameQueue<LidarFrame> lidarQueue;
     FrameQueue<std::deque<CompFrame>> compQueue;
     FrameQueue<FrameData> dataQueue;
-    // FrameQueue<VisualizationData> vizQueue;
+    FrameQueue<VisualizationData> vizQueue;
 
     std::shared_ptr<std::deque<CompFrame>> compWin = std::make_shared<std::deque<CompFrame>>(); // Changed to shared_ptr
     
