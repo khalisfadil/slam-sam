@@ -350,15 +350,13 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2m.cast<float>());
 
-                Eigen::Matrix4d Tb2mn = Eigen::Matrix4d::Identity();
-                Tb2mn.block<3,3>(0,0) = Cb2m;
-                Tb2mn.block<3,1>(0,3) = tb2m;
+                Eigen::Matrix4d Tm2b = Tb2m.inverse();
 
                 // --- DATA ARCHIVING ---
                 // Remove clear() to accumulate full map
                 pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, data_frame->timestamp};
-                insPosesArchive[id] = {Tb2mn, data_frame->timestamp};
+                insPosesArchive[id] = {Tm2b, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
@@ -384,7 +382,7 @@ int main() {
                 // Fix: Remove old coordinate system before adding new one (for latest pose)
                 viewer->removeCoordinateSystem("vehicle_pose");
                 Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
-                vehicle_pose.matrix() = Tb2m.cast<float>();
+                vehicle_pose.matrix() = Tm2b.cast<float>();
                 viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
 
                 // Display the full accumulated trajectory
