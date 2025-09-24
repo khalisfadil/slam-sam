@@ -334,10 +334,10 @@ int main() {
                 Eigen::Vector3d tb2m = Eigen::Vector3d::Zero();
                 if (is_first_keyframe) {
                     rlla = lla;
-                    tb2m = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
+                    tb2m = registerCallback.lla2ned(rlla.x(), rlla.y(), rlla.z(), lla.x(), lla.y(), lla.z());
                     is_first_keyframe = false;
                 } else {
-                    tb2m = registerCallback.lla2ned(lla.x(), lla.y(), lla.z(), rlla.x(), rlla.y(), rlla.z());
+                    tb2m = registerCallback.lla2ned(rlla.x(), rlla.y(), rlla.z(), lla.x(), lla.y(), lla.z());
                 }
                 if (!tb2m.allFinite()) {
                     std::cerr << "Frame ID: " << id << " has invalid NED coordinates, skipping.\n";
@@ -350,13 +350,13 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, Tl2m.cast<float>());
 
-                Eigen::Matrix4d Tm2b = Tb2m.inverse();
+                // Eigen::Matrix4d Tm2b = Tb2m.inverse();
 
                 // --- DATA ARCHIVING ---
                 // Remove clear() to accumulate full map
                 pointsArchive.clear();
                 pointsArchive[id] = {pointsMap, data_frame->timestamp};
-                insPosesArchive[id] = {Tm2b, data_frame->timestamp};
+                insPosesArchive[id] = {Tb2m, data_frame->timestamp};
 
                 // --- VISUALIZATION ---
                 viewer->removeAllPointClouds();
@@ -369,7 +369,7 @@ int main() {
                 pcl::PointCloud<pcl::PointXYZI>::Ptr aggregatedMapDS(new pcl::PointCloud<pcl::PointXYZI>());
                 if (!aggregatedMap->empty()) {
                     pcl::VoxelGrid<pcl::PointXYZI> vg;
-                    vg.setLeafSize(1.5f, 1.5f, 1.5f);
+                    vg.setLeafSize(1.0f, 1.0f, 1.0f);
                     vg.setInputCloud(aggregatedMap);
                     vg.filter(*aggregatedMapDS);
                 }
@@ -382,7 +382,7 @@ int main() {
                 // Fix: Remove old coordinate system before adding new one (for latest pose)
                 viewer->removeCoordinateSystem("vehicle_pose");
                 Eigen::Affine3f vehicle_pose = Eigen::Affine3f::Identity();
-                vehicle_pose.matrix() = Tm2b.cast<float>();
+                vehicle_pose.matrix() = Tb2m.cast<float>();
                 viewer->addCoordinateSystem(3.0, vehicle_pose, "vehicle_pose");
 
                 // Display the full accumulated trajectory
