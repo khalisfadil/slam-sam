@@ -713,7 +713,7 @@ int main() {
         const double kSmoothingFactor = 0.1;
 
         // This defines the camera's position relative to the focal point (view from above).
-        const Eigen::Vector3d kCameraOffset(0.0, 0.0, -200.0);
+        const Eigen::Vector3d kCameraOffset(0.0, 0.0, -250.0);
 
         // The "up" vector for the camera. Your original code used (1,0,0), which is non-standard but preserved here.
         // A more common "up" vector would be (0, -1, 0) for Z-forward or (0, 0, 1) for Y-forward systems.
