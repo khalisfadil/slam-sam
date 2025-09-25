@@ -482,6 +482,11 @@ int main() {
                     break;
                 }
 
+                Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+                Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
+                Eigen::Vector<double, 6> lidarStdDev = Eigen::Vector<double, 6>::Zero();
+                Eigen::Vector<double, 6> insStdDev = Eigen::Vector<double, 6>::Zero();
+
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
                 const Eigen::Vector3d& lla = data_frame->position.back().pose;
@@ -495,11 +500,6 @@ int main() {
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
                 std::chrono::milliseconds align_duration;
-
-                Eigen::Matrix<double, 6, 6> lidarCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
-                Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
-                Eigen::Vector<double, 6> lidarStdDev = Eigen::Vector<double, 6>::Zero();
-                Eigen::Vector<double, 6> insStdDev = Eigen::Vector<double, 6>::Zero();
 
                 gtsam::NonlinearFactorGraph newFactors;
                 gtsam::Values newEstimates;
