@@ -733,7 +733,7 @@ int main() {
         uint64_t last_processed_id = 0;
 
         pcl::VoxelGrid<pcl::PointXYZI> vg;
-        vg.setLeafSize(1.5f, 1.5f, 1.5f);
+        vg.setLeafSize(0.5f, 0.5f, 0.5f);
 
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
