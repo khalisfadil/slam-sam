@@ -685,8 +685,8 @@ int main() {
                 std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
                 std::cout << std::fixed << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
                 std::cout << std::fixed << "Number Iteration........................" << ndt_iter << std::endl;
-                std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insStdDev.norm() << std::endl;
-                std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.norm() << std::endl;
+                std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
+                std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
                 std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
                 std::cout << std::fixed << "Tb2m Lidar..............................\n" << lidarFactorSourceTb2m << std::endl;
