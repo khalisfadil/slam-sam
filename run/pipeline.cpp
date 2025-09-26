@@ -74,8 +74,8 @@ int main() {
         if (!running) return;
         auto frame = std::make_unique<CompFrame>();
         compCallback.Decode(packet, *frame); // Assuming Decode is a static method or external function
-        if (frame->timestamp > 0 && frame->timestamp != *compLastTs) {
-            *compLastTs = frame->timestamp;
+        if (frame->timestamp_20 > 0 && frame->timestamp_20 != *compLastTs) {
+            *compLastTs = frame->timestamp_20;
             
             if (compWin->size() >= *compWinSize) {
                 compWin->pop_front();
@@ -135,13 +135,13 @@ int main() {
             if (!window || window->empty()) {
                 return CompFrame(); // Return a default/empty frame
             }
-            if (target_time <= window->front().timestamp) return window->front();
-            if (target_time >= window->back().timestamp) return window->back();
+            if (target_time <= window->front().timestamp_20) return window->front();
+            if (target_time >= window->back().timestamp_20) return window->back();
             for (size_t i = 0; i < window->size() - 1; ++i) {
                 const CompFrame& a = (*window)[i];
                 const CompFrame& b = (*window)[i + 1];
-                if (a.timestamp <= target_time && target_time <= b.timestamp) {
-                    double t = (b.timestamp - a.timestamp > 1e-9) ? (target_time - a.timestamp) / (b.timestamp - a.timestamp) : 0.0;
+                if (a.timestamp_20 <= target_time && target_time <= b.timestamp_20) {
+                    double t = (b.timestamp_20 - a.timestamp_20 > 1e-9) ? (target_time - a.timestamp_20) / (b.timestamp_20 - a.timestamp_20) : 0.0;
                     return a.linearInterpolate(a, b, t); // Assumes linearInterpolate is a const method
                 }
             }
@@ -188,18 +188,18 @@ int main() {
                         }
                     }
 
-                    if (current_comp_window->back().timestamp < end_interval) { //
+                    if (current_comp_window->back().timestamp_20 < end_interval) { //
                         // std::cout << std::setprecision(12) << "Compass window not sufficient (ends at " << current_comp_window->back().timestamp
                         //         << ", need to reach " << end_interval << "). Waiting for more data...\n";
                         current_comp_window = nullptr; //
                         continue; //
                     }
 
-                    if (current_comp_window->front().timestamp > start_interval) { //
+                    if (current_comp_window->front().timestamp_20 > start_interval) { //
                         std::cerr << std::setprecision(12) << "CRITICAL: Data gap detected in compass stream. "
                                 << "Required interval starts at " << start_interval
-                                << " but available data starts at " << current_comp_window->front().timestamp << ".\n";
-                        *keyLidarTs = current_comp_window->back().timestamp; //
+                                << " but available data starts at " << current_comp_window->front().timestamp_20 << ".\n";
+                        *keyLidarTs = current_comp_window->back().timestamp_20; //
                         current_comp_window = nullptr; //
                         data_gap_detected = true; //
                         break; //
@@ -227,26 +227,22 @@ int main() {
                 dataFrame->timestamp = end_interval; //
                 
                 // Reserve space once
-                dataFrame->imu.reserve(current_comp_window->size() + 2);
-                dataFrame->position.reserve(current_comp_window->size() + 2);
+                dataFrame->ins.reserve(current_comp_window->size() + 2);
 
                 // Add interpolated start point
                 CompFrame start_frame = getInterpolated(start_interval, current_comp_window);
-                dataFrame->imu.push_back(start_frame.toImuData()); //
-                dataFrame->position.push_back(start_frame.toPositionData()); //
+                dataFrame->ins.push_back(start_frame); //
 
                 // Add intermediate points
                 for (const auto& data : *current_comp_window) {
-                    if (data.timestamp > start_interval && data.timestamp < end_interval) { //
-                        dataFrame->imu.push_back(data.toImuData()); //
-                        dataFrame->position.push_back(data.toPositionData()); //
+                    if (data.timestamp_20 > start_interval && data.timestamp_20 < end_interval) { //
+                        dataFrame->ins.push_back(start_frame);
                     }
                 }
 
                 // Add interpolated end point
                 CompFrame end_frame = getInterpolated(end_interval, current_comp_window);
-                dataFrame->imu.push_back(end_frame.toImuData()); //
-                dataFrame->position.push_back(end_frame.toPositionData()); //
+                dataFrame->ins.push_back(end_frame); //
 
                 // std::cout << "Generated compass data with " << dataFrame->imu.size() << " frames for the interval.\n";
                 // std::cout << "Imu value for last data frame " << dataFrame->imu.back().acc.transpose() << ".\n";
@@ -444,8 +440,18 @@ int main() {
 
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
-        Eigen::Vector<double, 6> lidarCovScalingVector{10, 1, 1, 1e3, 1e3, 1e3};
+        Eigen::Vector<double, 6> lidarCovScalingVector{10, 1, 1, 1e3, 1e3, 1e3}; // Default/high-trust scaling
+        Eigen::Vector<double, 6> low_trust_lidar_scaling_vector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // Scaling for poor-quality matches
+        const double MIN_HESSIAN_CONDITION_NUM = 100.0;  // Below this, we have full trust.
+        const double MAX_HESSIAN_CONDITION_NUM = 1000.0;
         
+        // Trust Gain parameters defined here ---
+        Eigen::Vector<double, 6> insCovScalingVector{1e2, 1e2, 1e2, 1e2, 1e2, 1e2}; // High uncertainty for denied state
+        bool was_gps_denied = false; // Assume we start in a denied state
+        double current_trust_factor = 0.0;
+        const double recovery_rate = 0.01; // Trust regained over 1/0.02 = 5 keyframes
+        const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
+
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
         if (registerCallback.registration_method_ == "NDT") {
             ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
@@ -489,13 +495,13 @@ int main() {
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
-                const Eigen::Vector3d& lla = data_frame->position.back().pose;
-                const Eigen::Matrix3d& Cb2m = data_frame->position.back().orientation.toRotationMatrix().cast<double>();
+                auto key_data_frame = data_frame->ins.back();
+                const Eigen::Vector3d lla{key_data_frame.latitude_20, key_data_frame.longitude_20, key_data_frame.altitude_20};
+                Eigen::Quaternionf quat{key_data_frame.qw_20, key_data_frame.qx_20, key_data_frame.qy_20, key_data_frame.qz_20};
+                const Eigen::Matrix3d Cb2m = quat.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                insStdDev << insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z(),0.01, 0.01, 0.01;
+                insStdDev << key_data_frame.sigmaLatitude_20, key_data_frame.sigmaLongitude_20, key_data_frame.sigmaAltitude_20, key_data_frame.sigmaRoll_26, key_data_frame.sigmaPitch_26, key_data_frame.sigmaYaw_26;
                 
-
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
@@ -512,8 +518,7 @@ int main() {
                     Tb2m.block<3,1>(0,3) = tb2m;
 
                     gtsam::Pose3 insFactor(Tb2m);
-                    const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                    gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
+                    gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << insStdDev(3), insStdDev(4), insStdDev(5), insStdDev(0), insStdDev(1), insStdDev(2)).finished());
                     newEstimates.insert(Symbol('x', id), insFactor);
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
 
@@ -545,15 +550,37 @@ int main() {
                             ndt_iter = ndt_result.iteration_num;
                             const auto& hessian = ndt_result.hessian;
                             Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                            Eigen::Vector<double, 6> final_lidar_scaling_vector;
                             if (regularized_hessian.determinant() > 1e-6) {
-                                lidarCov = -regularized_hessian.inverse() * lidarCovScalingVector.asDiagonal();
-                                lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+                                Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 6, 6>> eigensolver(regularized_hessian);
+                                if (eigensolver.info() == Eigen::Success && eigensolver.eigenvalues().minCoeff() > 0) {
+                                    double condition_number = eigensolver.eigenvalues().maxCoeff() / eigensolver.eigenvalues().minCoeff();
+                                    // 2. Calculate a quality score (0.0 to 1.0) based on the condition number
+                                    double quality = (MAX_HESSIAN_CONDITION_NUM - condition_number) / (MAX_HESSIAN_CONDITION_NUM - MIN_HESSIAN_CONDITION_NUM);
+                                    quality = std::max(0.0, std::min(1.0, quality)); // Clamp between 0 and 1
+                                    final_lidar_scaling_vector = quality * lidarCovScalingVector + (1.0 - quality) * low_trust_lidar_scaling_vector;
+                                    std::cout << "LiDAR match quality: " << quality * 100 << "% (Cond. #: " << condition_number << ")\n";
+                                } else {
+                                    // Eigensolver failed, assume a bad match
+                                    final_lidar_scaling_vector = low_trust_lidar_scaling_vector;
+                                }
+                                // 4. Calculate final covariance using the interpolated scaling vector
+                                lidarCov = -regularized_hessian.inverse() * final_lidar_scaling_vector.asDiagonal();
+                                lidarStdDev = lidarCov.diagonal().cwiseSqrt();;
                                 std::cout << "Covariance estimated from NDT Hessian.\n";
+                            } else {
+                                // Hessian is not invertible, indicating a very poor match. Use low trust.
+                                std::cout << "Warning: NDT Hessian is singular. Using low-trust covariance.\n";
+                                final_lidar_scaling_vector = low_trust_lidar_scaling_vector;
+                                lidarCov = final_lidar_scaling_vector.asDiagonal(); // Use a large diagonal covariance
+                                lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                             }
                         } 
+
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+
                     } else {
                         Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(LidarTbs2bt);
@@ -563,19 +590,32 @@ int main() {
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
-                    // Also add a GPS prior if the data is reliable.
-                    if (data_frame->position.back().poseStdDev.norm() < 0.08f) {
-                        gtsam::Pose3 insFactor(Tb2m);
-                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.01, 0.01, 0.01, insFactorStdDev.x(), insFactorStdDev.y(), insFactorStdDev.z()).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    } 
-                    // else {
-                    //     gtsam::Pose3 insFactor(Tb2m);
-                    //     const auto& insFactorStdDev = data_frame->position.back().poseStdDev;
-                    //     insStdDev << insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3,1, 1, 1;
-                    //     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, insFactorStdDev.x()*1e3, insFactorStdDev.y()*1e3, insFactorStdDev.z()*1e3).finished());
-                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
-                    // }
+
+                    bool is_gps_available_now = (insStdDev.norm() < 1.0);
+                    if (is_gps_available_now && was_gps_denied) {
+                        current_trust_factor = 0.0; // Reset to begin recovery from zero trust
+                    }
+                    was_gps_denied = !is_gps_available_now;
+                    Eigen::Vector<double, 6> current_ins_scaling_vector;
+                    if (is_gps_available_now) {
+                        // If available, increase trust factor and interpolate the scaling vector.
+                        current_trust_factor = std::min(1.0, current_trust_factor + recovery_rate);
+                        current_ins_scaling_vector = insCovScalingVector + current_trust_factor * (full_trust_scaling_vector - insCovScalingVector);
+                    } else {
+                        // If denied, reset trust and use the high uncertainty scaling.
+                        current_trust_factor = 0.0;
+                        current_ins_scaling_vector = insCovScalingVector;
+                    }
+                    gtsam::Vector6 scaled_sigmas;
+                    scaled_sigmas << insStdDev(3) * current_ins_scaling_vector(3), // roll
+                                     insStdDev(4) * current_ins_scaling_vector(4), // pitch
+                                     insStdDev(5) * current_ins_scaling_vector(5), // yaw
+                                     insStdDev(0) * current_ins_scaling_vector(0), // x (from lat)
+                                     insStdDev(1) * current_ins_scaling_vector(1), // y (from lon)
+                                     insStdDev(2) * current_ins_scaling_vector(2);  // z (from alt)
+                    gtsam::Pose3 insFactor(Tb2m);
+                    gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(scaled_sigmas);
+                    newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
                 }
 
                 // ###########LOOP CLOSURE

@@ -25,29 +25,11 @@ struct PCLPointCloud{
     std::vector<float> pointsAlpha;
     std::vector<double> pointsTimestamp;                                             
 };
-// %            ... struct representing single frame imu data
-struct ImuData{
-    Eigen::Vector3f acc = Eigen::Vector3f::Zero();                  // acceleration x,y,z in IMU sensor frame                                                     [m/(s*s)]
-    Eigen::Vector3f gyr = Eigen::Vector3f::Zero();                  // angular rate around x-axis,y-axis,z-axis in IMU sensor frame                               [rad/s]
-    Eigen::Vector3f accStdDev = Eigen::Vector3f::Zero();            // standard deviation for acceleration x,y,z in IMU sensor frame                              [m/(s*s)]
-    Eigen::Vector3f gyrStdDev = Eigen::Vector3f::Zero();            // standard deviation for angular rate around x-axis,y-axis,z-axis in IMU sensor frame        [rad/s] 
-    double timestamp = 0.0;                                         // absolute timestamp of the data                                                             [s]
-};
-// %            ... struct representing single frame in position data (GPS,GNSS,INS, etc..)
-struct PositionData{
-    Eigen::Vector3d pose = Eigen::Vector3d::Zero();                 // position latitude[rad],longitude[rad],altitude[m] in sensor frame                          ([rad],[rad],[m])
-    Eigen::Vector3f euler = Eigen::Vector3f::Zero();
-    Eigen::Quaternionf orientation = Eigen::Quaternionf::Identity(); // orientation as quaternion (w, x, y, z)
-    Eigen::Vector3f poseStdDev = Eigen::Vector3f::Zero();           // standard deviation in north,east,down in sensor frame   
-    Eigen::Vector3f eulerStdDev = Eigen::Vector3f::Zero();          // standard deviation in north,east,down in sensor frame                                   [m]
-    double timestamp = 0.0;                                         // absolute timestamp of the data                                                             [s]
-};
 // %            ... struct representing a lidar data and its encapsulated data of imu and position
 struct FrameData{
     double timestamp;                                               // evaluation timestamp
     PCLPointCloud points;
-    std::vector<ImuData> imu;
-    std::vector<PositionData> position;
+    std::vector<CompFrame> ins;
 };
 // %             ... struct for parameter
 struct LidarFrame {
@@ -126,213 +108,311 @@ struct LidarFrame {
 };
 // %             ... struct for parameter
 struct CompFrame {
-    // System Status (Bytes 6-7)
-    bool SystemFailure = false;
-    bool AccelerometerSensorFailure = false;
-    bool GyroscopeSensorFailure = false;
-    bool MagnetometerSensorFailure = false;
-    bool GNSSFailureSecondaryAntenna = false;
-    bool GNSSFailurePrimaryAntenna = false;
-    bool AccelerometerOverRange = false;
-    bool GyroscopeOverRange = false;
-    bool MagnetometerOverRange = false;
-    bool MinimumTemperatureAlarm = false;
-    bool MaximumTemperatureAlarm = false;
-    bool GNSSAntennaConnectionBroken = false;
-    bool DataOutputOverflowAlarm = false;
+    // --- FROM CompFrameID20 ---
+    bool valid_20;
+    bool valid_25;
+    bool valid_26;
+    bool valid_28;
+    bool valid_29;
 
-    // Filter Status (Bytes 8-9)
-    bool OrientationFilterInitialised = false;
-    bool NavigationFilterInitialised = false;
-    bool HeadingInitialised = false;
-    bool UTCTimeInitialised = false;
-    uint8_t GNSSFixStatus = 0; // 3-bit field (0-7) for GNSS fix type
-    bool Event1 = false;
-    bool Event2 = false;
-    bool InternalGNSSEnabled = false;
-    bool DualAntennaHeadingActive = false;
-    bool VelocityHeadingEnabled = false;
-    bool GNSSFixInterrupted = false;
-    bool ExternalPositionActive = false;
-    bool ExternalVelocityActive = false;
-    bool ExternalHeadingActive = false;
+    bool SystemFailure_20;
+    bool AccelerometerSensorFailure_20;
+    bool GyroscopeSensorFailure_20;
+    bool MagnetometerSensorFailure_20;
+    bool GNSSFailureSecondaryAntenna_20;
+    bool GNSSFailurePrimaryAntenna_20;
+    bool AccelerometerOverRange_20;
+    bool GyroscopeOverRange_20;
+    bool MagnetometerOverRange_20;
+    bool MinimumTemperatureAlarm_20;
+    bool MaximumTemperatureAlarm_20;
+    bool GNSSAntennaConnectionBroken_20;
+    bool DataOutputOverflowAlarm_20;
+    bool OrientationFilterInitialised_20;
+    bool NavigationFilterInitialised_20;
+    bool HeadingInitialised_20;
+    bool UTCTimeInitialised_20;
+    uint8_t GNSSFixStatus_20;
+    bool Event1_20;
+    bool Event2_20;
+    bool InternalGNSSEnabled_20;
+    bool DualAntennaHeadingActive_20;
+    bool VelocityHeadingEnabled_20;
+    bool GNSSFixInterrupted_20;
+    bool ExternalPositionActive_20;
+    bool ExternalVelocityActive_20;
+    bool ExternalHeadingActive_20;
+    double timestamp_20;
+    double latitude_20;
+    double longitude_20;
+    double altitude_20;
+    float velocityNorth_20;
+    float velocityEast_20;
+    float velocityDown_20;
+    float accelX_20;
+    float accelY_20;
+    float accelZ_20;
+    float gForce_20;
+    float roll_20;
+    float pitch_20;
+    float yaw_20;
+    float qw_20;
+    float qx_20;
+    float qy_20;
+    float qz_20;
+    float angularVelocityX_20;
+    float angularVelocityY_20;
+    float angularVelocityZ_20;
+    float sigmaLatitude_20;
+    float sigmaLongitude_20;
+    float sigmaAltitude_20;
 
-    // Navigation Data
-    double timestamp = 0.0; // UTC Timestamp in seconds
-    double latitude = 0.0;  // Latitude in radians
-    double longitude = 0.0; // Longitude in radians
-    double altitude = 0.0;  // Altitude in meters
-    float velocityNorth = 0.0f; // Velocity north in m/s
-    float velocityEast = 0.0f;  // Velocity east in m/s
-    float velocityDown = 0.0f;  // Velocity down in m/s
-    float accelX = 0.0f;        // Body acceleration X in m/s^2
-    float accelY = 0.0f;        // Body acceleration Y in m/s^2
-    float accelZ = 0.0f;        // Body acceleration Z in m/s^2
-    float gForce = 0.0f;        // G force in g
-    float roll = 0.0f;
-    float pitch = 0.0f;
-    float yaw = 0.0f;
-    Eigen::Quaternionf orientation = Eigen::Quaternionf::Identity();
-    float angularVelocityX = 0.0f; // Angular velocity X in rad/s
-    float angularVelocityY = 0.0f; // Angular velocity Y in rad/s
-    float angularVelocityZ = 0.0f; // Angular velocity Z in rad/s
-    float sigmaLatitude = 0.0f;    // Latitude standard deviation in meters
-    float sigmaLongitude = 0.0f;   // Longitude standard deviation in meters
-    float sigmaAltitude = 0.0f;    // Altitude standard deviation in meters
-    Eigen::Vector3f accStdDev = Eigen::Vector3f::Zero(); // Standard deviation for acceleration x,y,z in IMU sensor frame [m/(s*s)]
-    Eigen::Vector3f gyrStdDev = Eigen::Vector3f::Zero(); // Standard deviation for angular rate around x-axis,y-axis,z-axis in IMU sensor frame [rad/s]
+    // --- FROM CompFrameID25 ---
+    float sigmaVelocityNorth_25;
+    float sigmaVelocityEast_25;
+    float sigmaVelocityDown_25;
 
-    // Clear all fields
+    // --- FROM CompFrameID26 ---
+    float sigmaRoll_26;
+    float sigmaPitch_26;
+    float sigmaYaw_26;
+
+    // --- FROM CompFrameID28 ---
+    float accelX_28;
+    float accelY_28;
+    float accelZ_28;
+    float gyroX_28;
+    float gyroY_28;
+    float gyroZ_28;
+    float magX_28;
+    float magY_28;
+    float magZ_28;
+    float imuTemperature_28;
+    float pressure_28;
+    float pressureTemperature_28;
+    float sigmaAccX_28;
+    float sigmaAccY_28;
+    float sigmaAccZ_28;
+    float sigmaGyrX_28;
+    float sigmaGyrY_28;
+    float sigmaGyrZ_28;
+    float biasAccX_28;
+    float biasAccY_28;
+    float biasAccZ_28;
+    float biasGyrX_28;
+    float biasGyrY_28;
+    float biasGyrZ_28;
+
+    // --- FROM DataFrameID29 ---
+    double timestamp_29;
+    double latitude_29;
+    double longitude_29;
+    double altitude_29;
+    float velocityNorth_29;
+    float velocityEast_29;
+    float velocityDown_29;
+    float sigmaLatitude_29;
+    float sigmaLongitude_29;
+    float sigmaAltitude_29;
+    float tilt_29;
+    float heading_29;
+    float sigmaTilt_29;
+    float sigmaHeading_29;
+    uint8_t gnssFixStatus_29;
+    bool dopplerVelocityValid_29;
+    bool timeValid_29;
+    bool externalGNSS_29;
+    bool tiltValid_29;
+
+    /**
+     * @brief Default constructor that initializes all member variables to a default state.
+     */
+    CompFrame() {
+        // Clear ID20
+        valid_20 = false; valid_25 = false; valid_26 = false; valid_28 = false; valid_29 = false;
+        SystemFailure_20 = false; AccelerometerSensorFailure_20 = false; GyroscopeSensorFailure_20 = false;
+        MagnetometerSensorFailure_20 = false; GNSSFailureSecondaryAntenna_20 = false; GNSSFailurePrimaryAntenna_20 = false;
+        AccelerometerOverRange_20 = false; GyroscopeOverRange_20 = false; MagnetometerOverRange_20 = false;
+        MinimumTemperatureAlarm_20 = false; MaximumTemperatureAlarm_20 = false; GNSSAntennaConnectionBroken_20 = false;
+        DataOutputOverflowAlarm_20 = false; OrientationFilterInitialised_20 = false; NavigationFilterInitialised_20 = false;
+        HeadingInitialised_20 = false; UTCTimeInitialised_20 = false; GNSSFixStatus_20 = 0; Event1_20 = false;
+        Event2_20 = false; InternalGNSSEnabled_20 = false; DualAntennaHeadingActive_20 = false;
+        VelocityHeadingEnabled_20 = false; GNSSFixInterrupted_20 = false; ExternalPositionActive_20 = false;
+        ExternalVelocityActive_20 = false; ExternalHeadingActive_20 = false; timestamp_20 = 0.0; latitude_20 = 0.0;
+        longitude_20 = 0.0; altitude_20 = 0.0; velocityNorth_20 = 0.0f; velocityEast_20 = 0.0f;
+        velocityDown_20 = 0.0f; accelX_20 = 0.0f; accelY_20 = 0.0f; accelZ_20 = 0.0f; gForce_20 = 0.0f;
+        roll_20 = 0.0f; pitch_20 = 0.0f; yaw_20 = 0.0f;
+        qw_20 = 1.0f; qx_20 = 0.0f; qy_20 = 0.0f; qz_20 = 0.0f; // Identity quaternion
+        angularVelocityX_20 = 0.0f;
+        angularVelocityY_20 = 0.0f; angularVelocityZ_20 = 0.0f; sigmaLatitude_20 = 0.0f;
+        sigmaLongitude_20 = 0.0f; sigmaAltitude_20 = 0.0f;
+
+        // Clear ID25
+        sigmaVelocityNorth_25 = 0.0f; sigmaVelocityEast_25 = 0.0f; sigmaVelocityDown_25 = 0.0f;
+
+        // Clear ID26
+        sigmaRoll_26 = 0.0f; sigmaPitch_26 = 0.0f; sigmaYaw_26 = 0.0f;
+
+        // Clear ID28
+        accelX_28 = 0.0f; accelY_28 = 0.0f; accelZ_28 = 0.0f; gyroX_28 = 0.0f; gyroY_28 = 0.0f;
+        gyroZ_28 = 0.0f; magX_28 = 0.0f; magY_28 = 0.0f; magZ_28 = 0.0f; imuTemperature_28 = 0.0f;
+        pressure_28 = 0.0f; pressureTemperature_28 = 0.0f;
+        sigmaAccX_28 = 0.0f; sigmaAccY_28 = 0.0f; sigmaAccZ_28 = 0.0f;
+        sigmaGyrX_28 = 0.0f; sigmaGyrY_28 = 0.0f; sigmaGyrZ_28 = 0.0f;
+        biasAccX_28 = 0.0f; biasAccY_28 = 0.0f; biasAccZ_28 = 0.0f;
+        biasGyrX_28 = 0.0f; biasGyrY_28 = 0.0f; biasGyrZ_28 = 0.0f;
+
+        // Clear ID29
+        timestamp_29 = 0.0; latitude_29 = 0.0; longitude_29 = 0.0; altitude_29 = 0.0; velocityNorth_29 = 0.0f;
+        velocityEast_29 = 0.0f; velocityDown_29 = 0.0f; sigmaLatitude_29 = 0.0f; sigmaLongitude_29 = 0.0f;
+        sigmaAltitude_29 = 0.0f; tilt_29 = 0.0f; heading_29 = 0.0f; sigmaTilt_29 = 0.0f; sigmaHeading_29 = 0.0f;
+        gnssFixStatus_29 = 0; dopplerVelocityValid_29 = false; timeValid_29 = false; externalGNSS_29 = false;
+        tiltValid_29 = false;
+    }
+
+    /**
+     * @brief Resets an existing object to its default state by assigning a new, default-constructed object.
+     */
     void clear() {
-        SystemFailure = false;
-        AccelerometerSensorFailure = false;
-        GyroscopeSensorFailure = false;
-        MagnetometerSensorFailure = false;
-        GNSSFailureSecondaryAntenna = false;
-        GNSSFailurePrimaryAntenna = false;
-        AccelerometerOverRange = false;
-        GyroscopeOverRange = false;
-        MagnetometerOverRange = false;
-        MinimumTemperatureAlarm = false;
-        MaximumTemperatureAlarm = false;
-        GNSSAntennaConnectionBroken = false;
-        DataOutputOverflowAlarm = false;
-
-        // Filter Status (Bytes 8-9)
-        OrientationFilterInitialised = false;
-        NavigationFilterInitialised = false;
-        HeadingInitialised = false;
-        UTCTimeInitialised = false;
-        GNSSFixStatus = 0;
-        Event1 = false;
-        Event2 = false;
-        InternalGNSSEnabled = false;
-        DualAntennaHeadingActive = false;
-        VelocityHeadingEnabled = false;
-        GNSSFixInterrupted = false;
-        ExternalPositionActive = false;
-        ExternalVelocityActive = false;
-        ExternalHeadingActive = false;
-
-        // Navigation Data
-        timestamp = 0.0;
-        latitude = 0.0;
-        longitude = 0.0;
-        altitude = 0.0;
-        velocityNorth = 0.0f;
-        velocityEast = 0.0f;
-        velocityDown = 0.0f;
-        accelX = 0.0f;
-        accelY = 0.0f;
-        accelZ = 0.0f;
-        gForce = 0.0f;
-        roll = 0.0f;
-        pitch = 0.0f;
-        yaw = 0.0f;
-        orientation = Eigen::Quaternionf::Identity();
-        angularVelocityX = 0.0f;
-        angularVelocityY = 0.0f;
-        angularVelocityZ = 0.0f;
-        sigmaLatitude = 0.0f;
-        sigmaLongitude = 0.0f;
-        sigmaAltitude = 0.0f;
-        accStdDev = Eigen::Vector3f::Zero();
-        gyrStdDev = Eigen::Vector3f::Zero();
+        *this = CompFrame();
     }
 
-    [[nodiscard]] ImuData toImuData() const {
-        ImuData imudata;
-        imudata.acc = Eigen::Vector3f(this->accelX, this->accelY, this->accelZ);
-        imudata.gyr = Eigen::Vector3f(this->angularVelocityX, this->angularVelocityY, this->angularVelocityZ);
-        imudata.accStdDev = this->accStdDev;
-        imudata.gyrStdDev = this->gyrStdDev;
-        imudata.timestamp = this->timestamp;
-        return imudata;
+    bool isValid() const {
+        return this->valid_20 && this->valid_25 && this->valid_26 && this->valid_28 && this->valid_29;
     }
 
-    [[nodiscard]] PositionData toPositionData() const {
-        PositionData positiondata;
-        positiondata.pose = Eigen::Vector3d(this->latitude, this->longitude, this->altitude);
-        positiondata.euler = Eigen::Vector3f(this->roll, this->pitch, this->yaw);
-        positiondata.orientation = this->orientation;
-        positiondata.poseStdDev = Eigen::Vector3f(this->sigmaLatitude, this->sigmaLongitude, this->sigmaAltitude);
-        positiondata.timestamp = this->timestamp;
-        return positiondata;
-    }
-
+    /**
+     * @brief Creates an interpolated CompFrame between two given frames.
+     * @param a The starting frame (corresponding to t=0).
+     * @param b The ending frame (corresponding to t=1).
+     * @param t The interpolation factor, which will be clamped to the [0, 1] range.
+     * @return A new CompFrame object with interpolated values.
+     */
     [[nodiscard]] CompFrame linearInterpolate(const CompFrame& a, const CompFrame& b, double t) const {
         CompFrame result;
+        const auto clamped_t = static_cast<float>(std::max(0.0, std::min(1.0, t)));
 
-        // Clamp t to [0, 1] to avoid extrapolation
-        t = std::max(0.0, std::min(1.0, t));
+        // --- STRATEGY 1: Linear Interpolation (continuous numeric values) ---
+        // ID20
+        result.timestamp_20 = a.timestamp_20 + clamped_t * (b.timestamp_20 - a.timestamp_20);
+        result.latitude_20 = a.latitude_20 + clamped_t * (b.latitude_20 - a.latitude_20);
+        result.longitude_20 = a.longitude_20 + clamped_t * (b.longitude_20 - a.longitude_20);
+        result.altitude_20 = a.altitude_20 + clamped_t * (b.altitude_20 - a.altitude_20);
+        result.velocityNorth_20 = a.velocityNorth_20 + clamped_t * (b.velocityNorth_20 - a.velocityNorth_20);
+        result.velocityEast_20 = a.velocityEast_20 + clamped_t * (b.velocityEast_20 - a.velocityEast_20);
+        result.velocityDown_20 = a.velocityDown_20 + clamped_t * (b.velocityDown_20 - a.velocityDown_20);
+        result.accelX_20 = a.accelX_20 + clamped_t * (b.accelX_20 - a.accelX_20);
+        result.accelY_20 = a.accelY_20 + clamped_t * (b.accelY_20 - a.accelY_20);
+        result.accelZ_20 = a.accelZ_20 + clamped_t * (b.accelZ_20 - a.accelZ_20);
+        result.gForce_20 = a.gForce_20 + clamped_t * (b.gForce_20 - a.gForce_20);
+        result.roll_20 = a.roll_20 + clamped_t * (b.roll_20 - a.roll_20);
+        result.pitch_20 = a.pitch_20 + clamped_t * (b.pitch_20 - a.pitch_20);
+        result.yaw_20 = a.yaw_20 + clamped_t * (b.yaw_20 - a.yaw_20);
+        result.angularVelocityX_20 = a.angularVelocityX_20 + clamped_t * (b.angularVelocityX_20 - a.angularVelocityX_20);
+        result.angularVelocityY_20 = a.angularVelocityY_20 + clamped_t * (b.angularVelocityY_20 - a.angularVelocityY_20);
+        result.angularVelocityZ_20 = a.angularVelocityZ_20 + clamped_t * (b.angularVelocityZ_20 - a.angularVelocityZ_20);
+        result.sigmaLatitude_20 = a.sigmaLatitude_20 + clamped_t * (b.sigmaLatitude_20 - a.sigmaLatitude_20);
+        result.sigmaLongitude_20 = a.sigmaLongitude_20 + clamped_t * (b.sigmaLongitude_20 - a.sigmaLongitude_20);
+        result.sigmaAltitude_20 = a.sigmaAltitude_20 + clamped_t * (b.sigmaAltitude_20 - a.sigmaAltitude_20);
+        // ID25
+        result.sigmaVelocityNorth_25 = a.sigmaVelocityNorth_25 + clamped_t * (b.sigmaVelocityNorth_25 - a.sigmaVelocityNorth_25);
+        result.sigmaVelocityEast_25 = a.sigmaVelocityEast_25 + clamped_t * (b.sigmaVelocityEast_25 - a.sigmaVelocityEast_25);
+        result.sigmaVelocityDown_25 = a.sigmaVelocityDown_25 + clamped_t * (b.sigmaVelocityDown_25 - a.sigmaVelocityDown_25);
+        // ID26
+        result.sigmaRoll_26 = a.sigmaRoll_26 + clamped_t * (b.sigmaRoll_26 - a.sigmaRoll_26);
+        result.sigmaPitch_26 = a.sigmaPitch_26 + clamped_t * (b.sigmaPitch_26 - a.sigmaPitch_26);
+        result.sigmaYaw_26 = a.sigmaYaw_26 + clamped_t * (b.sigmaYaw_26 - a.sigmaYaw_26);
+        // ID28
+        result.accelX_28 = a.accelX_28 + clamped_t * (b.accelX_28 - a.accelX_28);
+        result.accelY_28 = a.accelY_28 + clamped_t * (b.accelY_28 - a.accelY_28);
+        result.accelZ_28 = a.accelZ_28 + clamped_t * (b.accelZ_28 - a.accelZ_28);
+        result.gyroX_28 = a.gyroX_28 + clamped_t * (b.gyroX_28 - a.gyroX_28);
+        result.gyroY_28 = a.gyroY_28 + clamped_t * (b.gyroY_28 - a.gyroY_28);
+        result.gyroZ_28 = a.gyroZ_28 + clamped_t * (b.gyroZ_28 - a.gyroZ_28);
+        result.magX_28 = a.magX_28 + clamped_t * (b.magX_28 - a.magX_28);
+        result.magY_28 = a.magY_28 + clamped_t * (b.magY_28 - a.magY_28);
+        result.magZ_28 = a.magZ_28 + clamped_t * (b.magZ_28 - a.magZ_28);
+        result.imuTemperature_28 = a.imuTemperature_28 + clamped_t * (b.imuTemperature_28 - a.imuTemperature_28);
+        result.pressure_28 = a.pressure_28 + clamped_t * (b.pressure_28 - a.pressure_28);
+        result.pressureTemperature_28 = a.pressureTemperature_28 + clamped_t * (b.pressureTemperature_28 - a.pressureTemperature_28);
+        result.sigmaAccX_28 = a.sigmaAccX_28 + clamped_t * (b.sigmaAccX_28 - a.sigmaAccX_28);
+        result.sigmaAccY_28 = a.sigmaAccY_28 + clamped_t * (b.sigmaAccY_28 - a.sigmaAccY_28);
+        result.sigmaAccZ_28 = a.sigmaAccZ_28 + clamped_t * (b.sigmaAccZ_28 - a.sigmaAccZ_28);
+        result.sigmaGyrX_28 = a.sigmaGyrX_28 + clamped_t * (b.sigmaGyrX_28 - a.sigmaGyrX_28);
+        result.sigmaGyrY_28 = a.sigmaGyrY_28 + clamped_t * (b.sigmaGyrY_28 - a.sigmaGyrY_28);
+        result.sigmaGyrZ_28 = a.sigmaGyrZ_28 + clamped_t * (b.sigmaGyrZ_28 - a.sigmaGyrZ_28);
+        result.biasAccX_28 = a.biasAccX_28 + clamped_t * (b.biasAccX_28 - a.biasAccX_28);
+        result.biasAccY_28 = a.biasAccY_28 + clamped_t * (b.biasAccY_28 - a.biasAccY_28);
+        result.biasAccZ_28 = a.biasAccZ_28 + clamped_t * (b.biasAccZ_28 - a.biasAccZ_28);
+        result.biasGyrX_28 = a.biasGyrX_28 + clamped_t * (b.biasGyrX_28 - a.biasGyrX_28);
+        result.biasGyrY_28 = a.biasGyrY_28 + clamped_t * (b.biasGyrY_28 - a.biasGyrY_28);
+        result.biasGyrZ_28 = a.biasGyrZ_28 + clamped_t * (b.biasGyrZ_28 - a.biasGyrZ_28);
+        // ID29
+        result.timestamp_29 = a.timestamp_29 + clamped_t * (b.timestamp_29 - a.timestamp_29);
+        result.latitude_29 = a.latitude_29 + clamped_t * (b.latitude_29 - a.latitude_29);
+        result.longitude_29 = a.longitude_29 + clamped_t * (b.longitude_29 - a.longitude_29);
+        result.altitude_29 = a.altitude_29 + clamped_t * (b.altitude_29 - a.altitude_29);
+        result.velocityNorth_29 = a.velocityNorth_29 + clamped_t * (b.velocityNorth_29 - a.velocityNorth_29);
+        result.velocityEast_29 = a.velocityEast_29 + clamped_t * (b.velocityEast_29 - a.velocityEast_29);
+        result.velocityDown_29 = a.velocityDown_29 + clamped_t * (b.velocityDown_29 - a.velocityDown_29);
+        result.sigmaLatitude_29 = a.sigmaLatitude_29 + clamped_t * (b.sigmaLatitude_29 - a.sigmaLatitude_29);
+        result.sigmaLongitude_29 = a.sigmaLongitude_29 + clamped_t * (b.sigmaLongitude_29 - a.sigmaLongitude_29);
+        result.sigmaAltitude_29 = a.sigmaAltitude_29 + clamped_t * (b.sigmaAltitude_29 - a.sigmaAltitude_29);
+        result.tilt_29 = a.tilt_29 + clamped_t * (b.tilt_29 - a.tilt_29);
+        result.heading_29 = a.heading_29 + clamped_t * (b.heading_29 - a.heading_29);
+        result.sigmaTilt_29 = a.sigmaTilt_29 + clamped_t * (b.sigmaTilt_29 - a.sigmaTilt_29);
+        result.sigmaHeading_29 = a.sigmaHeading_29 + clamped_t * (b.sigmaHeading_29 - a.sigmaHeading_29);
 
-        // Numeric fields: Linear interpolation
-        result.timestamp = a.timestamp + t * (b.timestamp - a.timestamp);
-        result.latitude = a.latitude + t * (b.latitude - a.latitude);
-        result.longitude = a.longitude + t * (b.longitude - a.longitude);
-        result.altitude = a.altitude + t * (b.altitude - a.altitude);
-        result.velocityNorth = a.velocityNorth + t * (b.velocityNorth - a.velocityNorth);
-        result.velocityEast = a.velocityEast + t * (b.velocityEast - a.velocityEast);
-        result.velocityDown = a.velocityDown + t * (b.velocityDown - a.velocityDown);
-        result.accelX = a.accelX + t * (b.accelX - a.accelX);
-        result.accelY = a.accelY + t * (b.accelY - a.accelY);
-        result.accelZ = a.accelZ + t * (b.accelZ - a.accelZ);
-        result.gForce = a.gForce + t * (b.gForce - a.gForce);
-        result.roll = a.roll + t * (b.roll - a.roll);
-        result.pitch = a.pitch + t * (b.pitch - a.pitch);
-        result.yaw = a.yaw + t * (b.yaw - a.yaw);
+        // --- STRATEGY 2: Spherical Linear Interpolation (Slerp) ---
+        Eigen::Quaternionf q_a(a.qw_20, a.qx_20, a.qy_20, a.qz_20);
+        Eigen::Quaternionf q_b(b.qw_20, b.qx_20, b.qy_20, b.qz_20);
+        Eigen::Quaternionf q_result = q_a.slerp(clamped_t, q_b);
+        result.qw_20 = q_result.w();
+        result.qx_20 = q_result.x();
+        result.qy_20 = q_result.y();
+        result.qz_20 = q_result.z();
 
-        // Quaternion: Spherical linear interpolation
-        result.orientation = a.orientation.slerp(t, b.orientation);
+        // --- STRATEGY 3: Logical OR (for failures, alarms, and transient events) ---
+        result.SystemFailure_20 = a.SystemFailure_20 || b.SystemFailure_20;
+        result.AccelerometerSensorFailure_20 = a.AccelerometerSensorFailure_20 || b.AccelerometerSensorFailure_20;
+        result.GyroscopeSensorFailure_20 = a.GyroscopeSensorFailure_20 || b.GyroscopeSensorFailure_20;
+        result.MagnetometerSensorFailure_20 = a.MagnetometerSensorFailure_20 || b.MagnetometerSensorFailure_20;
+        result.GNSSFailureSecondaryAntenna_20 = a.GNSSFailureSecondaryAntenna_20 || b.GNSSFailureSecondaryAntenna_20;
+        result.GNSSFailurePrimaryAntenna_20 = a.GNSSFailurePrimaryAntenna_20 || b.GNSSFailurePrimaryAntenna_20;
+        result.AccelerometerOverRange_20 = a.AccelerometerOverRange_20 || b.AccelerometerOverRange_20;
+        result.GyroscopeOverRange_20 = a.GyroscopeOverRange_20 || b.GyroscopeOverRange_20;
+        result.MagnetometerOverRange_20 = a.MagnetometerOverRange_20 || b.MagnetometerOverRange_20;
+        result.MinimumTemperatureAlarm_20 = a.MinimumTemperatureAlarm_20 || b.MinimumTemperatureAlarm_20;
+        result.MaximumTemperatureAlarm_20 = a.MaximumTemperatureAlarm_20 || b.MaximumTemperatureAlarm_20;
+        result.GNSSAntennaConnectionBroken_20 = a.GNSSAntennaConnectionBroken_20 || b.GNSSAntennaConnectionBroken_20;
+        result.DataOutputOverflowAlarm_20 = a.DataOutputOverflowAlarm_20 || b.DataOutputOverflowAlarm_20;
+        result.Event1_20 = a.Event1_20 || b.Event1_20;
+        result.Event2_20 = a.Event2_20 || b.Event2_20;
+        result.GNSSFixInterrupted_20 = a.GNSSFixInterrupted_20 || b.GNSSFixInterrupted_20;
 
-        result.angularVelocityX = a.angularVelocityX + t * (b.angularVelocityX - a.angularVelocityX);
-        result.angularVelocityY = a.angularVelocityY + t * (b.angularVelocityY - a.angularVelocityY);
-        result.angularVelocityZ = a.angularVelocityZ + t * (b.angularVelocityZ - a.angularVelocityZ);
-        result.sigmaLatitude = a.sigmaLatitude + t * (b.sigmaLatitude - a.sigmaLatitude);
-        result.sigmaLongitude = a.sigmaLongitude + t * (b.sigmaLongitude - a.sigmaLongitude);
-        result.sigmaAltitude = a.sigmaAltitude + t * (b.sigmaAltitude - a.sigmaAltitude);
+        // --- STRATEGY 4: Logical AND (for initialization and stable states) ---
+        result.OrientationFilterInitialised_20 = a.OrientationFilterInitialised_20 && b.OrientationFilterInitialised_20;
+        result.NavigationFilterInitialised_20 = a.NavigationFilterInitialised_20 && b.NavigationFilterInitialised_20;
+        result.HeadingInitialised_20 = a.HeadingInitialised_20 && b.HeadingInitialised_20;
+        result.UTCTimeInitialised_20 = a.UTCTimeInitialised_20 && b.UTCTimeInitialised_20;
+        result.InternalGNSSEnabled_20 = a.InternalGNSSEnabled_20 && b.InternalGNSSEnabled_20;
+        result.DualAntennaHeadingActive_20 = a.DualAntennaHeadingActive_20 && b.DualAntennaHeadingActive_20;
+        result.VelocityHeadingEnabled_20 = a.VelocityHeadingEnabled_20 && b.VelocityHeadingEnabled_20;
+        result.ExternalPositionActive_20 = a.ExternalPositionActive_20 && b.ExternalPositionActive_20;
+        result.ExternalVelocityActive_20 = a.ExternalVelocityActive_20 && b.ExternalVelocityActive_20;
+        result.ExternalHeadingActive_20 = a.ExternalHeadingActive_20 && b.ExternalHeadingActive_20;
+        result.dopplerVelocityValid_29 = a.dopplerVelocityValid_29 && b.dopplerVelocityValid_29;
+        result.timeValid_29 = a.timeValid_29 && b.timeValid_29;
+        result.externalGNSS_29 = a.externalGNSS_29 && b.externalGNSS_29;
+        result.tiltValid_29 = a.tiltValid_29 && b.tiltValid_29;
 
-        // Eigen vectors: Linear interpolation
-        result.accStdDev = a.accStdDev + t * (b.accStdDev - a.accStdDev);
-        result.gyrStdDev = a.gyrStdDev + t * (b.gyrStdDev - a.gyrStdDev);
-
-        // System Status: Set to true if either frame indicates an issue (conservative)
-        result.SystemFailure = a.SystemFailure || b.SystemFailure;
-        result.AccelerometerSensorFailure = a.AccelerometerSensorFailure || b.AccelerometerSensorFailure;
-        result.GyroscopeSensorFailure = a.GyroscopeSensorFailure || b.GyroscopeSensorFailure;
-        result.MagnetometerSensorFailure = a.MagnetometerSensorFailure || b.MagnetometerSensorFailure;
-        result.GNSSFailureSecondaryAntenna = a.GNSSFailureSecondaryAntenna || b.GNSSFailureSecondaryAntenna;
-        result.GNSSFailurePrimaryAntenna = a.GNSSFailurePrimaryAntenna || b.GNSSFailurePrimaryAntenna;
-        result.AccelerometerOverRange = a.AccelerometerOverRange || b.AccelerometerOverRange;
-        result.GyroscopeOverRange = a.GyroscopeOverRange || b.GyroscopeOverRange;
-        result.MagnetometerOverRange = a.MagnetometerOverRange || b.MagnetometerOverRange;
-        result.MinimumTemperatureAlarm = a.MinimumTemperatureAlarm || b.MinimumTemperatureAlarm;
-        result.MaximumTemperatureAlarm = a.MaximumTemperatureAlarm || b.MaximumTemperatureAlarm;
-        result.GNSSAntennaConnectionBroken = a.GNSSAntennaConnectionBroken || b.GNSSAntennaConnectionBroken;
-        result.DataOutputOverflowAlarm = a.DataOutputOverflowAlarm || b.DataOutputOverflowAlarm;
-
-        // Filter Status: Set to true only if both frames agree (conservative for initialization)
-        result.OrientationFilterInitialised = a.OrientationFilterInitialised && b.OrientationFilterInitialised;
-        result.NavigationFilterInitialised = a.NavigationFilterInitialised && b.NavigationFilterInitialised;
-        result.HeadingInitialised = a.HeadingInitialised && b.HeadingInitialised;
-        result.UTCTimeInitialised = a.UTCTimeInitialised && b.UTCTimeInitialised;
-
-        // GNSSFixStatus: Use the value from the closer frame
-        result.GNSSFixStatus = (t < 0.5) ? a.GNSSFixStatus : b.GNSSFixStatus;
-        result.Event1 = a.Event1 || b.Event1;
-        result.Event2 = a.Event2 || b.Event2;
-        result.InternalGNSSEnabled = a.InternalGNSSEnabled && b.InternalGNSSEnabled;
-        result.DualAntennaHeadingActive = a.DualAntennaHeadingActive && b.DualAntennaHeadingActive;
-        result.VelocityHeadingEnabled = a.VelocityHeadingEnabled && b.VelocityHeadingEnabled;
-        result.GNSSFixInterrupted = a.GNSSFixInterrupted || b.GNSSFixInterrupted;
-        result.ExternalPositionActive = a.ExternalPositionActive && b.ExternalPositionActive;
-        result.ExternalVelocityActive = a.ExternalVelocityActive && b.ExternalVelocityActive;
-        result.ExternalHeadingActive = a.ExternalHeadingActive && b.ExternalHeadingActive;
+        // --- STRATEGY 5: Nearest Neighbor (for discrete status codes) ---
+        result.GNSSFixStatus_20 = (clamped_t < 0.5) ? a.GNSSFixStatus_20 : b.GNSSFixStatus_20;
+        result.gnssFixStatus_29 = (clamped_t < 0.5) ? a.gnssFixStatus_29 : b.gnssFixStatus_29;
 
         return result;
     }
 };
-
 
 
 

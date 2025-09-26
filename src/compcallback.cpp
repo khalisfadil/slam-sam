@@ -108,126 +108,265 @@ void CompCallback::ParseMetadata(const nlohmann::json& json_data) {
 }
 // %            ... sensor fusion constructor
 void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) {
-    // Define static expected size
-    static constexpr size_t expected_size_ = 105; // 5-byte header + 100-byte data
-    static constexpr uint8_t packet_id_ = 0x14;   // Packet ID is 20 (0x14)
-    static constexpr uint8_t data_size_ = 100;    // Packet data length is 100 bytes
+    static constexpr size_t header_size_ = 5;
+     // 5-byte header + 100-byte data
+    static constexpr uint8_t packet_id_20 = 0x14;   // Packet ID is 20 (0x14)
+    static constexpr size_t data_size_20 = 100;    // Packet data length is 100 bytes
+    static constexpr size_t expected_size_20 = data_size_20 + header_size_;
 
-    // Validate packet size
-    if (packet.size() != expected_size_) {
-        return;
-    }
+    static constexpr uint8_t packet_id_25 = 0x19;   // Packet ID is 25 (0x19)
+    static constexpr size_t data_size_25 = 12; 
+    static constexpr size_t expected_size_25 = data_size_25 + header_size_;
+    
+    static constexpr uint8_t packet_id_26 = 0x1A;   // Packet ID is 26 (0x1A)
+    static constexpr size_t data_size_26 = 12; 
+    static constexpr size_t expected_size_26 = data_size_26 + header_size_;
+
+    static constexpr uint8_t packet_id_28 = 0x1C;   // Packet ID is 28 (0x1C)
+    static constexpr size_t data_size_28 = 48;    // Packet data length is 100 bytes
+    static constexpr size_t expected_size_28 = data_size_28 + header_size_;
+    
+    static constexpr uint8_t packet_id_29 = 0x1D;   // Packet ID is 29 (0x1D)
+    static constexpr size_t data_size_29 = 74; 
+    static constexpr size_t expected_size_29 = data_size_29 + header_size_;
 
     // Validate Packet ID (at offset 1)
     uint8_t packet_id = packet[1];
-    if (packet_id != packet_id_) {
-        return;
-    }
-
-    // Validate Packet Length (at offset 2)
     uint8_t packet_length = packet[2];
-    if (packet_length != data_size_) {
-        return;
+
+    CompFrame* p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
+    if (p_current_write_buffer->isValid()) {
+        SwapBuffer();
+        p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
+        p_current_write_buffer->clear();
     }
 
-    // Clear the output frame
-    frame.clear();
+    // Use a switch statement for clear logic
+    switch (packet_id) {
+        case packet_id_20:
+            // ... validate size and decode packet 20 ...
+            if (packet.size() != data_size_20 + header_size_ || packet_length != data_size_20) {
+                return; // Invalid size or length for this packet ID
+            }
+            // System Status (Bytes 5-6, u16)
+            uint16_t system_status_raw;
+            std::memcpy(&system_status_raw, packet.data() + 5, sizeof(uint16_t));
+            uint16_t system_status = le16toh(system_status_raw);
+            p_current_write_buffer->SystemFailure_20 = (system_status & 0x0001) != 0;
+            p_current_write_buffer->AccelerometerSensorFailure_20 = (system_status & 0x0002) != 0;
+            p_current_write_buffer->GyroscopeSensorFailure_20 = (system_status & 0x0004) != 0;
+            p_current_write_buffer->MagnetometerSensorFailure_20 = (system_status & 0x0008) != 0;
+            p_current_write_buffer->GNSSFailureSecondaryAntenna_20 = (system_status & 0x0010) != 0;
+            p_current_write_buffer->GNSSFailurePrimaryAntenna_20 = (system_status & 0x0020) != 0;
+            p_current_write_buffer->AccelerometerOverRange_20 = (system_status & 0x0040) != 0;
+            p_current_write_buffer->GyroscopeOverRange_20 = (system_status & 0x0080) != 0;
+            p_current_write_buffer->MagnetometerOverRange_20 = (system_status & 0x0100) != 0;
+            p_current_write_buffer->MinimumTemperatureAlarm_20 = (system_status & 0x0400) != 0;
+            p_current_write_buffer->MaximumTemperatureAlarm_20 = (system_status & 0x0800) != 0;
+            p_current_write_buffer->GNSSAntennaConnectionBroken_20 = (system_status & 0x4000) != 0;
+            p_current_write_buffer->DataOutputOverflowAlarm_20 = (system_status & 0x8000) != 0;
 
-    // System Status (Bytes 5-6, u16)
-    uint16_t system_status_raw;
-    std::memcpy(&system_status_raw, packet.data() + 5, sizeof(uint16_t));
-    uint16_t system_status = le16toh(system_status_raw);
-    frame.SystemFailure = (system_status & 0x0001) != 0;
-    frame.AccelerometerSensorFailure = (system_status & 0x0002) != 0;
-    frame.GyroscopeSensorFailure = (system_status & 0x0004) != 0;
-    frame.MagnetometerSensorFailure = (system_status & 0x0008) != 0;
-    frame.GNSSFailureSecondaryAntenna = (system_status & 0x0010) != 0;
-    frame.GNSSFailurePrimaryAntenna = (system_status & 0x0020) != 0;
-    frame.AccelerometerOverRange = (system_status & 0x0040) != 0;
-    frame.GyroscopeOverRange = (system_status & 0x0080) != 0;
-    frame.MagnetometerOverRange = (system_status & 0x0100) != 0;
-    frame.MinimumTemperatureAlarm = (system_status & 0x0400) != 0;
-    frame.MaximumTemperatureAlarm = (system_status & 0x0800) != 0;
-    frame.GNSSAntennaConnectionBroken = (system_status & 0x4000) != 0;
-    frame.DataOutputOverflowAlarm = (system_status & 0x8000) != 0;
+            // Filter Status (Bytes 7-8, u16)
+            uint16_t filter_status_raw;
+            std::memcpy(&filter_status_raw, packet.data() + 7, sizeof(uint16_t));
+            uint16_t filter_status = le16toh(filter_status_raw);
+            p_current_write_buffer->OrientationFilterInitialised_20 = (filter_status & 0x0001) != 0;
+            p_current_write_buffer->NavigationFilterInitialised_20 = (filter_status & 0x0002) != 0;
+            p_current_write_buffer->HeadingInitialised_20 = (filter_status & 0x0004) != 0;
+            p_current_write_buffer->UTCTimeInitialised_20 = (filter_status & 0x0008) != 0;
+            p_current_write_buffer->GNSSFixStatus_20 = (filter_status >> 4) & 0x07;
+            p_current_write_buffer->Event1_20 = (filter_status & 0x0080) != 0;
+            p_current_write_buffer->Event2_20 = (filter_status & 0x0100) != 0;
+            p_current_write_buffer->InternalGNSSEnabled_20 = (filter_status & 0x0200) != 0;
+            p_current_write_buffer->DualAntennaHeadingActive_20 = (filter_status & 0x0400) != 0;
+            p_current_write_buffer->VelocityHeadingEnabled_20 = (filter_status & 0x0800) != 0;
+            p_current_write_buffer->GNSSFixInterrupted_20 = (filter_status & 0x1000) != 0;
+            p_current_write_buffer->ExternalPositionActive_20 = (filter_status & 0x2000) != 0;
+            p_current_write_buffer->ExternalVelocityActive_20 = (filter_status & 0x4000) != 0;
+            p_current_write_buffer->ExternalHeadingActive_20 = (filter_status & 0x8000) != 0;
 
-    // Filter Status (Bytes 7-8, u16)
-    uint16_t filter_status_raw;
-    std::memcpy(&filter_status_raw, packet.data() + 7, sizeof(uint16_t));
-    uint16_t filter_status = le16toh(filter_status_raw);
-    frame.OrientationFilterInitialised = (filter_status & 0x0001) != 0;
-    frame.NavigationFilterInitialised = (filter_status & 0x0002) != 0;
-    frame.HeadingInitialised = (filter_status & 0x0004) != 0;
-    frame.UTCTimeInitialised = (filter_status & 0x0008) != 0;
-    frame.GNSSFixStatus = (filter_status >> 4) & 0x07;
-    frame.Event1 = (filter_status & 0x0080) != 0;
-    frame.Event2 = (filter_status & 0x0100) != 0;
-    frame.InternalGNSSEnabled = (filter_status & 0x0200) != 0;
-    frame.DualAntennaHeadingActive = (filter_status & 0x0400) != 0;
-    frame.VelocityHeadingEnabled = (filter_status & 0x0800) != 0;
-    frame.GNSSFixInterrupted = (filter_status & 0x1000) != 0;
-    frame.ExternalPositionActive = (filter_status & 0x2000) != 0;
-    frame.ExternalVelocityActive = (filter_status & 0x4000) != 0;
-    frame.ExternalHeadingActive = (filter_status & 0x8000) != 0;
+            // Unix Time (Bytes 9-16, u32 seconds + u32 microseconds)
+            uint32_t seconds_raw, microseconds_raw;
+            std::memcpy(&seconds_raw, packet.data() + 9, sizeof(uint32_t));
+            std::memcpy(&microseconds_raw, packet.data() + 13, sizeof(uint32_t));
+            uint32_t seconds = le32toh(seconds_raw);
+            uint32_t microseconds = le32toh(microseconds_raw);
+            if (microseconds > 999999) {
+                return;
+            }
+            double timestamp = static_cast<double>(seconds) + static_cast<double>(microseconds) * 1e-6;
+            p_current_write_buffer->timestamp_20 = std::fmod(timestamp, 86400.0); // Seconds since midnight UTC
 
-    // Unix Time (Bytes 9-16, u32 seconds + u32 microseconds)
-    uint32_t seconds_raw, microseconds_raw;
-    std::memcpy(&seconds_raw, packet.data() + 9, sizeof(uint32_t));
-    std::memcpy(&microseconds_raw, packet.data() + 13, sizeof(uint32_t));
-    uint32_t seconds = le32toh(seconds_raw);
-    uint32_t microseconds = le32toh(microseconds_raw);
-    if (microseconds > 999999) {
-        return;
+            // Latitude, Longitude, Altitude (Bytes 17-40, fp64)
+            std::memcpy(&p_current_write_buffer->latitude_20, packet.data() + 17, sizeof(double));
+            std::memcpy(&p_current_write_buffer->longitude_20, packet.data() + 25, sizeof(double));
+            std::memcpy(&p_current_write_buffer->altitude_20, packet.data() + 33, sizeof(double));
+
+            // Velocity North, East, Down (Bytes 41-52, fp32)
+            std::memcpy(&p_current_write_buffer->velocityNorth_20, packet.data() + 41, sizeof(float));
+            std::memcpy(&p_current_write_buffer->velocityEast_20, packet.data() + 45, sizeof(float));
+            std::memcpy(&p_current_write_buffer->velocityDown_20, packet.data() + 49, sizeof(float));
+
+            // Body Acceleration X, Y, Z (Bytes 53-64, fp32, treat as sensor frame IMU data)
+            std::memcpy(&p_current_write_buffer->accelX_20, packet.data() + 53, sizeof(float));
+            std::memcpy(&p_current_write_buffer->accelY_20, packet.data() + 57, sizeof(float));
+            std::memcpy(&p_current_write_buffer->accelZ_20, packet.data() + 61, sizeof(float));
+
+            // G Force (Bytes 65-68, fp32)
+            std::memcpy(&p_current_write_buffer->gForce_20, packet.data() + 65, sizeof(float));
+
+            // Roll, Pitch, Yaw (Bytes 69-80, fp32)
+            std::memcpy(&p_current_write_buffer->roll_20, packet.data() + 69, sizeof(float));
+            std::memcpy(&p_current_write_buffer->pitch_20, packet.data() + 73, sizeof(float));
+            std::memcpy(&p_current_write_buffer->yaw_20, packet.data() + 77, sizeof(float));
+
+            // Angular Velocity X, Y, Z (Bytes 81-92, fp32, treat as sensor frame IMU data)
+            std::memcpy(&p_current_write_buffer->angularVelocityX_20, packet.data() + 81, sizeof(float));
+            std::memcpy(&p_current_write_buffer->angularVelocityY_20, packet.data() + 85, sizeof(float));
+            std::memcpy(&p_current_write_buffer->angularVelocityZ_20, packet.data() + 89, sizeof(float));
+
+            // Standard Deviations (Bytes 93-104, fp32)
+            std::memcpy(&p_current_write_buffer->sigmaLatitude_20, packet.data() + 93, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaLongitude_20, packet.data() + 97, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaAltitude_20, packet.data() + 101, sizeof(float));
+
+            // Convert Euler angles (ZYX convention) to quaternion using Eigen
+            Eigen::AngleAxisf rollAngle(p_current_write_buffer->roll_20, Eigen::Vector3f::UnitX());
+            Eigen::AngleAxisf pitchAngle(p_current_write_buffer->pitch_20, Eigen::Vector3f::UnitY());
+            Eigen::AngleAxisf yawAngle(p_current_write_buffer->yaw_20, Eigen::Vector3f::UnitZ());
+
+            Eigen::Quaternionf orientation = yawAngle * pitchAngle * rollAngle;
+            p_current_write_buffer->qw_20 = orientation.w();
+            p_current_write_buffer->qx_20 = orientation.x();
+            p_current_write_buffer->qy_20 = orientation.y();
+            p_current_write_buffer->qz_20 = orientation.z();
+            
+            p_current_write_buffer-> valid_20 = true;
+            break;
+
+        case packet_id_25:
+            // ... validate size and decode packet 25 ...
+            if (packet.size() != data_size_25 + header_size_ || packet_length != data_size_25) {
+                return; // Invalid size or length for this packet ID
+            }
+            // Velocity Standard Deviations (Bytes 5-16, fp32)
+            std::memcpy(&p_current_write_buffer->sigmaVelocityNorth_25, packet.data() + 5, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaVelocityEast_25, packet.data() + 9, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaVelocityDown_25, packet.data() + 13, sizeof(float));
+
+            p_current_write_buffer-> valid_25 = true;
+            break;
+
+        case packet_id_26:
+            // ... validate size and decode packet 26 ...
+            if (packet.size() != data_size_26 + header_size_ || packet_length != data_size_26) {
+                return; // Invalid size or length for this packet ID
+            }
+            // Orientation Standard Deviations (Bytes 5-16, fp32)
+            std::memcpy(&p_current_write_buffer->sigmaRoll_26, packet.data() + 5, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaPitch_26, packet.data() + 9, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaYaw_26, packet.data() + 13, sizeof(float));
+
+            p_current_write_buffer-> valid_26 = true;
+            break;
+
+        case packet_id_28:
+            // ... validate size and decode packet 28 ...
+            if (packet.size() != data_size_28 + header_size_ || packet_length != data_size_28) {
+                return; // Invalid size or length for this packet ID
+            }
+            // IMU and Environmental Sensor Measurements (Bytes 5-52, fp32)
+            std::memcpy(&p_current_write_buffer->accelX_28, packet.data() + 5, sizeof(float));
+            std::memcpy(&p_current_write_buffer->accelY_28, packet.data() + 9, sizeof(float));
+            std::memcpy(&p_current_write_buffer->accelZ_28, packet.data() + 13, sizeof(float));
+            std::memcpy(&p_current_write_buffer->gyroX_28, packet.data() + 17, sizeof(float));
+            std::memcpy(&p_current_write_buffer->gyroY_28, packet.data() + 21, sizeof(float));
+            std::memcpy(&p_current_write_buffer->gyroZ_28, packet.data() + 25, sizeof(float));
+            std::memcpy(&p_current_write_buffer->magX_28, packet.data() + 29, sizeof(float));
+            std::memcpy(&p_current_write_buffer->magY_28, packet.data() + 33, sizeof(float));
+            std::memcpy(&p_current_write_buffer->magZ_28, packet.data() + 37, sizeof(float));
+            std::memcpy(&p_current_write_buffer->imuTemperature_28, packet.data() + 41, sizeof(float));
+            std::memcpy(&p_current_write_buffer->pressure_28, packet.data() + 45, sizeof(float));
+            std::memcpy(&p_current_write_buffer->pressureTemperature_28, packet.data() + 49, sizeof(float));
+
+            double dt = 1.0 / updateRate_;
+            double std_acc = velocityRandomWalk_(0) / std::sqrt(dt);
+            double std_gyro = angularRandomWalk_(0) / std::sqrt(dt);
+
+            p_current_write_buffer->sigmaAccX_28 = static_cast<float>(std_acc);
+            p_current_write_buffer->sigmaAccY_28 = static_cast<float>(std_acc);
+            p_current_write_buffer->sigmaAccZ_28 = static_cast<float>(std_acc);
+            p_current_write_buffer->sigmaGyrX_28 = static_cast<float>(std_gyro);
+            p_current_write_buffer->sigmaGyrY_28 = static_cast<float>(std_gyro);
+            p_current_write_buffer->sigmaGyrZ_28 = static_cast<float>(std_gyro);
+
+            p_current_write_buffer->biasAccX_28 = static_cast<float>(biasAccelerometer_(0));
+            p_current_write_buffer->biasAccY_28 = static_cast<float>(biasAccelerometer_(0));
+            p_current_write_buffer->biasAccZ_28 = static_cast<float>(biasAccelerometer_(0));
+            p_current_write_buffer->biasGyrX_28 = static_cast<float>(biasGyroscope_(0));
+            p_current_write_buffer->biasGyrY_28 = static_cast<float>(biasGyroscope_(0));
+            p_current_write_buffer->biasGyrZ_28 = static_cast<float>(biasGyroscope_(0));
+
+            p_current_write_buffer-> valid_28 = true;
+            break;
+
+        case packet_id_29:
+            // ... validate size and decode packet 29 ...
+            if (packet.size() != data_size_29 + header_size_ || packet_length != data_size_29) {
+                return; // Invalid size or length for this packet ID
+            }
+            // (Bytes 5-12, u32 seconds + u32 microseconds)
+            uint32_t seconds_raw, microseconds_raw;
+            std::memcpy(&seconds_raw, packet.data() + 5, sizeof(uint32_t));
+            std::memcpy(&microseconds_raw, packet.data() + 9, sizeof(uint32_t));
+            uint32_t seconds = le32toh(seconds_raw);
+            uint32_t microseconds = le32toh(microseconds_raw);
+            if (microseconds > 999999) {
+                return;
+            }
+            double timestamp = static_cast<double>(seconds) + static_cast<double>(microseconds) * 1e-6;
+            p_current_write_buffer->timestamp_29 = std::fmod(timestamp, 86400.0);
+
+            // Latitude, Longitude, Height (Bytes 13-36, fp64)
+            std::memcpy(&p_current_write_buffer->latitude_29, packet.data() + 13, sizeof(double));
+            std::memcpy(&p_current_write_buffer->longitude_29, packet.data() + 21, sizeof(double));
+            std::memcpy(&p_current_write_buffer->altitude_29, packet.data() + 29, sizeof(double));
+
+            // Velocity North, East, Down (Bytes 37-48, fp32)
+            std::memcpy(&p_current_write_buffer->velocityNorth_29, packet.data() + 37, sizeof(float));
+            std::memcpy(&p_current_write_buffer->velocityEast_29, packet.data() + 41, sizeof(float));
+            std::memcpy(&p_current_write_buffer->velocityDown_29, packet.data() + 45, sizeof(float));
+
+            // Standard Deviations (Bytes 49-60, fp32)
+            std::memcpy(&p_current_write_buffer->sigmaLatitude_29, packet.data() + 49, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaLongitude_29, packet.data() + 53, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaAltitude_29, packet.data() + 57, sizeof(float));
+
+            // Tilt and Heading (Bytes 61-68, fp32)
+            std::memcpy(&p_current_write_buffer->tilt_29, packet.data() + 61, sizeof(float));
+            std::memcpy(&p_current_write_buffer->heading_29, packet.data() + 65, sizeof(float));
+
+            // Tilt and Heading Standard Deviations (Bytes 69-76, fp32)
+            std::memcpy(&p_current_write_buffer->sigmaTilt_29, packet.data() + 69, sizeof(float));
+            std::memcpy(&p_current_write_buffer->sigmaHeading_29, packet.data() + 73, sizeof(float));
+
+            // Status (Bytes 77-78, u16)
+            uint16_t status_raw;
+            std::memcpy(&status_raw, packet.data() + 77, sizeof(uint16_t));
+            uint16_t status = le16toh(status_raw);
+            p_current_write_buffer->gnssFixStatus_29 = status & 0x07; // Bits 0-2
+            p_current_write_buffer->dopplerVelocityValid_29 = (status & 0x08) != 0; // Bit 3
+            p_current_write_buffer->timeValid_29 = (status & 0x10) != 0; // Bit 4
+            p_current_write_buffer->externalGNSS_29 = (status & 0x20) != 0; // Bit 5
+            p_current_write_buffer->tiltValid_29 = (status & 0x40) != 0; // Bit 6
+
+            p_current_write_buffer-> valid_29 = true;
+            break;
+
+        default:
+            return;
     }
-    double timestamp = static_cast<double>(seconds) + static_cast<double>(microseconds) * 1e-6;
-    frame.timestamp = std::fmod(timestamp, 86400.0); // Seconds since midnight UTC
-
-    // Latitude, Longitude, Altitude (Bytes 17-40, fp64)
-    std::memcpy(&frame.latitude, packet.data() + 17, sizeof(double));
-    std::memcpy(&frame.longitude, packet.data() + 25, sizeof(double));
-    std::memcpy(&frame.altitude, packet.data() + 33, sizeof(double));
-
-    // Velocity North, East, Down (Bytes 41-52, fp32)
-    std::memcpy(&frame.velocityNorth, packet.data() + 41, sizeof(float));
-    std::memcpy(&frame.velocityEast, packet.data() + 45, sizeof(float));
-    std::memcpy(&frame.velocityDown, packet.data() + 49, sizeof(float));
-
-    // Body Acceleration X, Y, Z (Bytes 53-64, fp32, treat as sensor frame IMU data)
-    std::memcpy(&frame.accelX, packet.data() + 53, sizeof(float));
-    std::memcpy(&frame.accelY, packet.data() + 57, sizeof(float));
-    std::memcpy(&frame.accelZ, packet.data() + 61, sizeof(float));
-
-    // G Force (Bytes 65-68, fp32)
-    std::memcpy(&frame.gForce, packet.data() + 65, sizeof(float));
-
-    // Roll, Pitch, Yaw (Bytes 69-80, fp32)
-    std::memcpy(&frame.roll, packet.data() + 69, sizeof(float));
-    std::memcpy(&frame.pitch, packet.data() + 73, sizeof(float));
-    std::memcpy(&frame.yaw, packet.data() + 77, sizeof(float));
-
-    // Angular Velocity X, Y, Z (Bytes 81-92, fp32, treat as sensor frame IMU data)
-    std::memcpy(&frame.angularVelocityX, packet.data() + 81, sizeof(float));
-    std::memcpy(&frame.angularVelocityY, packet.data() + 85, sizeof(float));
-    std::memcpy(&frame.angularVelocityZ, packet.data() + 89, sizeof(float));
-
-    // Standard Deviations (Bytes 93-104, fp32)
-    std::memcpy(&frame.sigmaLatitude, packet.data() + 93, sizeof(float));
-    std::memcpy(&frame.sigmaLongitude, packet.data() + 97, sizeof(float));
-    std::memcpy(&frame.sigmaAltitude, packet.data() + 101, sizeof(float));
-
-    // Convert Euler angles (ZYX convention) to quaternion using Eigen
-    Eigen::AngleAxisf rollAngle(frame.roll, Eigen::Vector3f::UnitX());
-    Eigen::AngleAxisf pitchAngle(frame.pitch, Eigen::Vector3f::UnitY());
-    Eigen::AngleAxisf yawAngle(frame.yaw, Eigen::Vector3f::UnitZ());
-
-    frame.orientation = yawAngle * pitchAngle * rollAngle;
-
-    // Compute standard deviations in sensor frame
-    double dt = 1.0 / updateRate_;
-    double std_acc = velocityRandomWalk_(0) / std::sqrt(dt);
-    double std_gyro = angularRandomWalk_(0) / std::sqrt(dt);
-    frame.accStdDev = (Eigen::Vector3d(std_acc, std_acc, std_acc)).cast<float>();
-    frame.gyrStdDev = (Eigen::Vector3d(std_gyro, std_gyro, std_gyro)).cast<float>();
+    frame = GetLatestFrame();
 }
 // %             ... WGS84 Gravity function
 double CompCallback::GravityWGS84(double latitude, double longitude, double altitude) {
