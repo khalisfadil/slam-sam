@@ -143,7 +143,7 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
 
     // Use a switch statement for clear logic
     switch (packet_id) {
-        case packet_id_20:
+        case packet_id_20: {
             // ... validate size and decode packet 20 ...
             if (packet.size() != data_size_20 + header_size_ || packet_length != data_size_20) {
                 return; // Invalid size or length for this packet ID
@@ -243,8 +243,9 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
             
             p_current_write_buffer-> valid_20 = true;
             break;
+        }
 
-        case packet_id_25:
+        case packet_id_25: {
             // ... validate size and decode packet 25 ...
             if (packet.size() != data_size_25 + header_size_ || packet_length != data_size_25) {
                 return; // Invalid size or length for this packet ID
@@ -256,8 +257,9 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
 
             p_current_write_buffer-> valid_25 = true;
             break;
+        }
 
-        case packet_id_26:
+        case packet_id_26: {
             // ... validate size and decode packet 26 ...
             if (packet.size() != data_size_26 + header_size_ || packet_length != data_size_26) {
                 return; // Invalid size or length for this packet ID
@@ -269,8 +271,9 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
 
             p_current_write_buffer-> valid_26 = true;
             break;
+        }
 
-        case packet_id_28:
+        case packet_id_28: {
             // ... validate size and decode packet 28 ...
             if (packet.size() != data_size_28 + header_size_ || packet_length != data_size_28) {
                 return; // Invalid size or length for this packet ID
@@ -309,8 +312,9 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
 
             p_current_write_buffer-> valid_28 = true;
             break;
+        }
 
-        case packet_id_29:
+        case packet_id_29: {
             // ... validate size and decode packet 29 ...
             if (packet.size() != data_size_29 + header_size_ || packet_length != data_size_29) {
                 return; // Invalid size or length for this packet ID
@@ -362,9 +366,7 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
 
             p_current_write_buffer-> valid_29 = true;
             break;
-
-        default:
-            return;
+        }
     }
     frame = GetLatestFrame();
 }

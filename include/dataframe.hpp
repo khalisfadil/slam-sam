@@ -13,99 +13,6 @@
 #include <cstdint> 
 #include <memory>
 
-// %            ... struct representing single 3d point data
-struct VisualizationData {
-    std::shared_ptr<gtsam::Values> poses;
-    std::shared_ptr<PointsHashMap> points;
-};
-// %            ... struct representing single 3d point data
-struct PCLPointCloud{
-    uint16_t frame_id = 0;
-    pcl::PointCloud<pcl::PointXYZI> pointsBody;               
-    std::vector<float> pointsAlpha;
-    std::vector<double> pointsTimestamp;                                             
-};
-// %            ... struct representing a lidar data and its encapsulated data of imu and position
-struct FrameData{
-    double timestamp;                                               // evaluation timestamp
-    PCLPointCloud points;
-    std::vector<CompFrame> ins;
-};
-// %             ... struct for parameter
-struct LidarFrame {
-    uint16_t frame_id = 0;
-    double timestamp = 0.0; // Current timestamp, unix timestamp (PTP sync)
-    double timestamp_end = 0.0; // End timestamp of current frame
-    double interframe_timedelta = 0.0; // Time difference between first point in current frame and last point in last frame
-    uint32_t numberpoints = 0;
-
-    std::vector<float, Eigen::aligned_allocator<float>> x; // X coordinates
-    std::vector<float, Eigen::aligned_allocator<float>> y; // Y coordinates
-    std::vector<float, Eigen::aligned_allocator<float>> z; // Z coordinates
-    std::vector<uint16_t> c_id; // Channel indices
-    std::vector<uint16_t> m_id; // Measurement indices
-    std::vector<double, Eigen::aligned_allocator<double>> timestamp_points; // Absolute timestamps
-    std::vector<float, Eigen::aligned_allocator<float>> relative_timestamp; // Relative timestamps
-    std::vector<uint16_t> reflectivity; // Reflectivity values
-    std::vector<uint16_t> signal; // Signal strengths
-    std::vector<uint16_t> nir; // NIR values
-
-    void reserve(size_t size) {
-        x.reserve(size);
-        y.reserve(size);
-        z.reserve(size);
-        c_id.reserve(size);
-        m_id.reserve(size);
-        timestamp_points.reserve(size);
-        relative_timestamp.reserve(size);
-        reflectivity.reserve(size);
-        signal.reserve(size);
-        nir.reserve(size);
-    }
-
-    void clear() {
-        x.clear();
-        y.clear();
-        z.clear();
-        c_id.clear();
-        m_id.clear();
-        timestamp_points.clear();
-        relative_timestamp.clear();
-        reflectivity.clear();
-        signal.clear();
-        nir.clear();
-        numberpoints = 0;
-    }
-
-    [[nodiscard]] PCLPointCloud toPCLPointCloud() const {
-        PCLPointCloud pointcloud;
-        pointcloud.pointsBody.reserve(numberpoints);
-        pointcloud.pointsAlpha.reserve(numberpoints);
-        pointcloud.pointsTimestamp.reserve(numberpoints);
-
-        const double frame_duration = this->timestamp_end - this->timestamp;
-        pointcloud.frame_id = this->frame_id;
-        for (size_t i = 0; i < numberpoints; ++i) {
-            pcl::PointXYZI point;
-            point.x = this->x[i];
-            point.y = this->y[i];
-            point.z = this->z[i];
-            point.intensity = static_cast<float>(this->reflectivity[i]); // Use reflectivity for intensity
-            // Add to pointsBody (raw sensor coordinates)
-            pointcloud.pointsBody.push_back(point);
-            // Calculate alpha (interpolation factor)
-            float alpha = 0.0f;
-            if (frame_duration > 0.0) {
-                const double elapsed_time = this->timestamp_points[i] - this->timestamp;
-                alpha = static_cast<float>(std::max(0.0, std::min(1.0, elapsed_time / frame_duration)));
-            }
-            pointcloud.pointsAlpha.push_back(alpha);
-            // Add absolute timestamp
-            pointcloud.pointsTimestamp.push_back(this->timestamp_points[i]);
-        }
-        return pointcloud;
-    }
-};
 // %             ... struct for parameter
 struct CompFrame {
     // --- FROM CompFrameID20 ---
@@ -413,6 +320,100 @@ struct CompFrame {
         return result;
     }
 };
+// %            ... struct representing single 3d point data
+struct VisualizationData {
+    std::shared_ptr<gtsam::Values> poses;
+    std::shared_ptr<PointsHashMap> points;
+};
+// %            ... struct representing single 3d point data
+struct PCLPointCloud{
+    uint16_t frame_id = 0;
+    pcl::PointCloud<pcl::PointXYZI> pointsBody;               
+    std::vector<float> pointsAlpha;
+    std::vector<double> pointsTimestamp;                                             
+};
+// %            ... struct representing a lidar data and its encapsulated data of imu and position
+struct FrameData{
+    double timestamp;                                               // evaluation timestamp
+    PCLPointCloud points;
+    std::vector<CompFrame> ins;
+};
+// %             ... struct for parameter
+struct LidarFrame {
+    uint16_t frame_id = 0;
+    double timestamp = 0.0; // Current timestamp, unix timestamp (PTP sync)
+    double timestamp_end = 0.0; // End timestamp of current frame
+    double interframe_timedelta = 0.0; // Time difference between first point in current frame and last point in last frame
+    uint32_t numberpoints = 0;
+
+    std::vector<float, Eigen::aligned_allocator<float>> x; // X coordinates
+    std::vector<float, Eigen::aligned_allocator<float>> y; // Y coordinates
+    std::vector<float, Eigen::aligned_allocator<float>> z; // Z coordinates
+    std::vector<uint16_t> c_id; // Channel indices
+    std::vector<uint16_t> m_id; // Measurement indices
+    std::vector<double, Eigen::aligned_allocator<double>> timestamp_points; // Absolute timestamps
+    std::vector<float, Eigen::aligned_allocator<float>> relative_timestamp; // Relative timestamps
+    std::vector<uint16_t> reflectivity; // Reflectivity values
+    std::vector<uint16_t> signal; // Signal strengths
+    std::vector<uint16_t> nir; // NIR values
+
+    void reserve(size_t size) {
+        x.reserve(size);
+        y.reserve(size);
+        z.reserve(size);
+        c_id.reserve(size);
+        m_id.reserve(size);
+        timestamp_points.reserve(size);
+        relative_timestamp.reserve(size);
+        reflectivity.reserve(size);
+        signal.reserve(size);
+        nir.reserve(size);
+    }
+
+    void clear() {
+        x.clear();
+        y.clear();
+        z.clear();
+        c_id.clear();
+        m_id.clear();
+        timestamp_points.clear();
+        relative_timestamp.clear();
+        reflectivity.clear();
+        signal.clear();
+        nir.clear();
+        numberpoints = 0;
+    }
+
+    [[nodiscard]] PCLPointCloud toPCLPointCloud() const {
+        PCLPointCloud pointcloud;
+        pointcloud.pointsBody.reserve(numberpoints);
+        pointcloud.pointsAlpha.reserve(numberpoints);
+        pointcloud.pointsTimestamp.reserve(numberpoints);
+
+        const double frame_duration = this->timestamp_end - this->timestamp;
+        pointcloud.frame_id = this->frame_id;
+        for (size_t i = 0; i < numberpoints; ++i) {
+            pcl::PointXYZI point;
+            point.x = this->x[i];
+            point.y = this->y[i];
+            point.z = this->z[i];
+            point.intensity = static_cast<float>(this->reflectivity[i]); // Use reflectivity for intensity
+            // Add to pointsBody (raw sensor coordinates)
+            pointcloud.pointsBody.push_back(point);
+            // Calculate alpha (interpolation factor)
+            float alpha = 0.0f;
+            if (frame_duration > 0.0) {
+                const double elapsed_time = this->timestamp_points[i] - this->timestamp;
+                alpha = static_cast<float>(std::max(0.0, std::min(1.0, elapsed_time / frame_duration)));
+            }
+            pointcloud.pointsAlpha.push_back(alpha);
+            // Add absolute timestamp
+            pointcloud.pointsTimestamp.push_back(this->timestamp_points[i]);
+        }
+        return pointcloud;
+    }
+};
+
 
 
 
