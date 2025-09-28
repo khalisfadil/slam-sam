@@ -437,6 +437,7 @@ int main() {
 
         PointsHashMap pointsArchive;
         VoxelHashMap spatialArchive;
+        PoseHashMap insPoseArchive;
 
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
@@ -449,8 +450,8 @@ int main() {
         //                     0, 0, 0, 0.001, 0, 0,  // roll variance: 0.01 rad^2
         //                     0, 0, 0, 0, 0.001, 0,  // pitch variance: 0.01 rad^2
         //                     0, 0, 0, 0, 0, 0.001;  // yaw variance: 0.01 rad^2
-        const double MAX_TRANS_DEVIATION = 2.0; // Max translational deviation in meters
-        const double MAX_ROT_DEVIATION = 0.2;   // Max rotational deviation in radians (~5.7 degrees)
+        const double MAX_TRANS_DEVIATION = 1.0; // Max translational deviation in meters
+        const double MAX_ROT_DEVIATION = 0.1;   // Max rotational deviation in radians (~5.7 degrees)
         
         // Trust Gain parameters defined here ---
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
@@ -555,6 +556,7 @@ int main() {
                     //######################################################
                     Eigen::Matrix4d registerResult = registerCallback.registration->getFinalTransformation().cast<double>();
                     auto ndt_result = ndt_omp->getResult();
+                    ndt_iter = ndt_result.iteration_num;
                     // 1. Convert poses to GTSAM types for easy comparison
                     gtsam::Pose3 pose_const_vel(lidarFactorSourceTb2m);
                     gtsam::Pose3 pose_ndt_result(registerResult);
@@ -742,6 +744,7 @@ int main() {
                     spatialArchive[key].push_back({id, timestamp});
                 // }
                 pointsArchive[id] = {pointsBody, timestamp};
+                insPoseArchive[id] = {Tb2m, timestamp};
                 last_id = id; 
 
                 if (!Val.empty()) {
@@ -749,6 +752,7 @@ int main() {
                     vizData->poses = std::make_shared<gtsam::Values>(Val);
                     // Pass a deep copy of the points archive for thread safety
                     vizData->points = std::make_shared<PointsHashMap>(pointsArchive);
+                    vizData->insposes = std::make_shared<PoseHashMap>(insPoseArchive);
                     vizQueue.push(std::move(vizData));
                 }
                 // ################# rebuild spatial map if loop closure found
@@ -809,7 +813,10 @@ int main() {
         pcl::VoxelGrid<pcl::PointXYZI> vg;
         vg.setLeafSize(0.5f, 0.5f, 0.5f);
 
+        // Point cloud for the OPTIMIZED trajectory (colored RED)
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        // Point cloud for the RAW INS trajectory (colored GREEN)
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr ins_trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
         while (running && !viewer->wasStopped()) {
             auto vizData = vizQueue.pop();
@@ -888,7 +895,28 @@ int main() {
 
             if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
                 viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
-                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "trajectory_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "trajectory_cloud");
+            }
+
+            // Update RAW INS trajectory (GREEN)
+            ins_trajectory_cloud->clear();
+            if (vizData->insposes) {
+                for (const auto& key_value : *(vizData->insposes)) {
+                    const auto& pose_matrix = key_value.second.pose;
+                    pcl::PointXYZRGB ins_point;
+                    ins_point.x = pose_matrix(0, 3);
+                    ins_point.y = pose_matrix(1, 3);
+                    ins_point.z = pose_matrix(2, 3);
+                    ins_point.r = 10;
+                    ins_point.g = 255;
+                    ins_point.b = 10;
+                    ins_trajectory_cloud->push_back(ins_point);
+                }
+            }
+
+            if (!viewer->updatePointCloud(ins_trajectory_cloud, "ins_trajectory_cloud")) {
+                viewer->addPointCloud(ins_trajectory_cloud, "ins_trajectory_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "ins_trajectory_cloud");
             }
 
             // --- NEW: Smoothly update camera on every spin ---
