@@ -73,7 +73,6 @@ struct KeyframeInfo {
     uint64_t id;
     double timestamp;
 };
-
 struct KeypointInfo{
     pcl::PointCloud<pcl::PointXYZI>::Ptr points;
     double timestamp;
@@ -82,7 +81,25 @@ struct Keypose {
     Eigen::Matrix4d pose; // Tb2m: body-to-map transformation in NED frame
     double timestamp;
 };
+struct KeyFrameStats {
+    uint64_t frame_id = 0;
+    double timestamp = 0.0;
+    size_t num_points = 0;
+    long alignment_time_ms = 0;
+    int ndt_iterations = 0;
+    
+    Eigen::Vector<double, 6> ins_std_dev = Eigen::Vector<double, 6>::Zero();
+    Eigen::Vector<double, 6> ins_scaled_std_dev = Eigen::Vector<double, 6>::Zero();
+    Eigen::Vector<double, 6> lidar_std_dev = Eigen::Vector<double, 6>::Zero();
+    Eigen::Vector<double, 6> gtsam_std_dev = Eigen::Vector<double, 6>::Zero();
+    
+    Eigen::Matrix4d ins_pose = Eigen::Matrix4d::Identity();
+    Eigen::Matrix4d gtsam_pose = Eigen::Matrix4d::Identity();
+    
+    double pose_rmse = 0.0; // RMSE between INS translation and GTSAM translation
+};
 
 using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyframeInfo>, VoxelHash>;
 using PointsHashMap = tsl::robin_map<uint64_t, KeypointInfo, KeyframeHash>;
 using PoseHashMap = tsl::robin_map<uint64_t, Keypose, KeyframeHash>;
+using StatsHashMap = tsl::robin_map<uint64_t, KeyFrameStats, KeyframeHash>;

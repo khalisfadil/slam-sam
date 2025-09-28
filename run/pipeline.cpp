@@ -438,6 +438,7 @@ int main() {
         PointsHashMap pointsArchive;
         VoxelHashMap spatialArchive;
         PoseHashMap insPoseArchive;
+        StatsHashMap statsArchive;
 
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
@@ -518,6 +519,13 @@ int main() {
                 int ndt_iter = 0;
                 std::chrono::milliseconds align_duration;
 
+                //#################################################
+                KeyFrameStats current_stats;
+                current_stats.frame_id = id;
+                current_stats.timestamp =timestamp;
+                current_stats.num_points = pointsBody->size();
+                //#################################################
+
                 gtsam::NonlinearFactorGraph newFactors;
                 gtsam::Values newEstimates;
 
@@ -557,6 +565,7 @@ int main() {
                     Eigen::Matrix4d registerResult = registerCallback.registration->getFinalTransformation().cast<double>();
                     auto ndt_result = ndt_omp->getResult();
                     ndt_iter = ndt_result.iteration_num;
+                    
                     // 1. Convert poses to GTSAM types for easy comparison
                     gtsam::Pose3 pose_const_vel(lidarFactorSourceTb2m);
                     gtsam::Pose3 pose_ndt_result(registerResult);
@@ -592,6 +601,8 @@ int main() {
                     // The lidarNoiseModel will now use the blended covariance
                     gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+
+                    
 
                     //######################################################
                     // if (registerCallback.registration->hasConverged()) {
@@ -651,6 +662,14 @@ int main() {
                     gtsam::Pose3 insFactor(Tb2m);
                     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(scaled_sigmas);
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
+                    
+                    //#################################################
+                    current_stats.alignment_time_ms = align_duration.count();
+                    current_stats.ndt_iterations = ndt_iter;
+                    current_stats.lidar_std_dev = lidarStdDev;
+                    current_stats.ins_scaled_std_dev = insScaledStdDev;
+                    current_stats.ins_std_dev = insStdDev;
+                    //#################################################
                 }
 
                 // ###########LOOP CLOSURE
@@ -722,6 +741,23 @@ int main() {
 
                 gtsam::Pose3 currTb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
 
+                //#################################################
+                current_stats.ins_pose = Tb2m; // Raw INS pose
+                current_stats.gtsam_pose = currTb2m.matrix(); // Optimized GTSAM pose
+                Eigen::Vector3d ins_translation = current_stats.ins_pose.block<3,1>(0,3);
+                Eigen::Vector3d gtsam_translation = current_stats.gtsam_pose.block<3,1>(0,3);
+                current_stats.pose_rmse = (ins_translation - gtsam_translation).norm();
+                try {
+                    gtsam::Matrix gtsam_cov = isam2.marginalCovariance(Symbol('x', id));
+                    gtsam::Vector gtsam_sigmas = gtsam_cov.diagonal().cwiseSqrt();
+                    // Reorder from GTSAM's [roll, pitch, yaw, x, y, z] to our [x, y, z, roll, pitch, yaw]
+                    current_stats.gtsam_std_dev << gtsam_sigmas(3), gtsam_sigmas(4), gtsam_sigmas(5), gtsam_sigmas(0), gtsam_sigmas(1), gtsam_sigmas(2);
+                } catch (const gtsam::IndeterminantLinearSystemException& e) {
+                    std::cerr << "Warning: Could not compute marginal covariance for frame " << id << ". " << e.what() << std::endl;
+                }
+                statsArchive[id] = current_stats;
+                //#################################################
+
                 if (!is_first_keyframe) {
                     gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
                     Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
@@ -774,6 +810,13 @@ int main() {
             }
         } catch (const std::exception& e) {
             std::cerr << "Gtsam thread error: " << e.what() << "\n";
+        }
+        if (!statsArchive.empty()) {
+            std::cout << "\n[GTSAM Thread] Loop finished. Writing " 
+                    << statsArchive.size() 
+                    << " frame stats to file...\n";
+            writeStatsToFile(statsArchive, "../gtsam_run_stats.csv");
+            std::cout << "[GTSAM Thread] Stats successfully written to gtsam_run_stats.csv\n";
         }
         std::cout << "Gtsam thread exiting\n";
     });

@@ -101,3 +101,56 @@ class FrameQueue {
 //             p_out.intensity = p_in.intensity;
 //         }
 //     }
+
+void writeStatsToFile(const StatsHashMap& stats, const std::string& filename) {
+    if (stats.empty()) {
+        std::cout << "No stats to write." << std::endl;
+        return;
+    }
+
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file for writing stats: " << filename << std::endl;
+        return;
+    }
+
+    // Write header
+    file << "frame_id,timestamp,num_points,align_time_ms,ndt_iter,"
+         << "ins_std_x,ins_std_y,ins_std_z,ins_std_roll,ins_std_pitch,ins_std_yaw,"
+         << "lidar_std_x,lidar_std_y,lidar_std_z,lidar_std_roll,lidar_std_pitch,lidar_std_yaw,"
+         << "gtsam_std_x,gtsam_std_y,gtsam_std_z,gtsam_std_roll,gtsam_std_pitch,gtsam_std_yaw,"
+         << "ins_pose_r00,ins_pose_r01,ins_pose_r02,ins_pose_tx,"
+         << "ins_pose_r10,ins_pose_r11,ins_pose_r12,ins_pose_ty,"
+         << "ins_pose_r20,ins_pose_r21,ins_pose_r22,ins_pose_tz,"
+         << "gtsam_pose_r00,gtsam_pose_r01,gtsam_pose_r02,gtsam_pose_tx,"
+         << "gtsam_pose_r10,gtsam_pose_r11,gtsam_pose_r12,gtsam_pose_ty,"
+         << "gtsam_pose_r20,gtsam_pose_r21,gtsam_pose_r22,gtsam_pose_tz,"
+         << "pose_rmse\n";
+
+    // Sort keys for ordered output
+    std::vector<uint64_t> sorted_keys;
+    sorted_keys.reserve(stats.size());
+    for (const auto& pair : stats) {
+        sorted_keys.push_back(pair.first);
+    }
+    std::sort(sorted_keys.begin(), sorted_keys.end());
+
+    // Write data rows
+    for (const auto& key : sorted_keys) {
+        const auto& s = stats.at(key);
+        file << std::fixed << std::setprecision(12);
+        file << s.frame_id << "," << s.timestamp << "," << s.num_points << "," << s.alignment_time_ms << "," << s.ndt_iterations << ",";
+        
+        // Eigen vectors
+        for (int i = 0; i < 6; ++i) file << s.ins_std_dev(i) << (i == 5 ? "" : ","); file << ",";
+        for (int i = 0; i < 6; ++i) file << s.lidar_std_dev(i) << (i == 5 ? "" : ","); file << ",";
+        for (int i = 0; i < 6; ++i) file << s.gtsam_std_dev(i) << (i == 5 ? "" : ","); file << ",";
+        
+        // Eigen matrices (first 3 rows, 4 columns)
+        for (int r = 0; r < 3; ++r) for (int c = 0; c < 4; ++c) file << s.ins_pose(r, c) << ((r==2 && c==3) ? "" : ","); file << ",";
+        for (int r = 0; r < 3; ++r) for (int c = 0; c < 4; ++c) file << s.gtsam_pose(r, c) << ((r==2 && c==3) ? "" : ","); file << ",";
+        
+        file << s.pose_rmse << "\n";
+    }
+    file.close();
+}
