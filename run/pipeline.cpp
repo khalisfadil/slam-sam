@@ -440,8 +440,8 @@ int main() {
 
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
-        Eigen::Vector<double, 6> lidarCovScalingVector{10, 1, 1, 1e3, 1e3, 1e3}; // Default/high-trust scaling
-        Eigen::Vector<double, 6> low_trust_lidar_scaling_vector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // Scaling for poor-quality matches
+        // Eigen::Vector<double, 6> lidarCovScalingVector{10, 1, 1, 1e3, 1e3, 1e3}; // Default/high-trust scaling
+        Eigen::Vector<double, 6> low_trust_lidar_scaling_vector{1e1, 1e1, 1e1, 1, 1, 1}; // Scaling for poor-quality matches
         const double MIN_HESSIAN_CONDITION_NUM = 100.0;  // Below this, we have full trust.
         const double MAX_HESSIAN_CONDITION_NUM = 1000.0;
         
@@ -545,6 +545,12 @@ int main() {
                         std::cout << "Logging: NDT converged. Using scaled covariance.\n";
                         lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
                         Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
+                        auto ndt_result = ndt_omp->getResult();
+                        ndt_iter = ndt_result.iteration_num;
+                        const auto& hessian = ndt_result.hessian;
+                        Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                        lidarCov = -regularized_hessian.inverse();
+                        lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
