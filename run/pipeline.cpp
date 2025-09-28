@@ -548,8 +548,8 @@ int main() {
                         ndt_iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        lidarCov = -regularized_hessian.inverse()*5;
-                        lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+                        lidarCov = -regularized_hessian.inverse()*0.1;
+                        lidarStdDev = lidarCov.diagonal().cwiseSqrt()*0.1;
                         
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
