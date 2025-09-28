@@ -457,7 +457,7 @@ int main() {
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 1.0;
-        const double recovery_rate = 0.02; // Trust regained over 1/0.02 = 50 keyframes
+        const double recovery_rate = 0.01; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
@@ -510,7 +510,7 @@ int main() {
                 Eigen::Quaternionf quat{key_data_frame.qw_20, key_data_frame.qx_20, key_data_frame.qy_20, key_data_frame.qz_20};
                 const Eigen::Matrix3d Cb2m = quat.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                insStdDev << key_data_frame.sigmaLatitude_20*2, key_data_frame.sigmaLongitude_20*2, key_data_frame.sigmaAltitude_20*2, key_data_frame.sigmaRoll_26*2, key_data_frame.sigmaPitch_26*2, key_data_frame.sigmaYaw_26*2;
+                insStdDev << key_data_frame.sigmaLatitude_20*4, key_data_frame.sigmaLongitude_20*4, key_data_frame.sigmaAltitude_20*4, key_data_frame.sigmaRoll_26*4, key_data_frame.sigmaPitch_26*4, key_data_frame.sigmaYaw_26*4;
                 double insChecker = insStdDev.head(3).norm();
                 
                 uint64_t id = data_frame->points.frame_id;
@@ -622,7 +622,7 @@ int main() {
                     //     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     // }
 
-                    bool is_gps_available_now = (insChecker < 0.16);
+                    bool is_gps_available_now = (insChecker < 0.32);
                     if (is_gps_available_now && was_gps_denied) {
                         std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
                         current_trust_factor = 0.0; // Reset to begin recovery from zero trust
@@ -908,8 +908,8 @@ int main() {
                     ins_point.y = pose_matrix(1, 3);
                     ins_point.z = pose_matrix(2, 3);
                     ins_point.r = 10;
-                    ins_point.g = 255;
-                    ins_point.b = 10;
+                    ins_point.g = 10;
+                    ins_point.b = 255;
                     ins_trajectory_cloud->push_back(ins_point);
                 }
             }
