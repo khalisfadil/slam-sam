@@ -447,7 +447,7 @@ int main() {
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 0.0;
-        const double recovery_rate = 0.1; // Trust regained over 1/0.02 = 5 keyframes
+        const double recovery_rate = 0.02; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
@@ -548,8 +548,8 @@ int main() {
                         ndt_iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        lidarCov = -regularized_hessian.inverse()*0.1;
-                        lidarStdDev = lidarCov.diagonal().cwiseSqrt()*0.1;
+                        lidarCov = -regularized_hessian.inverse()*0.9;
+                        lidarStdDev = lidarCov.diagonal().cwiseSqrt()*0.9;
                         
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
