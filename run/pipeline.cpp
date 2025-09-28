@@ -441,15 +441,13 @@ int main() {
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
         // Eigen::Vector<double, 6> lidarCovScalingVector{10, 1, 1, 1e3, 1e3, 1e3}; // Default/high-trust scaling
-        Eigen::Vector<double, 6> low_trust_lidar_scaling_vector{1e1, 1e1, 1e1, 1, 1, 1}; // Scaling for poor-quality matches
-        const double MIN_HESSIAN_CONDITION_NUM = 100.0;  // Below this, we have full trust.
-        const double MAX_HESSIAN_CONDITION_NUM = 1000.0;
+        Eigen::Vector<double, 6> low_trust_lidar_scaling_vector{1e3, 1e3, 1e3, 1e2, 1e2, 1e2}; // Scaling for poor-quality matches
         
         // Trust Gain parameters defined here ---
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 0.0;
-        const double recovery_rate = 0.001; // Trust regained over 1/0.02 = 5 keyframes
+        const double recovery_rate = 0.002; // Trust regained over 1/0.02 = 5 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
@@ -569,6 +567,7 @@ int main() {
 
                     bool is_gps_available_now = (insStdDev.norm() < 1.0);
                     if (is_gps_available_now && was_gps_denied) {
+                        std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
                         current_trust_factor = 0.0; // Reset to begin recovery from zero trust
                     }
                     was_gps_denied = !is_gps_available_now;
@@ -577,8 +576,10 @@ int main() {
                         // If available, increase trust factor and interpolate the scaling vector.
                         current_trust_factor = std::min(1.0, current_trust_factor + recovery_rate);
                         current_ins_scaling_vector = insCovScalingVector + current_trust_factor * (full_trust_scaling_vector - insCovScalingVector);
+                        std::cout << "Logging: GPS Available. Current ins scalling factor " << current_ins_scaling_vector << " .\n";
                     } else {
                         // If denied, reset trust and use the high uncertainty scaling.
+                        std::cout << "Warning: GPS Denied. Using low-trust covariance.\n";
                         current_trust_factor = 0.0;
                         current_ins_scaling_vector = insCovScalingVector;
                     }
