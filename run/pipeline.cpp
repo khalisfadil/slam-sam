@@ -500,7 +500,7 @@ int main() {
                 const Eigen::Matrix3d Cb2m = quat.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 insStdDev << key_data_frame.sigmaLatitude_20, key_data_frame.sigmaLongitude_20, key_data_frame.sigmaAltitude_20, key_data_frame.sigmaRoll_26, key_data_frame.sigmaPitch_26, key_data_frame.sigmaYaw_26;
-                insStdDev = insStdDev * 0.1;
+                insStdDev = insStdDev;
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
@@ -548,7 +548,7 @@ int main() {
                         ndt_iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        lidarCov = -regularized_hessian.inverse();
+                        lidarCov = -regularized_hessian.inverse()*5;
                         lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
