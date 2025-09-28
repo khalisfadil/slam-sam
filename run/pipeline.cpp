@@ -888,14 +888,14 @@ int main() {
                 trajectory_point.y = pose.translation().y();
                 trajectory_point.z = pose.translation().z();
                 trajectory_point.r = 255;
-                trajectory_point.g = 215;
-                trajectory_point.b = 0;
+                trajectory_point.g = 20;
+                trajectory_point.b = 147;
                 trajectory_cloud->push_back(trajectory_point);
             }
 
             if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
                 viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
-                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2.5, "trajectory_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, "trajectory_cloud");
             }
 
             // Update RAW INS trajectory (GREEN)
@@ -907,8 +907,8 @@ int main() {
                     ins_point.x = pose_matrix(0, 3);
                     ins_point.y = pose_matrix(1, 3);
                     ins_point.z = pose_matrix(2, 3);
-                    ins_point.r = 125;
-                    ins_point.g = 249;
+                    ins_point.r = 30;
+                    ins_point.g = 144;
                     ins_point.b = 255;
                     ins_trajectory_cloud->push_back(ins_point);
                 }
@@ -916,7 +916,7 @@ int main() {
 
             if (!viewer->updatePointCloud(ins_trajectory_cloud, "ins_trajectory_cloud")) {
                 viewer->addPointCloud(ins_trajectory_cloud, "ins_trajectory_cloud");
-                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2.5, "ins_trajectory_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, "ins_trajectory_cloud");
             }
 
             // --- NEW: Smoothly update camera on every spin ---
