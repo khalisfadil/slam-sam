@@ -542,50 +542,20 @@ int main() {
                     auto align_end = std::chrono::high_resolution_clock::now();
                     align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
                     if (registerCallback.registration->hasConverged()) {
-                        std::cout << "Registration converged." << std::endl;
+                        std::cout << "Logging: NDT converged. Using scaled covariance.\n";
                         lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
                         Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
-                        if (ndt_omp) {
-                            auto ndt_result = ndt_omp->getResult();
-                            ndt_iter = ndt_result.iteration_num;
-                            const auto& hessian = ndt_result.hessian;
-                            Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                            Eigen::Vector<double, 6> final_lidar_scaling_vector;
-                            if (regularized_hessian.determinant() > 1e-6) {
-                                Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 6, 6>> eigensolver(regularized_hessian);
-                                if (eigensolver.info() == Eigen::Success && eigensolver.eigenvalues().minCoeff() > 0) {
-                                    double condition_number = eigensolver.eigenvalues().maxCoeff() / eigensolver.eigenvalues().minCoeff();
-                                    // 2. Calculate a quality score (0.0 to 1.0) based on the condition number
-                                    double quality = (MAX_HESSIAN_CONDITION_NUM - condition_number) / (MAX_HESSIAN_CONDITION_NUM - MIN_HESSIAN_CONDITION_NUM);
-                                    quality = std::max(0.0, std::min(1.0, quality)); // Clamp between 0 and 1
-                                    final_lidar_scaling_vector = quality * lidarCovScalingVector + (1.0 - quality) * low_trust_lidar_scaling_vector;
-                                    std::cout << "LiDAR match quality: " << quality * 100 << "% (Cond. #: " << condition_number << ")\n";
-                                } else {
-                                    // Eigensolver failed, assume a bad match
-                                    final_lidar_scaling_vector = low_trust_lidar_scaling_vector;
-                                }
-                                // 4. Calculate final covariance using the interpolated scaling vector
-                                lidarCov = -regularized_hessian.inverse() * final_lidar_scaling_vector.asDiagonal();
-                                lidarStdDev = lidarCov.diagonal().cwiseSqrt();;
-                                std::cout << "Covariance estimated from NDT Hessian.\n";
-                            } else {
-                                // Hessian is not invertible, indicating a very poor match. Use low trust.
-                                std::cout << "Warning: NDT Hessian is singular. Using low-trust covariance.\n";
-                                final_lidar_scaling_vector = low_trust_lidar_scaling_vector;
-                                lidarCov = final_lidar_scaling_vector.asDiagonal(); // Use a large diagonal covariance
-                                lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                            }
-                        } 
-
+                        
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
 
                     } else {
+                        std::cout << "Warning: NDT not converged. Using low-trust covariance.\n";
                         Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(LidarTbs2bt);
                         Eigen::Matrix<double, 6, 6> covariance;
-                        lidarCov = Eigen::Matrix<double, 6, 6>::Identity();
+                        lidarCov = low_trust_lidar_scaling_vector.asDiagonal();
                         lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
