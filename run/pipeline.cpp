@@ -447,7 +447,7 @@ int main() {
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 0.0;
-        const double recovery_rate = 0.002; // Trust regained over 1/0.02 = 5 keyframes
+        const double recovery_rate = 0.01; // Trust regained over 1/0.02 = 5 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
@@ -490,6 +490,7 @@ int main() {
                 Eigen::Matrix<double, 6, 6> loopCov = Eigen::Matrix<double, 6, 6>::Identity() * 0.01;
                 Eigen::Vector<double, 6> lidarStdDev = Eigen::Vector<double, 6>::Zero();
                 Eigen::Vector<double, 6> insStdDev = Eigen::Vector<double, 6>::Zero();
+                Eigen::Vector<double, 6> insScaledStdDev = Eigen::Vector<double, 6>::Zero();
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
@@ -576,7 +577,7 @@ int main() {
                         // If available, increase trust factor and interpolate the scaling vector.
                         current_trust_factor = std::min(1.0, current_trust_factor + recovery_rate);
                         current_ins_scaling_vector = insCovScalingVector + current_trust_factor * (full_trust_scaling_vector - insCovScalingVector);
-                        std::cout << "Logging: GPS Available. Current ins scalling factor " << current_ins_scaling_vector << " .\n";
+                        std::cout << "Logging: GPS Available. Current ins scalling factor.\n" << current_ins_scaling_vector.transpose() << std::endl;;
                     } else {
                         // If denied, reset trust and use the high uncertainty scaling.
                         std::cout << "Warning: GPS Denied. Using low-trust covariance.\n";
@@ -590,6 +591,7 @@ int main() {
                                      insStdDev(0) * current_ins_scaling_vector(0), // x (from lat)
                                      insStdDev(1) * current_ins_scaling_vector(1), // y (from lon)
                                      insStdDev(2) * current_ins_scaling_vector(2);  // z (from alt)
+                    insScaledStdDev << scaled_sigmas(3),scaled_sigmas(4),scaled_sigmas(5),scaled_sigmas(0),scaled_sigmas(1),scaled_sigmas(2);
                     gtsam::Pose3 insFactor(Tb2m);
                     gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(scaled_sigmas);
                     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), std::move(insFactor), std::move(insNoiseModel)));
@@ -702,7 +704,7 @@ int main() {
                 std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
                 std::cout << std::fixed << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
                 std::cout << std::fixed << "Number Iteration........................" << ndt_iter << std::endl;
-                std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insStdDev.transpose() << std::endl;
+                std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insScaledStdDev.transpose() << std::endl;
                 std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
                 std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
                 std::cout << std::fixed << "Total factors in graph.................." << isam2.size() << std::endl;
