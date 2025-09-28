@@ -447,7 +447,7 @@ int main() {
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 1.0;
-        const double recovery_rate = 0.01; // Trust regained over 1/0.02 = 50 keyframes
+        const double recovery_rate = 0.02; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
@@ -550,8 +550,8 @@ int main() {
                         ndt_iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        lidarCov = -regularized_hessian.inverse()*0.9;
-                        lidarStdDev = lidarCov.diagonal().cwiseSqrt()*0.9;
+                        lidarCov = -regularized_hessian.inverse();
+                        lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                         
                         gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
@@ -568,7 +568,7 @@ int main() {
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
 
-                    bool is_gps_available_now = (insChecker < 0.06);
+                    bool is_gps_available_now = (insChecker < 0.08);
                     if (is_gps_available_now && was_gps_denied) {
                         std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
                         current_trust_factor = 0.0; // Reset to begin recovery from zero trust
@@ -583,7 +583,7 @@ int main() {
                     } else {
                         // If denied, reset trust and use the high uncertainty scaling.
                         std::cout << "Warning: GPS Denied. Using low-trust covariance.\n";
-                        current_trust_factor = 0.0;
+                        // current_trust_factor = 0.0;
                         current_ins_scaling_vector = insCovScalingVector;
                     }
                     gtsam::Vector6 scaled_sigmas;
