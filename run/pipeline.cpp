@@ -501,7 +501,7 @@ int main() {
                 const Eigen::Matrix3d Cb2m = quat.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 insStdDev << key_data_frame.sigmaLatitude_20, key_data_frame.sigmaLongitude_20, key_data_frame.sigmaAltitude_20, key_data_frame.sigmaRoll_26, key_data_frame.sigmaPitch_26, key_data_frame.sigmaYaw_26;
-                insStdDev = insStdDev * 0.01;
+                insStdDev = insStdDev * 0.1;
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
