@@ -566,7 +566,7 @@ int main() {
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
 
-                    bool is_gps_available_now = (insStdDev.norm() < 1.0);
+                    bool is_gps_available_now = (insStdDev.norm() < 0.01);
                     if (is_gps_available_now && was_gps_denied) {
                         std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
                         current_trust_factor = 0.0; // Reset to begin recovery from zero trust
