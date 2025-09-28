@@ -450,14 +450,14 @@ int main() {
         //                     0, 0, 0, 0.001, 0, 0,  // roll variance: 0.01 rad^2
         //                     0, 0, 0, 0, 0.001, 0,  // pitch variance: 0.01 rad^2
         //                     0, 0, 0, 0, 0, 0.001;  // yaw variance: 0.01 rad^2
-        const double MAX_TRANS_DEVIATION = 1.0; // Max translational deviation in meters
-        const double MAX_ROT_DEVIATION = 0.1;   // Max rotational deviation in radians (~5.7 degrees)
+        const double MAX_TRANS_DEVIATION = 2.0; // Max translational deviation in meters
+        const double MAX_ROT_DEVIATION = 0.2;   // Max rotational deviation in radians (~5.7 degrees)
         
         // Trust Gain parameters defined here ---
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 1.0;
-        const double recovery_rate = 0.01; // Trust regained over 1/0.02 = 50 keyframes
+        const double recovery_rate = 0.02; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
@@ -510,7 +510,7 @@ int main() {
                 Eigen::Quaternionf quat{key_data_frame.qw_20, key_data_frame.qx_20, key_data_frame.qy_20, key_data_frame.qz_20};
                 const Eigen::Matrix3d Cb2m = quat.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                insStdDev << key_data_frame.sigmaLatitude_20*4, key_data_frame.sigmaLongitude_20*4, key_data_frame.sigmaAltitude_20*4, key_data_frame.sigmaRoll_26*4, key_data_frame.sigmaPitch_26*4, key_data_frame.sigmaYaw_26*4;
+                insStdDev << key_data_frame.sigmaLatitude_20, key_data_frame.sigmaLongitude_20, key_data_frame.sigmaAltitude_20, key_data_frame.sigmaRoll_26, key_data_frame.sigmaPitch_26, key_data_frame.sigmaYaw_26;
                 double insChecker = insStdDev.head(3).norm();
                 
                 uint64_t id = data_frame->points.frame_id;
@@ -622,7 +622,7 @@ int main() {
                     //     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     // }
 
-                    bool is_gps_available_now = (insChecker < 0.32);
+                    bool is_gps_available_now = (insChecker < 0.09);
                     if (is_gps_available_now && was_gps_denied) {
                         std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
                         current_trust_factor = 0.0; // Reset to begin recovery from zero trust
@@ -806,7 +806,7 @@ int main() {
         // --- MODIFIED: The initial setCameraPosition is now managed by the loop ---
         // viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // This is now handled dynamically
 
-        const size_t kSlidingWindowSize = 100;
+        const size_t kSlidingWindowSize = 50;
         std::deque<uint64_t> displayed_frame_ids;
         uint64_t last_processed_id = 0;
 
