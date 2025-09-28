@@ -449,8 +449,8 @@ int main() {
         //                     0, 0, 0, 0.001, 0, 0,  // roll variance: 0.01 rad^2
         //                     0, 0, 0, 0, 0.001, 0,  // pitch variance: 0.01 rad^2
         //                     0, 0, 0, 0, 0, 0.001;  // yaw variance: 0.01 rad^2
-        // const double MAX_TRANS_DEVIATION = 1.0; // Max translational deviation in meters
-        // const double MAX_ROT_DEVIATION = 0.1;   // Max rotational deviation in radians (~5.7 degrees)
+        const double MAX_TRANS_DEVIATION = 2.0; // Max translational deviation in meters
+        const double MAX_ROT_DEVIATION = 0.2;   // Max rotational deviation in radians (~5.7 degrees)
         
         // Trust Gain parameters defined here ---
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
