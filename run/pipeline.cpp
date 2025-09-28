@@ -457,7 +457,7 @@ int main() {
         Eigen::Vector<double, 6> insCovScalingVector{1e2, 1e2, 1e2, 1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 1.0;
-        const double recovery_rate = 0.001; // Trust regained over 1/0.02 = 50 keyframes
+        const double recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
