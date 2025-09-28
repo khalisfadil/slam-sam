@@ -446,7 +446,7 @@ int main() {
         // Trust Gain parameters defined here ---
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
-        double current_trust_factor = 0.0;
+        double current_trust_factor = 1.0;
         const double recovery_rate = 0.02; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
@@ -491,6 +491,7 @@ int main() {
                 Eigen::Vector<double, 6> lidarStdDev = Eigen::Vector<double, 6>::Zero();
                 Eigen::Vector<double, 6> insStdDev = Eigen::Vector<double, 6>::Zero();
                 Eigen::Vector<double, 6> insScaledStdDev = Eigen::Vector<double, 6>::Zero();
+                
 
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsBody(new pcl::PointCloud<pcl::PointXYZI>());
                 *pointsBody = std::move(data_frame->points.pointsBody);
@@ -500,7 +501,8 @@ int main() {
                 const Eigen::Matrix3d Cb2m = quat.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 insStdDev << key_data_frame.sigmaLatitude_20, key_data_frame.sigmaLongitude_20, key_data_frame.sigmaAltitude_20, key_data_frame.sigmaRoll_26, key_data_frame.sigmaPitch_26, key_data_frame.sigmaYaw_26;
-                insStdDev = insStdDev;
+                double insChecker = insStdDev.head(3).norm();
+                
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
@@ -566,7 +568,7 @@ int main() {
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     }
 
-                    bool is_gps_available_now = (insStdDev.norm() < 1);
+                    bool is_gps_available_now = (insChecker < 1);
                     if (is_gps_available_now && was_gps_denied) {
                         std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
                         current_trust_factor = 0.0; // Reset to begin recovery from zero trust
@@ -704,6 +706,7 @@ int main() {
                 std::cout << std::fixed << "Number points..........................." << pointsBody->size() << std::endl;
                 std::cout << std::fixed << "Alignment Time.........................." << align_duration.count() << " ms" << std::endl;
                 std::cout << std::fixed << "Number Iteration........................" << ndt_iter << std::endl;
+                std::cout << std::fixed << "Ins cov check..........................." << insChecker << std::endl;
                 std::cout << std::fixed << "Ins Std Dev (m, rad)....................\n" << insScaledStdDev.transpose() << std::endl;
                 std::cout << std::fixed << "Lidar Std Dev (m, rad)..................\n" << lidarStdDev.transpose() << std::endl;
                 std::cout << std::fixed << "New factors added this step............." << newFactors.size() << std::endl;
