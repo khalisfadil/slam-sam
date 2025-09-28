@@ -441,7 +441,16 @@ int main() {
         Eigen::Vector3d rlla  = Eigen::Vector3d::Zero(); 
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
         // Eigen::Vector<double, 6> lidarCovScalingVector{10, 1, 1, 1e3, 1e3, 1e3}; // Default/high-trust scaling
-        Eigen::Vector<double, 6> low_trust_lidar_scaling_vector{1e3, 1e3, 1e3, 1e2, 1e2, 1e2}; // Scaling for poor-quality matches
+        // Eigen::Vector<double, 6> lidar_contantVel_scaling_vector{1, 1, 1, 1, 1, 1}; // Scaling for poor-quality matches
+        Eigen::Matrix<double, 6, 6> constant_vel_cov;
+        constant_vel_cov << 0.1, 0, 0, 0, 0, 0,   // x variance: 0.1 m^2
+                            0, 0.1, 0, 0, 0, 0,   // y variance: 0.1 m^2
+                            0, 0, 0.1, 0, 0, 0,   // z variance: 0.1 m^2
+                            0, 0, 0, 0.01, 0, 0,  // roll variance: 0.01 rad^2
+                            0, 0, 0, 0, 0.01, 0,  // pitch variance: 0.01 rad^2
+                            0, 0, 0, 0, 0, 0.01;  // yaw variance: 0.01 rad^2
+        const double MAX_TRANS_DEVIATION = 1.0; // Max translational deviation in meters
+        const double MAX_ROT_DEVIATION = 0.1;   // Max rotational deviation in radians (~5.7 degrees)
         
         // Trust Gain parameters defined here ---
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
@@ -542,31 +551,74 @@ int main() {
                     registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
                     auto align_end = std::chrono::high_resolution_clock::now();
                     align_duration = std::chrono::duration_cast<std::chrono::milliseconds>(align_end - align_start);
-                    if (registerCallback.registration->hasConverged()) {
-                        std::cout << "Logging: NDT converged. Using scaled covariance.\n";
-                        lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
-                        Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
-                        auto ndt_result = ndt_omp->getResult();
-                        ndt_iter = ndt_result.iteration_num;
-                        const auto& hessian = ndt_result.hessian;
-                        Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        lidarCov = -regularized_hessian.inverse();
-                        lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                        
-                        gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
-                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
 
-                    } else {
-                        std::cout << "Warning: NDT not converged. Using low-trust covariance.\n";
-                        Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
-                        gtsam::Pose3 lidarFactor = gtsam::Pose3(LidarTbs2bt);
-                        Eigen::Matrix<double, 6, 6> covariance;
-                        lidarCov = low_trust_lidar_scaling_vector.asDiagonal();
-                        lidarStdDev = lidarCov.diagonal().cwiseSqrt();
-                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
-                    }
+                    //######################################################
+                    Eigen::Matrix4d registerResult = registerCallback.registration->getFinalTransformation().cast<double>();
+                    auto ndt_result = ndt_omp->getResult();
+                    // 1. Convert poses to GTSAM types for easy comparison
+                    gtsam::Pose3 pose_const_vel(lidarFactorSourceTb2m);
+                    gtsam::Pose3 pose_ndt_result(registerResult);
+                    // 2. Calculate the deviation between the NDT result and the constant velocity prediction
+                    gtsam::Pose3 deviation = pose_const_vel.between(pose_ndt_result);
+                    double trans_error = deviation.translation().norm();
+                    double rot_error = std::abs(deviation.rotation().axisAngle().second);
+                    // 3. Calculate a trust weight based on the deviation.
+                    // The weight is 1.0 (full trust) if deviation is zero, and falls to 0.0 (no trust)
+                    // as deviation approaches the MAX thresholds.
+                    double w_trans = std::max(0.0, 1.0 - (trans_error / MAX_TRANS_DEVIATION));
+                    double w_rot = std::max(0.0, 1.0 - (rot_error / MAX_ROT_DEVIATION));
+                    double ndt_trust_weight = std::min(w_trans, w_rot);
+                    std::cout << std::fixed << "NDT Deviation Check: Trans=" << trans_error << "m, Rot=" << rot_error << "rad. Trust Weight=" << ndt_trust_weight << std::endl;
+                    // 4. Blend the two poses using the trust weight (Linear Interpolation on the manifold)
+                    gtsam::Vector6 se3_const_vel = gtsam::Pose3::Logmap(pose_const_vel);
+                    gtsam::Vector6 se3_ndt_result = gtsam::Pose3::Logmap(pose_ndt_result);
+                    gtsam::Vector6 se3_blended = se3_const_vel + ndt_trust_weight * (se3_ndt_result - se3_const_vel);
+                    gtsam::Pose3 blended_pose = gtsam::Pose3::Expmap(se3_blended);
+                    // 5. The final relative transformation for the BetweenFactor is from the previous
+                    //    optimized pose to our new, softened/blended pose.
+                    gtsam::Pose3 relative_pose = lidarFactorTargetTb2m.between(blended_pose);
+                    Eigen::Matrix4d LidarTbs2bt = relative_pose.matrix();
+                    
+                    const auto& hessian = ndt_result.hessian;
+                    Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                    Eigen::Matrix<double, 6, 6> ndt_cov = -regularized_hessian.inverse();
+
+                    lidarCov = ndt_trust_weight * ndt_cov + (1.0 - ndt_trust_weight) * constant_vel_cov;
+                    // (The rest of your code continues as before)
+                    lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+                    gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
+                    // The lidarNoiseModel will now use the blended covariance
+                    gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                    newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+
+                    //######################################################
+                    // if (registerCallback.registration->hasConverged()) {
+                    //     std::cout << "Logging: NDT converged. Using scaled covariance.\n";
+                    //     // lidarFactorSourceTb2m = registerCallback.registration->getFinalTransformation().cast<double>();
+                    //     Eigen::Matrix4d registerResult = registerCallback.registration->getFinalTransformation().cast<double>();
+
+                    //     Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
+                    //     auto ndt_result = ndt_omp->getResult();
+                    //     ndt_iter = ndt_result.iteration_num;
+                    //     const auto& hessian = ndt_result.hessian;
+                    //     Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                    //     lidarCov = -regularized_hessian.inverse();
+                    //     lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+                        
+                    //     gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
+                    //     gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                    //     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+
+                    // } else {
+                    //     std::cout << "Warning: NDT not converged. Using low-trust covariance.\n";
+                    //     Eigen::Matrix4d LidarTbs2bt = lidarFactorTargetTb2m.matrix().inverse()*lidarFactorSourceTb2m;
+                    //     gtsam::Pose3 lidarFactor = gtsam::Pose3(LidarTbs2bt);
+                    //     Eigen::Matrix<double, 6, 6> covariance;
+                    //     lidarCov = low_trust_lidar_scaling_vector.asDiagonal();
+                    //     lidarStdDev = lidarCov.diagonal().cwiseSqrt();
+                    //     gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(std::move(lidarCov)));
+                    //     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
+                    // }
 
                     bool is_gps_available_now = (insChecker < 0.08);
                     if (is_gps_available_now && was_gps_denied) {
@@ -670,8 +722,8 @@ int main() {
 
                 if (!is_first_keyframe) {
                     gtsam::Pose3 prevTb2m = Val.at<gtsam::Pose3>(Symbol('x', last_id));
-                    Eigen::Matrix4d loopTbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
-                    lidarFactorSourceTb2m = currTb2m.matrix() * loopTbc2bp;
+                    Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
+                    lidarFactorSourceTb2m = currTb2m.matrix() * Tbc2bp;
                 } else {
                     lidarFactorSourceTb2m = currTb2m.matrix();
                     is_first_keyframe = false;
