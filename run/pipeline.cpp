@@ -510,7 +510,7 @@ int main() {
                 Eigen::Quaternionf quat{key_data_frame.qw_20, key_data_frame.qx_20, key_data_frame.qy_20, key_data_frame.qz_20};
                 const Eigen::Matrix3d Cb2m = quat.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
-                insStdDev << key_data_frame.sigmaLatitude_20, key_data_frame.sigmaLongitude_20, key_data_frame.sigmaAltitude_20, key_data_frame.sigmaRoll_26, key_data_frame.sigmaPitch_26, key_data_frame.sigmaYaw_26;
+                insStdDev << key_data_frame.sigmaLatitude_20*10, key_data_frame.sigmaLongitude_20*10, key_data_frame.sigmaAltitude_20*10, key_data_frame.sigmaRoll_26*10, key_data_frame.sigmaPitch_26*10, key_data_frame.sigmaYaw_26*10;
                 double insChecker = insStdDev.head(3).norm();
                 
                 uint64_t id = data_frame->points.frame_id;
@@ -622,7 +622,7 @@ int main() {
                     //     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), std::move(lidarFactor), std::move(lidarNoiseModel)));
                     // }
 
-                    bool is_gps_available_now = (insChecker < 0.08);
+                    bool is_gps_available_now = (insChecker < 0.8);
                     if (is_gps_available_now && was_gps_denied) {
                         std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
                         current_trust_factor = 0.0; // Reset to begin recovery from zero trust
