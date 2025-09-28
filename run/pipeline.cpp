@@ -446,10 +446,10 @@ int main() {
         const double MAX_HESSIAN_CONDITION_NUM = 1000.0;
         
         // Trust Gain parameters defined here ---
-        Eigen::Vector<double, 6> insCovScalingVector{1e2, 1e2, 1e2, 1e2, 1e2, 1e2}; // High uncertainty for denied state
+        Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 0.0;
-        const double recovery_rate = 0.01; // Trust regained over 1/0.02 = 5 keyframes
+        const double recovery_rate = 0.001; // Trust regained over 1/0.02 = 5 keyframes
         const Eigen::Vector<double, 6> full_trust_scaling_vector = Eigen::Vector<double, 6>::Ones(); // Target is 1.0 scaling
 
         pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
@@ -501,7 +501,7 @@ int main() {
                 const Eigen::Matrix3d Cb2m = quat.toRotationMatrix().cast<double>();
                 Eigen::Matrix4d Tb2m = Eigen::Matrix4d::Identity();
                 insStdDev << key_data_frame.sigmaLatitude_20, key_data_frame.sigmaLongitude_20, key_data_frame.sigmaAltitude_20, key_data_frame.sigmaRoll_26, key_data_frame.sigmaPitch_26, key_data_frame.sigmaYaw_26;
-                
+                insStdDev = insStdDev * 0.01;
                 uint64_t id = data_frame->points.frame_id;
                 double timestamp = data_frame->timestamp;
                 int ndt_iter = 0;
