@@ -442,15 +442,15 @@ int main() {
         Eigen::Matrix4d lidarFactorSourceTb2m = Eigen::Matrix4d::Identity();
         // Eigen::Vector<double, 6> lidarCovScalingVector{10, 1, 1, 1e3, 1e3, 1e3}; // Default/high-trust scaling
         // Eigen::Vector<double, 6> lidar_contantVel_scaling_vector{1, 1, 1, 1, 1, 1}; // Scaling for poor-quality matches
-        Eigen::Matrix<double, 6, 6> constant_vel_cov;
-        constant_vel_cov << 0.01, 0, 0, 0, 0, 0,   // x variance: 0.1 m^2
-                            0, 0.01, 0, 0, 0, 0,   // y variance: 0.1 m^2
-                            0, 0, 0.01, 0, 0, 0,   // z variance: 0.1 m^2
-                            0, 0, 0, 0.001, 0, 0,  // roll variance: 0.01 rad^2
-                            0, 0, 0, 0, 0.001, 0,  // pitch variance: 0.01 rad^2
-                            0, 0, 0, 0, 0, 0.001;  // yaw variance: 0.01 rad^2
-        const double MAX_TRANS_DEVIATION = 1.0; // Max translational deviation in meters
-        const double MAX_ROT_DEVIATION = 0.1;   // Max rotational deviation in radians (~5.7 degrees)
+        // Eigen::Matrix<double, 6, 6> constant_vel_cov;
+        // constant_vel_cov << 0.01, 0, 0, 0, 0, 0,   // x variance: 0.1 m^2
+        //                     0, 0.01, 0, 0, 0, 0,   // y variance: 0.1 m^2
+        //                     0, 0, 0.01, 0, 0, 0,   // z variance: 0.1 m^2
+        //                     0, 0, 0, 0.001, 0, 0,  // roll variance: 0.01 rad^2
+        //                     0, 0, 0, 0, 0.001, 0,  // pitch variance: 0.01 rad^2
+        //                     0, 0, 0, 0, 0, 0.001;  // yaw variance: 0.01 rad^2
+        // const double MAX_TRANS_DEVIATION = 1.0; // Max translational deviation in meters
+        // const double MAX_ROT_DEVIATION = 0.1;   // Max rotational deviation in radians (~5.7 degrees)
         
         // Trust Gain parameters defined here ---
         Eigen::Vector<double, 6> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
@@ -581,9 +581,9 @@ int main() {
                     
                     const auto& hessian = ndt_result.hessian;
                     Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                    Eigen::Matrix<double, 6, 6> ndt_cov = -regularized_hessian.inverse();
+                    lidarCov = -regularized_hessian.inverse();
 
-                    lidarCov = ndt_trust_weight * ndt_cov + (1.0 - ndt_trust_weight) * constant_vel_cov;
+                    // lidarCov = ndt_trust_weight * ndt_cov + (1.0 - ndt_trust_weight) * constant_vel_cov;
                     // (The rest of your code continues as before)
                     lidarStdDev = lidarCov.diagonal().cwiseSqrt();
                     gtsam::Pose3 lidarFactor = gtsam::Pose3(std::move(LidarTbs2bt));
