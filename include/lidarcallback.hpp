@@ -38,6 +38,7 @@ class LidarCallback {
         std::vector<float> y_2_;
         std::vector<float> z_2_;
         std::vector<float> r_min_;
+        std::vector<float> r_max_;
         std::vector<float> sin_beam_azimuths_;
         std::vector<float> cos_beam_azimuths_;
         std::vector<float> sin_beam_altitudes_;
@@ -48,6 +49,7 @@ class LidarCallback {
         std::vector<std::vector<float, Eigen::aligned_allocator<float>>> y_1_subset_;
         std::vector<std::vector<float, Eigen::aligned_allocator<float>>> z_1_subset_;
         std::vector<float> r_min_subset_;
+        std::vector<float> r_max_subset_;
         std::vector<float> sin_beam_azimuths_subset_;
         std::vector<float> cos_beam_azimuths_subset_;
         std::vector<float> sin_beam_altitudes_subset_;
@@ -76,6 +78,9 @@ class LidarCallback {
         bool buffer_toggle_ = true;
         float zfiltermax_ = 0.0f;
         float zfiltermin_ = -300.0f;
+        float rfiltermax_ = 200.0f;
+        float rfiltermin_ = 1.0f;
+        uint8_t reflectivity_threshold_ = 0;
 
         void Initialize();
         void ParseMetadata(const nlohmann::json& json_data);

@@ -1,23 +1,22 @@
 cmake_minimum_required(VERSION 3.10)
 project(pipeline LANGUAGES C CXX)
 
-# Set C++ standard
+# Set C++ and C standards
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS ON) # Enable GNU extensions for C++
+set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_C_STANDARD 17)
-set(CMAKE_C_EXTENSIONS ON) # Enable GNU extensions for C
+set(CMAKE_C_EXTENSIONS ON)
 
-# Suppress FLANN_ROOT warning from PCL
+# Suppress FLANN_ROOT warning from PCL and set policy
 unset(FLANN_ROOT)
 cmake_policy(SET CMP0144 NEW)
 
-# --- NEW LINE ---
 # Add this hint to point to your custom TBB installation directory.
 set(TBB_ROOT "/usr/local")
 
-# Find dependencies
-# When find_package(GTSAM) runs, it will now find TBB in the location specified by TBB_ROOT.
+# --- Find Dependencies ---
+# Find all required packages for the project.
 find_package(PCL 1.14 REQUIRED COMPONENTS common io filters features segmentation registration visualization)
 find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -25,9 +24,10 @@ find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(GTSAM REQUIRED)
 
-# Define source files
-set(SOURCES
-    run/pipeline.cpp
+# --- Define Shared Library Sources ---
+# These are all the .cpp files that contain the core logic of your application,
+# excluding any files with a main() function.
+set(PIPELINE_LIB_SOURCES
     src/lidarcallback.cpp
     src/compcallback.cpp
     src/registercallback.cpp
@@ -39,7 +39,8 @@ set(SOURCES
     extern/ndt_omp/src/pclomp/voxel_grid_covariance_omp.cpp
 )
 
-# Define include directories
+# --- Define Shared Include Directories ---
+# These directories are needed by the library and the executables.
 set(INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/ndt_omp/include
@@ -50,18 +51,18 @@ set(INCLUDE_DIRS
     ${GTSAM_INCLUDE_DIR}
 )
 
-# The manual RPATH settings are no longer needed
-# set(CMAKE_INSTALL_RPATH "/usr/local/lib")
-# set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+# --- Create the Shared Library ---
+# This command compiles all the source files above into a single library
+# named "pipeline_lib".
+add_library(pipeline_lib ${PIPELINE_LIB_SOURCES})
 
-# Create executable
-add_executable(pipeline ${SOURCES})
+# --- Configure the Shared Library ---
+# Set the necessary include paths and link the dependencies for the library.
+# Using PUBLIC ensures that any executable linking against pipeline_lib
+# will automatically inherit these properties.
+target_include_directories(pipeline_lib PUBLIC ${INCLUDE_DIRS})
 
-# Set include directories for the target
-target_include_directories(pipeline PRIVATE ${INCLUDE_DIRS})
-
-# Link libraries.
-target_link_libraries(pipeline PRIVATE
+target_link_libraries(pipeline_lib PUBLIC
     ${PCL_LIBRARIES}
     ${VTK_LIBRARIES}
     nlohmann_json::nlohmann_json
@@ -72,10 +73,22 @@ target_link_libraries(pipeline PRIVATE
     TBB::tbbmalloc
 )
 
-# Add compile options for optimization
+# --- Build the Executables ---
+# Now, define each program. They are much simpler because all the heavy
+# lifting is done by the library.
+
+# 1. Main pipeline executable
+add_executable(pipeline run/pipeline.cpp)
+target_link_libraries(pipeline PRIVATE pipeline_lib)
 target_compile_options(pipeline PRIVATE -O3)
 
-# Check VTK availability
+# 2. Compass calibration executable
+add_executable(pipeline_calib_compass run/pipeline_calib_compass.cpp)
+target_link_libraries(pipeline_calib_compass PRIVATE pipeline_lib)
+target_compile_options(pipeline_calib_compass PRIVATE -O3)
+
+
+# --- Final Checks ---
 if(NOT VTK_FOUND)
     message(FATAL_ERROR "VTK not found. Please install VTK.")
 endif()

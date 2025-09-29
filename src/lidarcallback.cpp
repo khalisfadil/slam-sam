@@ -134,33 +134,36 @@ void LidarCallback::ParseParamdata(const json& json_param_data) {
         }
         const auto& lidar_param = parameter_["lidar_parameter"];
         // Parse position (3-element array)
-        if (!lidar_param.contains("tb2s") || !lidar_param["tb2s"].is_array() || lidar_param["tb2s"].size() != 3) {
-            throw std::runtime_error("'position' must be an array of 3 elements");
+        if (lidar_param.contains("tb2s") || lidar_param["tb2s"].is_array() || lidar_param["tb2s"].size() == 3) {
+            body_to_lidar_translation_ = Eigen::Vector3d(
+                lidar_param["tb2s"][0].get<double>(),
+                lidar_param["tb2s"][1].get<double>(),
+                lidar_param["tb2s"][2].get<double>()
+            );
         }
-        body_to_lidar_translation_ = Eigen::Vector3d(
-            lidar_param["tb2s"][0].get<double>(),
-            lidar_param["tb2s"][1].get<double>(),
-            lidar_param["tb2s"][2].get<double>()
-        );
-        // Parse rotationMatrix (9-element array, row-major)
-        if (!lidar_param.contains("Cb2s") || !lidar_param["Cb2s"].is_array() || lidar_param["Cb2s"].size() != 9) {
-            throw std::runtime_error("'Cb2s' must be an array of 9 elements");
-        }
-        body_to_lidar_rotation_ = Eigen::Matrix3d();
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                body_to_lidar_rotation_(i, j) = lidar_param["Cb2s"][i * 3 + j].get<double>();
+        if (lidar_param.contains("Cb2s") || lidar_param["Cb2s"].is_array() || lidar_param["Cb2s"].size() == 9) {
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    body_to_lidar_rotation_(i, j) = lidar_param["Cb2s"][i * 3 + j].get<double>();
+                }
             }
         }
-        if (!lidar_param.contains("channelStride")) {
-            throw std::runtime_error("Missing or invalid 'channelStride'");
+        if (lidar_param.contains("channelStride")) {
+            channel_stride_ = lidar_param["channelStride"].get<uint16_t>();
         }
-        channel_stride_ = lidar_param["channelStride"].get<uint16_t>();
-        if (!lidar_param.contains("zAxisFilter")) {
-            throw std::runtime_error("Missing or invalid 'zAxisFilter'");
+        if (lidar_param.contains("zAxisFilter")) {
+            zfiltermin_ = lidar_param["zAxisFilter"][0].get<float>();
+            zfiltermax_ = lidar_param["zAxisFilter"][1].get<float>();
         }
-        zfiltermin_ = lidar_param["zAxisFilter"][0].get<float>();
-        zfiltermax_ = lidar_param["zAxisFilter"][1].get<float>();
+        if (lidar_param.contains("reflectionThreshold")) {
+            reflectivity_threshold_ = lidar_param["reflectionThreshold"].get<float>();
+        }
+        if (lidar_param.contains("rangeFilterMax")) {
+            rfiltermax_ = lidar_param["rangeFilterMax"].get<float>();
+        }
+        if (lidar_param.contains("rangeFilterMin")) {
+            rfiltermin_ = lidar_param["rangeFilterMin"].get<float>();
+        }
     } catch (const json::exception& e) {
         throw std::runtime_error("JSON parsing error in metadata: " + std::string(e.what()));
     }
@@ -203,7 +206,8 @@ void LidarCallback::Initialize() {
     cos_beam_azimuths_.resize(pixels_per_column_);
     sin_beam_altitudes_.resize(pixels_per_column_);
     cos_beam_altitudes_.resize(pixels_per_column_);
-    r_min_.resize(pixels_per_column_, 5.0f);
+    r_max_.resize(pixels_per_column_, rfiltermax_);
+    r_min_.resize(pixels_per_column_, rfiltermin_);
     x_1_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(pixels_per_column_));
     y_1_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(pixels_per_column_));
     z_1_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(pixels_per_column_));
@@ -217,7 +221,8 @@ void LidarCallback::Initialize() {
     cos_beam_azimuths_subset_.resize(subset_channels_);
     sin_beam_altitudes_subset_.resize(subset_channels_);
     cos_beam_altitudes_subset_.resize(subset_channels_);
-    r_min_subset_.resize(subset_channels_, 5.0f);
+    r_max_subset_.resize(subset_channels_, rfiltermax_);
+    r_min_subset_.resize(subset_channels_, rfiltermin_);
     x_1_subset_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(subset_channels_));
     y_1_subset_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(subset_channels_));
     z_1_subset_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(subset_channels_));
@@ -240,6 +245,7 @@ void LidarCallback::Initialize() {
             cos_beam_azimuths_subset_[subset_idx] = cos_beam_azimuths_[i];
             sin_beam_altitudes_subset_[subset_idx] = sin_beam_altitudes_[i];
             cos_beam_altitudes_subset_[subset_idx] = cos_beam_altitudes_[i];
+            r_max_subset_[subset_idx] = r_max_[i];
             r_min_subset_[subset_idx] = r_min_[i];
             pixel_shifts_subset_[subset_idx] = pixel_shifts_[i];
             subset_c_ids_[subset_idx] = i;
@@ -399,6 +405,7 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
 
             alignas(32) float range_m[8];
             alignas(32) float r_min_vals[8];
+            alignas(32) float r_max_vals[8];
             uint16_t c_ids[8];
             uint8_t reflectivity[8];
             uint16_t signal[8], nir[8];
@@ -408,6 +415,7 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
                 if (subset_idx >= static_cast<uint16_t>(subset_channels_)) {
                     range_m[i] = 0.0f;
                     r_min_vals[i] = 1.0f;
+                    r_max_vals[i] = 0.0f;
                     c_ids[i] = 0;
                     continue;
                 }
@@ -417,6 +425,7 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
                 if (pixel_data_offset + 11 >= packet.size()) {
                     range_m[i] = 0.0f;
                     r_min_vals[i] = 1.0f;
+                    r_max_vals[i] = 0.0f;
                     c_ids[i] = 0;
                     continue;
                 }
@@ -426,6 +435,7 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
                 uint32_t range_mm = le32toh(range_mm_raw) & 0x000FFFFF;
                 range_m[i] = static_cast<float>(range_mm) * 0.001f;
                 r_min_vals[i] = r_min_subset_[subset_idx];
+                r_max_vals[i] = r_max_subset_[subset_idx];
                 c_ids[i] = current_c_id;
 
                 std::memcpy(&reflectivity[i], packet.data() + pixel_data_offset + 4, sizeof(uint8_t));
@@ -438,7 +448,10 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
 
             __m256 m256_range = _mm256_load_ps(range_m);
             __m256 m256_r_min_vec = _mm256_load_ps(r_min_vals);
-            __m256 valid_mask = _mm256_cmp_ps(m256_range, m256_r_min_vec, _CMP_GE_OQ);
+            __m256 m256_r_max_vec = _mm256_load_ps(r_max_vals);
+            __m256 min_mask = _mm256_cmp_ps(m256_range, m256_r_min_vec, _CMP_GE_OQ);
+            __m256 max_mask = _mm256_cmp_ps(m256_range, m256_r_max_vec, _CMP_LE_OQ);
+            __m256 valid_mask = _mm256_and_ps(min_mask, max_mask);
 
             __m256 x1_vec = _mm256_load_ps(x_1_subset_[m_id].data() + subset_idx_base);
             __m256 y1_vec = _mm256_load_ps(y_1_subset_[m_id].data() + subset_idx_base);
@@ -466,9 +479,9 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
             for (int i = 0; i < 8; ++i) {
                 uint16_t subset_idx = subset_idx_base + i;
                 if (subset_idx >= static_cast<uint16_t>(subset_channels_)) break;
-                if (range_m[i] >= r_min_vals[i] && range_m[i] > 0) {
+                if (range_m[i] >= r_min_vals[i] && range_m[i] <= r_max_vals[i] && range_m[i] > 0) {
                     // Check if the Z coordinate is within the desired range [-200.0, 0.0]
-                    if (pt_z_arr[i] >= zfiltermin_ && pt_z_arr[i] <= zfiltermax_) { // <-- ADDED FILTER
+                    if ((pt_z_arr[i] >= zfiltermin_ && pt_z_arr[i] <= zfiltermax_) || (reflectivity[i] >= reflectivity_threshold_)) { // <-- ADDED FILTER
                         p_current_write_buffer->x.push_back(pt_x_arr[i]);
                         p_current_write_buffer->y.push_back(pt_y_arr[i]);
                         p_current_write_buffer->z.push_back(pt_z_arr[i]);
@@ -505,7 +518,7 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
             uint32_t range_mm = le32toh(range_mm_raw) & 0x000FFFFF;
             float range_m = static_cast<float>(range_mm) * 0.001f;
 
-            if (range_m < r_min_[c_id] || range_m == 0) {
+            if (range_m < r_min_[c_id] || range_m > r_max_[c_id] || range_m == 0) {
                 continue;
             }
 
@@ -522,7 +535,7 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
             float pt_z = range_m * z_1_[m_id][c_id] + z_2_[m_id];
 
             // Check if the Z coordinate is within the desired range [-200.0, 0.0]
-            if (pt_z >= zfiltermin_ && pt_z <= zfiltermax_) { // <-- ADDED FILTER
+            if ((pt_z >= zfiltermin_ && pt_z <= zfiltermax_) || (current_reflectivity >= reflectivity_threshold_)) { // <-- ADDED FILTER
                 double relative_timestamp_s = (p_current_write_buffer->numberpoints > 0 || this->number_points_ > 0) && p_current_write_buffer->timestamp > 0
                     ? std::max(0.0, current_col_timestamp_s - p_current_write_buffer->timestamp)
                     : 0.0;
@@ -629,6 +642,7 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
 
             alignas(32) float range_m[8];
             alignas(32) float r_min_vals[8];
+            alignas(32) float r_max_vals[8];
             uint16_t c_ids[8];
             uint8_t reflectivity[8];
             uint16_t signal[8], nir[8];
@@ -638,6 +652,7 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
                 if (subset_idx >= static_cast<uint16_t>(subset_channels_)) {
                     range_m[i] = 0.0f;
                     r_min_vals[i] = 1.0f;
+                    r_max_vals[i] = 0.0f;
                     c_ids[i] = 0;
                     continue;
                 }
@@ -647,6 +662,7 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
                 if (pixel_data_offset + 11 >= packet.size()) {
                     range_m[i] = 0.0f;
                     r_min_vals[i] = 1.0f;
+                    r_max_vals[i] = 0.0f;
                     c_ids[i] = 0;
                     continue;
                 }
@@ -657,6 +673,7 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
                 uint32_t range_mm = le32toh(range_mm_raw) & 0x0007FFFF;
                 range_m[i] = static_cast<float>(range_mm) * 0.001f;
                 r_min_vals[i] = r_min_subset_[subset_idx];
+                r_max_vals[i] = r_max_subset_[subset_idx];
                 c_ids[i] = current_c_id;
 
                 std::memcpy(&reflectivity[i], packet.data() + pixel_data_offset + 4, sizeof(uint8_t));
@@ -669,7 +686,10 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
 
             __m256 m256_range = _mm256_load_ps(range_m);
             __m256 m256_r_min_vec = _mm256_load_ps(r_min_vals);
-            __m256 valid_mask = _mm256_cmp_ps(m256_range, m256_r_min_vec, _CMP_GE_OQ);
+            __m256 m256_r_max_vec = _mm256_load_ps(r_max_vals);
+            __m256 min_mask = _mm256_cmp_ps(m256_range, m256_r_min_vec, _CMP_GE_OQ);
+            __m256 max_mask = _mm256_cmp_ps(m256_range, m256_r_max_vec, _CMP_LE_OQ);
+            __m256 valid_mask = _mm256_and_ps(min_mask, max_mask);
 
             __m256 x1_vec = _mm256_load_ps(x_1_subset_[m_id].data() + subset_idx_base);
             __m256 y1_vec = _mm256_load_ps(y_1_subset_[m_id].data() + subset_idx_base);
@@ -697,9 +717,9 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
             for (int i = 0; i < 8; ++i) {
                 uint16_t subset_idx = subset_idx_base + i;
                 if (subset_idx >= static_cast<uint16_t>(subset_channels_)) break;
-                if (range_m[i] >= r_min_vals[i] && range_m[i] > 0) {
+                if (range_m[i] >= r_min_vals[i] && range_m[i] <= r_max_vals[i] && range_m[i] > 0) {
                     // Check if the Z coordinate is within the desired range [-200.0, 0.0]
-                    if (pt_z_arr[i] >= zfiltermin_ && pt_z_arr[i] <= zfiltermax_) { // <-- ADDED FILTER
+                    if ((pt_z_arr[i] >= zfiltermin_ && pt_z_arr[i] <= zfiltermax_) || (reflectivity[i] >= reflectivity_threshold_)) { // <-- ADDED FILTER
                         p_current_write_buffer->x.push_back(pt_x_arr[i]);
                         p_current_write_buffer->y.push_back(pt_y_arr[i]);
                         p_current_write_buffer->z.push_back(pt_z_arr[i]);
@@ -737,7 +757,7 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
             uint32_t range_mm = le32toh(range_mm_raw) & 0x0007FFFF;
             float range_m = static_cast<float>(range_mm) * 0.001f;
 
-            if (range_m < r_min_[c_id] || range_m == 0) {
+            if (range_m < r_min_[c_id] || range_m > r_max_[c_id] || range_m == 0) {
                 continue;
             }
 
@@ -754,7 +774,7 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
             float pt_z = range_m * z_1_[m_id][c_id] + z_2_[m_id];
 
             // Check if the Z coordinate is within the desired range [-200.0, 0.0]
-            if (pt_z >= zfiltermin_ && pt_z <= zfiltermax_) { // <-- ADDED FILTER
+            if ((pt_z >= zfiltermin_ && pt_z <= zfiltermax_) || (current_reflectivity >= reflectivity_threshold_)) { // <-- ADDED FILTER
                 double relative_timestamp_s = (p_current_write_buffer->numberpoints > 0 || this->number_points_ > 0) && p_current_write_buffer->timestamp > 0
                     ? std::max(0.0, current_col_timestamp_s - p_current_write_buffer->timestamp)
                     : 0.0;

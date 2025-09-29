@@ -1,0 +1,11 @@
+{
+    "imu_parameter": {
+        "updateRateHz":                     100,
+        "velocityRandomWalk":               [0.0, 0.0, 0.0],
+        "biasInstabilityAccelerometer":     [0.0, 0.0, 0.0],
+        "angularRandomWalk":                [0.0, 0.0, 0.0],
+        "biasInstabilityGyroscope":         [0.0, 0.0, 0.0],
+        "tb2s":                             [0.0, 0.0, 0.0],
+        "Cb2s":                             [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    }
+}

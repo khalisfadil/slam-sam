@@ -38,7 +38,7 @@
 #include <map.hpp>
 
 using gtsam::Symbol;
-
+//####################################################################################################
 template<typename T>
 class FrameQueue {
     public:
@@ -70,38 +70,7 @@ class FrameQueue {
         std::condition_variable cv_;
         bool stopped_ = false;
 };
-
-// void manualTransformPointCloud_RowBased(
-//         const pcl::PointCloud<pcl::PointXYZI>& cloud_in,
-//         pcl::PointCloud<pcl::PointXYZI>& cloud_out,
-//         const Eigen::Matrix4f& transform)
-//     {
-//         cloud_out.clear();
-//         cloud_out.resize(cloud_in.size());
-
-//         // Extract the 3x3 rotation matrix (R).
-//         Eigen::Matrix3f rotation_matrix = transform.block<3, 3>(0, 0);
-//         // Extract the translation vector and represent it as a 1x3 row vector.
-//         Eigen::RowVector3f translation_row_vector = transform.block<3, 1>(0, 3).transpose();
-
-//         for (size_t i = 0; i < cloud_in.size(); ++i) {
-//             const auto& p_in = cloud_in.points[i];
-
-//             // Represent the input point as a 1x3 Eigen Row Vector.
-//             Eigen::RowVector3f p_in_row_vec(p_in.x, p_in.y, p_in.z);
-
-//             // --- THE CORE ROW-BASED TRANSFORMATION ---
-//             // Mimics MATLAB: p' = p * R' + t
-//             Eigen::RowVector3f p_out_row_vec = p_in_row_vec * rotation_matrix.transpose() + translation_row_vector;
-
-//             auto& p_out = cloud_out.points[i];
-//             p_out.y = p_out_row_vec.x();
-//             p_out.x = p_out_row_vec.y();
-//             p_out.z = p_out_row_vec.z();
-//             p_out.intensity = p_in.intensity;
-//         }
-//     }
-
+//####################################################################################################
 void writeStatsToFile(const StatsHashMap& stats, const std::string& filename) {
     if (stats.empty()) {
         std::cout << "No stats to write." << std::endl;
@@ -166,3 +135,104 @@ void writeStatsToFile(const StatsHashMap& stats, const std::string& filename) {
     }
     file.close();
 }
+//####################################################################################################
+void writeCompasToFile(const CompasHashMap& compasArchive, const std::string& filename) {
+    if (compasArchive.empty()) {
+        std::cout << "No compass data to write." << std::endl;
+        return;
+    }
+
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file for writing compass data: " << filename << std::endl;
+        return;
+    }
+
+    // Write the complete CSV header row
+    file << "frame_id,timestamp_20,latitude_20,longitude_20,altitude_20,"
+         << "roll_20,pitch_20,yaw_20,"
+         << "velocityNorth_20,velocityEast_20,velocityDown_20,"
+         << "accelX_20,accelY_20,accelZ_20,"
+         << "angularVelocityX_20,angularVelocityY_20,angularVelocityZ_20,"
+         << "qw_20,qx_20,qy_20,qz_20,"
+         << "gForce_20,GNSSFixStatus_20,"
+         << "sigmaLatitude_20,sigmaLongitude_20,sigmaAltitude_20,"
+         << "sigmaVelocityNorth_25,sigmaVelocityEast_25,sigmaVelocityDown_25,"
+         << "sigmaRoll_26,sigmaPitch_26,sigmaYaw_26,"
+         << "accelX_28,accelY_28,accelZ_28,"
+         << "gyroX_28,gyroY_28,gyroZ_28,"
+         << "magX_28,magY_28,magZ_28,"
+         << "imuTemperature_28,pressure_28,pressureTemperature_28,"
+         << "sigmaAccX_28,sigmaAccY_28,sigmaAccZ_28,"
+         << "sigmaGyrX_28,sigmaGyrY_28,sigmaGyrZ_28,"
+         << "biasAccX_28,biasAccY_28,biasAccZ_28,"
+         << "biasGyrX_28,biasGyrY_28,biasGyrZ_28,"
+         << "timestamp_29,latitude_29,longitude_29,altitude_29,"
+         << "velocityNorth_29,velocityEast_29,velocityDown_29,"
+         << "sigmaLatitude_29,sigmaLongitude_29,sigmaAltitude_29,"
+         << "tilt_29,heading_29,sigmaTilt_29,sigmaHeading_29,"
+         << "gnssFixStatus_29,dopplerVelocityValid_29,timeValid_29,externalGNSS_29,tiltValid_29,"
+         << "SystemFailure_20,AccelerometerSensorFailure_20,GyroscopeSensorFailure_20,MagnetometerSensorFailure_20,"
+         << "GNSSFailureSecondaryAntenna_20,GNSSFailurePrimaryAntenna_20,AccelerometerOverRange_20,"
+         << "GyroscopeOverRange_20,MagnetometerOverRange_20,MinimumTemperatureAlarm_20,MaximumTemperatureAlarm_20,"
+         << "GNSSAntennaConnectionBroken_20,DataOutputOverflowAlarm_20,OrientationFilterInitialised_20,"
+         << "NavigationFilterInitialised_20,HeadingInitialised_20,UTCTimeInitialised_20,Event1_20,Event2_20,"
+         << "InternalGNSSEnabled_20,DualAntennaHeadingActive_20,VelocityHeadingEnabled_20,GNSSFixInterrupted_20,"
+         << "ExternalPositionActive_20,ExternalVelocityActive_20,ExternalHeadingActive_20\n";
+
+
+    // Sort keys for ordered output
+    std::vector<uint64_t> sorted_keys;
+    sorted_keys.reserve(compasArchive.size());
+    for (const auto& pair : compasArchive) {
+        sorted_keys.push_back(pair.first);
+    }
+    std::sort(sorted_keys.begin(), sorted_keys.end());
+
+    // Write data rows
+    for (const auto& key : sorted_keys) {
+        const auto& info = compasArchive.at(key);
+        if (!info.ins) continue; // Safety check for null pointer
+        const auto& f = *(info.ins);
+
+        file << std::fixed 
+             << info.frame_id << ","
+             << std::setprecision(12) << f.timestamp_20 << "," << f.latitude_20 << "," << f.longitude_20 << "," << f.altitude_20 << ","
+             << std::setprecision(6)
+             << f.roll_20 << "," << f.pitch_20 << "," << f.yaw_20 << ","
+             << f.velocityNorth_20 << "," << f.velocityEast_20 << "," << f.velocityDown_20 << ","
+             << f.accelX_20 << "," << f.accelY_20 << "," << f.accelZ_20 << ","
+             << f.angularVelocityX_20 << "," << f.angularVelocityY_20 << "," << f.angularVelocityZ_20 << ","
+             << f.qw_20 << "," << f.qx_20 << "," << f.qy_20 << "," << f.qz_20 << ","
+             << f.gForce_20 << "," << static_cast<int>(f.GNSSFixStatus_20) << ","
+             << f.sigmaLatitude_20 << "," << f.sigmaLongitude_20 << "," << f.sigmaAltitude_20 << ","
+             << f.sigmaVelocityNorth_25 << "," << f.sigmaVelocityEast_25 << "," << f.sigmaVelocityDown_25 << ","
+             << f.sigmaRoll_26 << "," << f.sigmaPitch_26 << "," << f.sigmaYaw_26 << ","
+             << f.accelX_28 << "," << f.accelY_28 << "," << f.accelZ_28 << ","
+             << f.gyroX_28 << "," << f.gyroY_28 << "," << f.gyroZ_28 << ","
+             << f.magX_28 << "," << f.magY_28 << "," << f.magZ_28 << ","
+             << f.imuTemperature_28 << "," << f.pressure_28 << "," << f.pressureTemperature_28 << ","
+             << f.sigmaAccX_28 << "," << f.sigmaAccY_28 << "," << f.sigmaAccZ_28 << ","
+             << f.sigmaGyrX_28 << "," << f.sigmaGyrY_28 << "," << f.sigmaGyrZ_28 << ","
+             << f.biasAccX_28 << "," << f.biasAccY_28 << "," << f.biasAccZ_28 << ","
+             << f.biasGyrX_28 << "," << f.biasGyrY_28 << "," << f.biasGyrZ_28 << ","
+             << std::setprecision(12)
+             << f.timestamp_29 << "," << f.latitude_29 << "," << f.longitude_29 << "," << f.altitude_29 << ","
+             << std::setprecision(6)
+             << f.velocityNorth_29 << "," << f.velocityEast_29 << "," << f.velocityDown_29 << ","
+             << f.sigmaLatitude_29 << "," << f.sigmaLongitude_29 << "," << f.sigmaAltitude_29 << ","
+             << f.tilt_29 << "," << f.heading_29 << "," << f.sigmaTilt_29 << "," << f.sigmaHeading_29 << ","
+             << static_cast<int>(f.gnssFixStatus_29) << "," << f.dopplerVelocityValid_29 << "," << f.timeValid_29 << "," << f.externalGNSS_29 << "," << f.tiltValid_29 << ","
+             // Boolean flags
+             << f.SystemFailure_20 << "," << f.AccelerometerSensorFailure_20 << "," << f.GyroscopeSensorFailure_20 << "," << f.MagnetometerSensorFailure_20 << ","
+             << f.GNSSFailureSecondaryAntenna_20 << "," << f.GNSSFailurePrimaryAntenna_20 << "," << f.AccelerometerOverRange_20 << ","
+             << f.GyroscopeOverRange_20 << "," << f.MagnetometerOverRange_20 << "," << f.MinimumTemperatureAlarm_20 << "," << f.MaximumTemperatureAlarm_20 << ","
+             << f.GNSSAntennaConnectionBroken_20 << "," << f.DataOutputOverflowAlarm_20 << "," << f.OrientationFilterInitialised_20 << ","
+             << f.NavigationFilterInitialised_20 << "," << f.HeadingInitialised_20 << "," << f.UTCTimeInitialised_20 << "," << f.Event1_20 << "," << f.Event2_20 << ","
+             << f.InternalGNSSEnabled_20 << "," << f.DualAntennaHeadingActive_20 << "," << f.VelocityHeadingEnabled_20 << "," << f.GNSSFixInterrupted_20 << ","
+             << f.ExternalPositionActive_20 << "," << f.ExternalVelocityActive_20 << "," << f.ExternalHeadingActive_20 
+             << "\n";
+    }
+    file.close();
+}
+//####################################################################################################
