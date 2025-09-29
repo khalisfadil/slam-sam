@@ -102,6 +102,19 @@ class FrameQueue {
 //         }
 //     }
 
+#include <fstream>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <iostream>
+#include <iomanip>
+#include <tsl/robin_map.h> // For StatsHashMap
+#include "dataframe.hpp"   // For KeyFrameStats
+#include "map.hpp"         // For KeyframeHash
+
+// Define the type alias for clarity
+using StatsHashMap = tsl::robin_map<uint64_t, KeyFrameStats, KeyframeHash>;
+
 void writeStatsToFile(const StatsHashMap& stats, const std::string& filename) {
     if (stats.empty()) {
         std::cout << "No stats to write." << std::endl;
@@ -114,8 +127,10 @@ void writeStatsToFile(const StatsHashMap& stats, const std::string& filename) {
         return;
     }
 
-    // Write header with new columns
+    // Write header with new rlla columns
     file << "frame_id,timestamp,num_points,align_time_ms,ndt_iter,"
+         // Reference LLA
+         << "rlla_lat,rlla_lon,rlla_alt,"
          // Unscaled INS
          << "ins_unscaled_std_x,ins_unscaled_std_y,ins_unscaled_std_z,ins_unscaled_std_roll,ins_unscaled_std_pitch,ins_unscaled_std_yaw,"
          // Scaled INS
@@ -146,6 +161,9 @@ void writeStatsToFile(const StatsHashMap& stats, const std::string& filename) {
         const auto& s = stats.at(key);
         file << std::fixed << std::setprecision(12);
         file << s.frame_id << "," << s.timestamp << "," << s.num_points << "," << s.alignment_time_ms << "," << s.ndt_iterations << ",";
+        
+        // Write rlla
+        file << s.rlla.x() << "," << s.rlla.y() << "," << s.rlla.z() << ",";
         
         // Write all four Eigen vectors for standard deviations
         for (int i = 0; i < 6; ++i) file << s.ins_std_dev(i) << (i == 5 ? "" : ","); file << ",";
