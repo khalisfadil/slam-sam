@@ -102,19 +102,6 @@ class FrameQueue {
 //         }
 //     }
 
-#include <fstream>
-#include <vector>
-#include <string>
-#include <algorithm>
-#include <iostream>
-#include <iomanip>
-#include <tsl/robin_map.h> // For StatsHashMap
-#include "dataframe.hpp"   // For KeyFrameStats
-#include "map.hpp"         // For KeyframeHash
-
-// Define the type alias for clarity
-using StatsHashMap = tsl::robin_map<uint64_t, KeyFrameStats, KeyframeHash>;
-
 void writeStatsToFile(const StatsHashMap& stats, const std::string& filename) {
     if (stats.empty()) {
         std::cout << "No stats to write." << std::endl;
