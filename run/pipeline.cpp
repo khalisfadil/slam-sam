@@ -742,6 +742,7 @@ int main() {
                 gtsam::Pose3 currTb2m = Val.at<gtsam::Pose3>(Symbol('x', id));
 
                 //#################################################
+                current_stats.rlla = rlla;
                 current_stats.ins_pose = Tb2m; // Raw INS pose
                 current_stats.gtsam_pose = currTb2m.matrix(); // Optimized GTSAM pose
                 Eigen::Vector3d ins_translation = current_stats.ins_pose.block<3,1>(0,3);

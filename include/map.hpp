@@ -82,6 +82,7 @@ struct Keypose {
     double timestamp;
 };
 struct KeyFrameStats {
+    Eigen::Vector3d rlla = = Eigen::Vector3d::Zero(); 
     uint64_t frame_id = 0;
     double timestamp = 0.0;
     size_t num_points = 0;
