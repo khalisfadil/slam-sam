@@ -17,7 +17,7 @@ struct UdpSocketConfig {
     uint16_t port;
     std::optional<std::string> localInterfaceIp;
     uint32_t bufferSize = 65535;
-    std::chrono::milliseconds resolveTimeout{5000};
+    std::chrono::milliseconds resolveTimeout{100000};
     bool enableBroadcast = false;
     std::optional<boost::asio::ip::address> multicastGroup;
     std::optional<std::chrono::milliseconds> receiveTimeout;
