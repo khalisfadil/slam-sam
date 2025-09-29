@@ -106,4 +106,3 @@ using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyframeInfo>, VoxelHash>
 using PointsHashMap = tsl::robin_map<uint64_t, KeypointInfo, KeyframeHash>;
 using PoseHashMap = tsl::robin_map<uint64_t, Keypose, KeyframeHash>;
 using StatsHashMap = tsl::robin_map<uint64_t, KeyFrameStats, KeyframeHash>;
-using CompasHashMap = tsl::robin_map<uint64_t, KeyCompasInfo, KeyframeHash>;

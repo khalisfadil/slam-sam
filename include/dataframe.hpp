@@ -420,6 +420,7 @@ struct KeyCompasInfo {
     double timestamp;
     uint64_t frame_id = 0;
 };
+using CompasHashMap = tsl::robin_map<uint64_t, KeyCompasInfo, KeyframeHash>;
 
 
 
