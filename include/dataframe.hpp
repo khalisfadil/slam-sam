@@ -415,6 +415,12 @@ struct LidarFrame {
     }
 };
 
+struct KeyCompasInfo {
+    std::unique_ptr<CompFrame> ins; // Tb2m: body-to-map transformation in NED frame
+    double timestamp;
+    uint64_t frame_id = 0;
+};
+
 
 
 

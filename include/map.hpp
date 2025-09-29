@@ -100,11 +100,7 @@ struct KeyFrameStats {
     
     double pose_rmse = 0.0; // RMSE between INS translation and GTSAM translation
 };
-struct KeyCompasInfo {
-    std::unique_ptr<CompFrame> ins; // Tb2m: body-to-map transformation in NED frame
-    double timestamp;
-    uint64_t frame_id = 0;
-};
+
 
 using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyframeInfo>, VoxelHash>;
 using PointsHashMap = tsl::robin_map<uint64_t, KeypointInfo, KeyframeHash>;
