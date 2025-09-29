@@ -49,7 +49,8 @@ int main() {
         auto frame = std::make_unique<CompFrame>();
         compCallback.Decode(packet, *frame); // Assuming Decode is a static method or external function
         if (frame->timestamp_20 > 0 && frame->timestamp_20 != *compLastTs) {
-            std::cout << "Received new compass data with timestamp: " << frame->timestamp_20 << "\n";
+            std::cout << "Data frame push " << frame->timestamp_20 << " .\n";
+
             *compLastTs = frame->timestamp_20;
             compData.push(std::move(frame)); // Push the copy into compQueue
         }};
@@ -84,8 +85,6 @@ int main() {
                 }
                 id++;
                 double ts = data_frame->timestamp_20;
-
-                std::cout << "Calibration thread processing frame ID: " << id << " with timestamp: " << ts << "\n";
                 
                 // Corrected: Use std::move to transfer ownership of the unique_ptr
                 compasArchive[id] = {std::move(data_frame), ts, id};
