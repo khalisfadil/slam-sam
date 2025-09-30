@@ -75,7 +75,7 @@ int main() {
     //####################################################################################################
     auto calib_thread = std::thread([&compData]() {
         CompasHashMap compasArchive;
-        uint64_t id = 269563;
+        uint64_t id = 0;
         try {
             while (running) {
                 auto data_frame = compData.pop();
