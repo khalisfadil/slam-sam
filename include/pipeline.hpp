@@ -171,7 +171,7 @@ void writeCompasToFile(const CompasHashMap& compasArchive, const std::string& fi
          << "velocityNorth_29,velocityEast_29,velocityDown_29,"
          << "sigmaLatitude_29,sigmaLongitude_29,sigmaAltitude_29,"
          << "tilt_29,heading_29,sigmaTilt_29,sigmaHeading_29,"
-         << "gnssFixStatus_29,dopplerVelocityValid_29,timeValid_29,externalGNSS_29,tiltValid_29,"
+         << "GNSSFixStatus_29,dopplerVelocityValid_29,timeValid_29,externalGNSS_29,tiltValid_29,"
          << "SystemFailure_20,AccelerometerSensorFailure_20,GyroscopeSensorFailure_20,MagnetometerSensorFailure_20,"
          << "GNSSFailureSecondaryAntenna_20,GNSSFailurePrimaryAntenna_20,AccelerometerOverRange_20,"
          << "GyroscopeOverRange_20,MagnetometerOverRange_20,MinimumTemperatureAlarm_20,MaximumTemperatureAlarm_20,"

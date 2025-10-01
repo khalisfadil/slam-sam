@@ -22,27 +22,27 @@ int main() {
 
     boost::asio::io_context comp_iocontext;
     
-    // UdpSocketConfig compUdpConfig;
-    // compUdpConfig.host = "10.0.201.101";
-    // compUdpConfig.multicastGroup = std::nullopt;
-    // compUdpConfig.localInterfaceIp = "10.0.201.101";
-    // compUdpConfig.port = 42001;
-    // compUdpConfig.bufferSize = 105;
-    // compUdpConfig.receiveTimeout = std::chrono::milliseconds(10000); 
-    // compUdpConfig.reuseAddress = true; 
-    // compUdpConfig.enableBroadcast = false; 
-    // compUdpConfig.ttl =  std::nullopt; 
-
     UdpSocketConfig compUdpConfig;
-    compUdpConfig.host = "192.168.75.10";
+    compUdpConfig.host = "10.0.201.101";
     compUdpConfig.multicastGroup = std::nullopt;
-    compUdpConfig.localInterfaceIp = "192.168.75.10";
-    compUdpConfig.port = 6597;
+    compUdpConfig.localInterfaceIp = "10.0.201.101";
+    compUdpConfig.port = 42001;
     compUdpConfig.bufferSize = 105;
     compUdpConfig.receiveTimeout = std::chrono::milliseconds(10000); 
     compUdpConfig.reuseAddress = true; 
     compUdpConfig.enableBroadcast = false; 
     compUdpConfig.ttl =  std::nullopt; 
+
+    // UdpSocketConfig compUdpConfig;
+    // compUdpConfig.host = "192.168.75.10";
+    // compUdpConfig.multicastGroup = std::nullopt;
+    // compUdpConfig.localInterfaceIp = "192.168.75.10";
+    // compUdpConfig.port = 6597;
+    // compUdpConfig.bufferSize = 105;
+    // compUdpConfig.receiveTimeout = std::chrono::milliseconds(10000); 
+    // compUdpConfig.reuseAddress = true; 
+    // compUdpConfig.enableBroadcast = false; 
+    // compUdpConfig.ttl =  std::nullopt; 
     //####################################################################################################
     auto comp_callback = [&compCallback, &compData, compLastTs](const DataBuffer& packet) {
         if (!running) return;
