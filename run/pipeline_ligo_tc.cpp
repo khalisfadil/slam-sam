@@ -460,6 +460,14 @@ int main() {
                     prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
                     prev_state_optimized = gtsam::NavState(prev_pose_optimized, prev_velocity_optimized);
 
+                    // =========================================================================
+                    // --- NEW: POSE COMPARISON OUTPUT ---
+                    // =========================================================================
+                    std::cout << "\n--- POSE COMPARISON (Frame ID: " << id << ") ---\n";
+                    std::cout << "Raw INS Pose:     T = [" << current_ins_state.pose().translation().transpose() << "]\n";
+                    std::cout << "GTSAM Opt. Pose:  T = [" << prev_pose_optimized.translation().transpose() << "]\n";
+                    // =========================================================================
+
                     pointsArchive[id] = {pointsBody, timestamp};
                     insStateArchive[id] = {current_ins_state, timestamp};
                     last_id = id;   
@@ -514,7 +522,7 @@ int main() {
                 continue;
             }
 
-            // --- 1. GET THE SET OF VALID FRAME IDS TO DISPLAY ---
+            // // --- 1. GET THE SET OF VALID FRAME IDS TO DISPLAY ---
             // std::vector<uint64_t> valid_ids;
             // for (const auto& key_value : *(vizData->poses)) {
             //     gtsam::Symbol symbol(key_value.key);
@@ -603,18 +611,18 @@ int main() {
             }
 
             // --- 4. UPDATE CAMERA ---
-            if (!valid_ids.empty()) {
-                uint64_t max_id = valid_ids.back();
-                target_focal_point = vizData->poses->at<gtsam::Pose3>(gtsam::Symbol('x', max_id)).translation();
-            }
-            current_focal_point += (target_focal_point - current_focal_point) * kSmoothingFactor;
-            Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
-            current_cam_pos += (target_cam_pos - current_cam_pos) * kSmoothingFactor;
-            viewer->setCameraPosition(
-                current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
-                current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
-                kUpVector.x(), kUpVector.y(), kUpVector.z()
-            );
+            // if (!valid_ids.empty()) {
+            //     uint64_t max_id = valid_ids.back();
+            //     target_focal_point = vizData->poses->at<gtsam::Pose3>(gtsam::Symbol('x', max_id)).translation();
+            // }
+            // current_focal_point += (target_focal_point - current_focal_point) * kSmoothingFactor;
+            // Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
+            // current_cam_pos += (target_cam_pos - current_cam_pos) * kSmoothingFactor;
+            // viewer->setCameraPosition(
+            //     current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
+            //     current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
+            //     kUpVector.x(), kUpVector.y(), kUpVector.z()
+            // );
             
             viewer->spinOnce(100);
         }
