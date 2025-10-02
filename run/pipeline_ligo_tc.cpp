@@ -488,26 +488,44 @@ int main() {
         std::cout << "Gtsam thread exiting\n";
     });
     //####################################################################################################
-    auto viz_thread = std::thread([&vizQueue]() { // Added &running to the capture list
+    auto viz_thread = std::thread([&vizQueue]() {
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("GTSAM Optimized Map");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "world_origin");
         viewer->initCameraParameters();
 
-        // --- Camera Smoothing Parameters ---
+        // --- NEW: Camera Following & Smoothing Logic ---
+        // This factor controls how quickly the camera catches up to the target.
+        // Lower values (e.g., 0.05) are smoother but have more lag.
+        // Higher values (e.g., 0.2) are more responsive but can be jumpy.
         const double kSmoothingFactor = 0.1;
+
+        // This defines the camera's position relative to the focal point (view from above).
         const Eigen::Vector3d kCameraOffset(0.0, 0.0, -250.0);
-        const Eigen::Vector3d kUpVector(1.0, 0.0, 0.0); // Z-down, X-up view
+
+        // The "up" vector for the camera. Your original code used (1,0,0), which is non-standard but preserved here.
+        // A more common "up" vector would be (0, -1, 0) for Z-forward or (0, 0, 1) for Y-forward systems.
+        const Eigen::Vector3d kUpVector(1.0, 0.0, 0.0);
+
+        // State variables to hold the camera's current and target focus points.
+        // Initialize them to the starting view.
         Eigen::Vector3d target_focal_point(0.0, 0.0, 0.0);
         Eigen::Vector3d current_focal_point = target_focal_point;
         Eigen::Vector3d current_cam_pos = target_focal_point + kCameraOffset;
 
-        // --- Visualization State ---
+        // --- MODIFIED: The initial setCameraPosition is now managed by the loop ---
+        // viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // This is now handled dynamically
+
         const size_t kSlidingWindowSize = 50;
-        std::set<uint64_t> displayed_frame_ids;
+        std::deque<uint64_t> displayed_frame_ids;
+        uint64_t last_processed_id = 0;
+
         pcl::VoxelGrid<pcl::PointXYZI> vg;
         vg.setLeafSize(0.5f, 0.5f, 0.5f);
+
+        // Point cloud for the OPTIMIZED trajectory (colored RED)
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        // Point cloud for the RAW INS trajectory (colored GREEN)
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr ins_trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
         while (running && !viewer->wasStopped()) {
@@ -515,11 +533,6 @@ int main() {
             if (!vizData) {
                 if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
                 break;
-            }
-
-            if (vizData->poses->empty()) {
-                viewer->spinOnce(100);
-                continue;
             }
 
             gtsam::Pose3 latest_pose;
@@ -613,14 +626,14 @@ int main() {
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "ins_trajectory_cloud");
             }
 
-            --- 4. UPDATE CAMERA ---
-            if (!valid_ids.empty()) {
-                uint64_t max_id = valid_ids.back();
-                target_focal_point = vizData->poses->at<gtsam::Pose3>(gtsam::Symbol('x', max_id)).translation();
-            }
-            current_focal_point += (target_focal_point - current_focal_point) * kSmoothingFactor;
+            // Interpolate the focal point
+            current_focal_point = current_focal_point + (target_focal_point - current_focal_point) * kSmoothingFactor;
+            // Calculate the desired camera position based on the smoothed focal point
             Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
-            current_cam_pos += (target_cam_pos - current_cam_pos) * kSmoothingFactor;
+            // Interpolate the camera's actual position
+            current_cam_pos = current_cam_pos + (target_cam_pos - current_cam_pos) * kSmoothingFactor;
+
+            // Set the new camera position and view direction in the visualizer
             viewer->setCameraPosition(
                 current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
                 current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
