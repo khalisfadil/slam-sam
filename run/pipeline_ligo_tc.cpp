@@ -433,27 +433,27 @@ int main() {
                         *imu_preintegrator));
 
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
-                    if (lidarValid){
+                    // if (lidarValid){
 
-                        pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
-                        pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                        const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
-                        gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
-                        pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
-                        ndt_omp->setInputTarget(lidarFactorPointsTarget);
-                        ndt_omp->setInputSource(pointsBody);
-                        ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
-                        gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
-                        gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
+                    //     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
+                    //     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+                    //     const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
+                    //     gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
+                    //     pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
+                    //     ndt_omp->setInputTarget(lidarFactorPointsTarget);
+                    //     ndt_omp->setInputSource(pointsBody);
+                    //     ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
+                    //     gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
+                    //     gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
                         
-                        auto ndt_result = ndt_omp->getResult();
-                        ndt_iter = ndt_result.iteration_num;
-                        const auto& hessian = ndt_result.hessian;
-                        Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        Eigen::Matrix<double, 6, 6> lidar_cov = (-regularized_hessian).inverse();
-                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
-                    }
+                    //     auto ndt_result = ndt_omp->getResult();
+                    //     ndt_iter = ndt_result.iteration_num;
+                    //     const auto& hessian = ndt_result.hessian;
+                    //     Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                    //     Eigen::Matrix<double, 6, 6> lidar_cov = (-regularized_hessian).inverse();
+                    //     gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
+                    //     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
+                    // }
                     // 3.4. (Conceptual) Add GPS Factor
                     if(gnssValid){
                         const Eigen::Vector3d gnss_lla{ins.latitude_29, ins.longitude_29, ins.altitude_29};
