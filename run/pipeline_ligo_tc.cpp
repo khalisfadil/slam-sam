@@ -380,7 +380,7 @@ int main() {
 
                         gtsam::Pose3 currTb2m = insInitialPose;
                         predTb2m = currTb2m;
-
+                        gtsam::Vector3 prev_velocity_optimized;
                         // gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                         // prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
                         prev_state_optimized = gtsam::NavState(currTb2m, prev_velocity_optimized);
