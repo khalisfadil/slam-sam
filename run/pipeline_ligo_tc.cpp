@@ -362,7 +362,8 @@ int main() {
                         imu_params->biasAccOmegaInt                 = gtsam::Matrix66::Zero();
                         const auto& insInitialPose = current_ins_state.pose();
                         const auto& insInitialVelocity = current_ins_state.velocity();
-                        const gtsam::imuBias::ConstantBias imuInitialBias(STATIC_BIAS_ACCELEROMETER, STATIC_BIAS_GYROSCOPE);                                                                                                                                                                                                    
+                        const gtsam::imuBias::ConstantBias imuInitialBias(STATIC_BIAS_ACCELEROMETER, STATIC_BIAS_GYROSCOPE);
+                        newEstimates.insert(gtsam::Symbol('x', id), insInitialPose);                                                                                                                                                                                                    
                         newEstimates.insert(gtsam::Symbol('v', id), insInitialVelocity);
                         newEstimates.insert(gtsam::Symbol('b', id), imuInitialBias); 
                         auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
