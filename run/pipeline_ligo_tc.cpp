@@ -380,6 +380,7 @@ int main() {
                         gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                         prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
                         prev_state_optimized = gtsam::NavState(prev_pose_optimized, prev_velocity_optimized);
+                        imu_preintegrator = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(imu_params, prev_bias_optimized);
 
                         pointsArchive[id] = {pointsBody, timestamp};
                         insStateArchive[id] = {current_ins_state, timestamp};
