@@ -456,7 +456,7 @@ int main() {
                         ndt_iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        Eigen::Matrix<double, 6, 6> lidar_cov = (-regularized_hessian).inverse();
+                        Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
                     }
