@@ -42,6 +42,26 @@ void CompCallback::ParseMetadata(const nlohmann::json& json_data) {
         updateRate_ = imu_params["updateRateHz"].get<double>();
 
         // Parse velocityRandomWalk (3-element array)
+        if (!imu_params.contains("staticBiasAccelerometer") || !imu_params["staticBiasAccelerometer"].is_array() || imu_params["staticBiasAccelerometer"].size() != 3) {
+            throw std::runtime_error("'staticBiasAccelerometer' must be an array of 3 elements");
+        }
+        staticBiasAccelerometer_ = Eigen::Vector3d(
+            imu_params["staticBiasAccelerometer"][0].get<double>(),
+            imu_params["staticBiasAccelerometer"][1].get<double>(),
+            imu_params["staticBiasAccelerometer"][2].get<double>()
+        );
+
+        // Parse angularRandomWalk (3-element array)
+        if (!imu_params.contains("staticBiasGyroscope") || !imu_params["staticBiasGyroscope"].is_array() || imu_params["staticBiasGyroscope"].size() != 3) {
+            throw std::runtime_error("'staticBiasGyroscope' must be an array of 3 elements");
+        }
+        staticBiasGyroscope_ = Eigen::Vector3d(
+            imu_params["staticBiasGyroscope"][0].get<double>(),
+            imu_params["staticBiasGyroscope"][1].get<double>(),
+            imu_params["staticBiasGyroscope"][2].get<double>()
+        );
+
+        // Parse velocityRandomWalk (3-element array)
         if (!imu_params.contains("velocityRandomWalk") || !imu_params["velocityRandomWalk"].is_array() || imu_params["velocityRandomWalk"].size() != 3) {
             throw std::runtime_error("'velocityRandomWalk' must be an array of 3 elements");
         }
@@ -65,7 +85,7 @@ void CompCallback::ParseMetadata(const nlohmann::json& json_data) {
         if (!imu_params.contains("biasInstabilityAccelerometer") || !imu_params["biasInstabilityAccelerometer"].is_array() || imu_params["biasInstabilityAccelerometer"].size() != 3) {
             throw std::runtime_error("'biasInstabilityAccelerometer' must be an array of 3 elements");
         }
-        biasAccelerometer_ = Eigen::Vector3d(
+        biasInstabilityAccelerometer_ = Eigen::Vector3d(
             imu_params["biasInstabilityAccelerometer"][0].get<double>(),
             imu_params["biasInstabilityAccelerometer"][1].get<double>(),
             imu_params["biasInstabilityAccelerometer"][2].get<double>()
@@ -75,10 +95,30 @@ void CompCallback::ParseMetadata(const nlohmann::json& json_data) {
         if (!imu_params.contains("biasInstabilityGyroscope") || !imu_params["biasInstabilityGyroscope"].is_array() || imu_params["biasInstabilityGyroscope"].size() != 3) {
             throw std::runtime_error("'biasInstabilityGyroscope' must be an array of 3 elements");
         }
-        biasGyroscope_ = Eigen::Vector3d(
+        biasInstabilityGyroscope_ = Eigen::Vector3d(
             imu_params["biasInstabilityGyroscope"][0].get<double>(),
             imu_params["biasInstabilityGyroscope"][1].get<double>(),
             imu_params["biasInstabilityGyroscope"][2].get<double>()
+        );
+
+        // Parse biasInstabilityAccelerometer (3-element array)
+        if (!imu_params.contains("biasRandomWalkAccelerometer") || !imu_params["biasRandomWalkAccelerometer"].is_array() || imu_params["biasRandomWalkAccelerometer"].size() != 3) {
+            throw std::runtime_error("'biasRandomWalkAccelerometer' must be an array of 3 elements");
+        }
+        biasRandomWalkAccelerometer_ = Eigen::Vector3d(
+            imu_params["biasRandomWalkAccelerometer"][0].get<double>(),
+            imu_params["biasRandomWalkAccelerometer"][1].get<double>(),
+            imu_params["biasRandomWalkAccelerometer"][2].get<double>()
+        );
+
+        // Parse biasInstabilityGyroscope (3-element array)
+        if (!imu_params.contains("biasRandomWalkGyroscope") || !imu_params["biasRandomWalkGyroscope"].is_array() || imu_params["biasRandomWalkGyroscope"].size() != 3) {
+            throw std::runtime_error("'biasRandomWalkGyroscope' must be an array of 3 elements");
+        }
+        biasRandomWalkGyroscope_ = Eigen::Vector3d(
+            imu_params["biasRandomWalkGyroscope"][0].get<double>(),
+            imu_params["biasRandomWalkGyroscope"][1].get<double>(),
+            imu_params["biasRandomWalkGyroscope"][2].get<double>()
         );
 
         // Parse position (3-element array)
@@ -292,24 +332,6 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
             std::memcpy(&p_current_write_buffer->pressure_28, packet.data() + 45, sizeof(float));
             std::memcpy(&p_current_write_buffer->pressureTemperature_28, packet.data() + 49, sizeof(float));
 
-            double dt = 1.0 / updateRate_;
-            double std_acc = velocityRandomWalk_(0) / std::sqrt(dt);
-            double std_gyro = angularRandomWalk_(0) / std::sqrt(dt);
-
-            p_current_write_buffer->sigmaAccX_28 = static_cast<float>(std_acc);
-            p_current_write_buffer->sigmaAccY_28 = static_cast<float>(std_acc);
-            p_current_write_buffer->sigmaAccZ_28 = static_cast<float>(std_acc);
-            p_current_write_buffer->sigmaGyrX_28 = static_cast<float>(std_gyro);
-            p_current_write_buffer->sigmaGyrY_28 = static_cast<float>(std_gyro);
-            p_current_write_buffer->sigmaGyrZ_28 = static_cast<float>(std_gyro);
-
-            p_current_write_buffer->biasAccX_28 = static_cast<float>(biasAccelerometer_(0));
-            p_current_write_buffer->biasAccY_28 = static_cast<float>(biasAccelerometer_(0));
-            p_current_write_buffer->biasAccZ_28 = static_cast<float>(biasAccelerometer_(0));
-            p_current_write_buffer->biasGyrX_28 = static_cast<float>(biasGyroscope_(0));
-            p_current_write_buffer->biasGyrY_28 = static_cast<float>(biasGyroscope_(0));
-            p_current_write_buffer->biasGyrZ_28 = static_cast<float>(biasGyroscope_(0));
-
             p_current_write_buffer-> valid_28 = true;
             break;
         }
@@ -358,7 +380,7 @@ void CompCallback::Decode(const std::vector<uint8_t>& packet, CompFrame& frame) 
             uint16_t status_raw;
             std::memcpy(&status_raw, packet.data() + 77, sizeof(uint16_t));
             uint16_t status = le16toh(status_raw);
-            p_current_write_buffer->gnssFixStatus_29 = status & 0x07; // Bits 0-2
+            p_current_write_buffer->GNSSFixStatus_29 = status & 0x07; // Bits 0-2
             p_current_write_buffer->dopplerVelocityValid_29 = (status & 0x08) != 0; // Bit 3
             p_current_write_buffer->timeValid_29 = (status & 0x10) != 0; // Bit 4
             p_current_write_buffer->externalGNSS_29 = (status & 0x20) != 0; // Bit 5

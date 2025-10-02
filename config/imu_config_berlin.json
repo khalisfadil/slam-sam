@@ -1,10 +1,14 @@
 {
     "imu_parameter": {
-        "updateRateHz":                     100,
-        "velocityRandomWalk":               [0.000333333333333333, 0.000333333333333333, 0.000333333333333333],
-        "biasInstabilityAccelerometer":     [0.0000588399000000000, 0.0000588399000000000, 0.0000588399000000000],
-        "angularRandomWalk":                [0.0000232710566932577, 0.0000232710566932577, 0.0000232710566932577],
-        "biasInstabilityGyroscope":         [0.00000387850944887629, 0.00000387850944887629, 0.00000387850944887629],
+        "updateRateHz":                     50,
+        "staticBiasAccelerometer":          [-0.000008, 0.000004, -0.000476],
+        "staticBiasGyroscope":              [0.005307, 0.011041, -0.001484],
+        "velocityRandomWalk":               [4.94229273e-04, 4.85906799e-04, 5.89474412e-04],
+        "angularRandomWalk":                [4.16637806e-05, 4.35009418e-05, 1.15496125e-04],
+        "biasInstabilityAccelerometer":     [1.69652058e-04, 9.49198348e-05, 1.87254859e-04],
+        "biasInstabilityGyroscope":         [6.90751763e-06, 8.45555417e-06, 1.92753227e-05],
+        "biasRandomWalkAccelerometer":      [3.46999136e-04, 3.39097451e-04, 4.67531234e-04],
+        "biasRandomWalkGyroscope":          [2.96568402e-05, 3.09354024e-05, 8.19609640e-05],
         "tb2s":                             [0.0, 0.0, 0.0],
         "Cb2s":                             [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
     }

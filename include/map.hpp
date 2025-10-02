@@ -3,6 +3,7 @@
 #include <robin_map.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
+#include <gtsam/navigation/NavState.h>
 #include <dataframe.hpp>
 
 struct Voxel {
@@ -70,16 +71,16 @@ struct KeyframeHash {
     }
 };
 
-struct KeyframeInfo {
+struct KeyFrameInfo {
     uint64_t id;
     double timestamp;
 };
-struct KeypointInfo{
+struct KeyPointInfo{
     pcl::PointCloud<pcl::PointXYZI>::Ptr points;
     double timestamp;
 };
-struct Keypose {
-    Eigen::Matrix4d pose; // Tb2m: body-to-map transformation in NED frame
+struct KeyState {
+    gtsam::NavState state; // Tb2m: body-to-map transformation in NED frame
     double timestamp;
 };
 struct KeyFrameStats {
@@ -102,7 +103,7 @@ struct KeyFrameStats {
 };
 
 
-using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyframeInfo>, VoxelHash>;
-using PointsHashMap = tsl::robin_map<uint64_t, KeypointInfo, KeyframeHash>;
-using PoseHashMap = tsl::robin_map<uint64_t, Keypose, KeyframeHash>;
+using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyFrameInfo>, VoxelHash>;
+using PointsHashMap = tsl::robin_map<uint64_t, KeyPointInfo, KeyframeHash>;
+using StateHashMap = tsl::robin_map<uint64_t, KeyState, KeyframeHash>;
 using StatsHashMap = tsl::robin_map<uint64_t, KeyFrameStats, KeyframeHash>;

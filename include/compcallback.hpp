@@ -8,12 +8,22 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <dataframe.hpp>
+#include <gtsam/geometry/Point3.h>
 
 class CompCallback {
     public:
         explicit CompCallback(const std::string& json_path);
         explicit CompCallback(const nlohmann::json& json_data);
         void Decode(const std::vector<uint8_t>& packet, CompFrame& frame);
+        double GravityWGS84(double latitude, double longitude, double altitude);
+        gtsam::Vector3 getStaticBiasAccelerometer() const { return Eigen::Vector3d(staticBiasAccelerometer_).cast<gtsam::Vector::Scalar>(); }
+        gtsam::Vector3 getStaticBiasGyroscope() const { return Eigen::Vector3d(staticBiasGyroscope_).cast<gtsam::Vector::Scalar>(); }
+        gtsam::Vector3 getVelocityRandomWalk() const { return Eigen::Vector3d(velocityRandomWalk_).cast<gtsam::Vector::Scalar>(); }
+        gtsam::Vector3 getAngularRandomWalk() const { return Eigen::Vector3d(angularRandomWalk_).cast<gtsam::Vector::Scalar>(); }
+        gtsam::Vector3 getBiasInstabilityAccelerometer() const { return Eigen::Vector3d(biasInstabilityAccelerometer_).cast<gtsam::Vector::Scalar>(); }
+        gtsam::Vector3 getBiasInstabilityGyroscope() const { return Eigen::Vector3d(biasInstabilityGyroscope_).cast<gtsam::Vector::Scalar>(); }
+        gtsam::Vector3 getBiasRandomWalkAccelerometer() const { return Eigen::Vector3d(biasRandomWalkAccelerometer_).cast<gtsam::Vector::Scalar>(); } 
+        gtsam::Vector3 getBiasRandomWalkGyroscope() const { return Eigen::Vector3d(biasRandomWalkGyroscope_).cast<gtsam::Vector::Scalar>(); }     
         const CompFrame& GetLatestFrame() const { return buffer_toggle_ ? data_buffer1_ : data_buffer2_; }
     private:
 
@@ -26,11 +36,15 @@ class CompCallback {
         const double e2 = 6.69437999014e-3;
         const double b_over_a = 0.996647189335;
         const double omega = 7.292115e-5;                                   
-        double updateRate_ = 50;                                               // frequency rate Hz
+        double updateRate_ = 50;        
+        Eigen::Vector3d staticBiasAccelerometer_ = Eigen::Vector3d::Zero();
+        Eigen::Vector3d staticBiasGyroscope_ = Eigen::Vector3d::Zero();                                       // frequency rate Hz
         Eigen::Vector3d velocityRandomWalk_ = Eigen::Vector3d::Zero();
         Eigen::Vector3d angularRandomWalk_ = Eigen::Vector3d::Zero();
-        Eigen::Vector3d biasAccelerometer_ = Eigen::Vector3d::Zero();
-        Eigen::Vector3d biasGyroscope_ = Eigen::Vector3d::Zero();
+        Eigen::Vector3d biasInstabilityAccelerometer_ = Eigen::Vector3d::Zero();
+        Eigen::Vector3d biasInstabilityGyroscope_ = Eigen::Vector3d::Zero();
+        Eigen::Vector3d biasRandomWalkAccelerometer_ = Eigen::Vector3d::Zero();
+        Eigen::Vector3d biasRandomWalkGyroscope_ = Eigen::Vector3d::Zero();
         Eigen::Matrix3d body_to_imu_rotation_ = Eigen::Matrix3d::Zero();
         Eigen::Vector3d body_to_imu_translation_ = Eigen::Vector3d::Zero();
 
@@ -39,6 +53,6 @@ class CompCallback {
         bool buffer_toggle_ = true;
 
         void ParseMetadata(const nlohmann::json& json_data);
-        double GravityWGS84(double latitude, double longitude, double altitude);
+        
         void SwapBuffer() { buffer_toggle_ = !buffer_toggle_; }
 };

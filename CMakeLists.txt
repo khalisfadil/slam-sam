@@ -78,9 +78,9 @@ target_link_libraries(pipeline_lib PUBLIC
 # lifting is done by the library.
 
 # 1. Main pipeline executable
-add_executable(pipeline run/pipeline.cpp)
-target_link_libraries(pipeline PRIVATE pipeline_lib)
-target_compile_options(pipeline PRIVATE -O3)
+add_executable(pipeline_ligo_tc run/pipeline_ligo_tc.cpp)
+target_link_libraries(pipeline_ligo_tc PRIVATE pipeline_lib)
+target_compile_options(pipeline_ligo_tc PRIVATE -O3)
 
 # 2. Compass calibration executable
 add_executable(pipeline_calib_compass run/pipeline_calib_compass.cpp)

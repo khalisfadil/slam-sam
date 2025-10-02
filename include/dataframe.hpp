@@ -97,18 +97,6 @@ struct CompFrame {
     float imuTemperature_28;
     float pressure_28;
     float pressureTemperature_28;
-    float sigmaAccX_28;
-    float sigmaAccY_28;
-    float sigmaAccZ_28;
-    float sigmaGyrX_28;
-    float sigmaGyrY_28;
-    float sigmaGyrZ_28;
-    float biasAccX_28;
-    float biasAccY_28;
-    float biasAccZ_28;
-    float biasGyrX_28;
-    float biasGyrY_28;
-    float biasGyrZ_28;
 
     // --- FROM DataFrameID29 ---
     double timestamp_29;
@@ -125,7 +113,7 @@ struct CompFrame {
     float heading_29;
     float sigmaTilt_29;
     float sigmaHeading_29;
-    uint8_t gnssFixStatus_29;
+    uint8_t GNSSFixStatus_29;
     bool dopplerVelocityValid_29;
     bool timeValid_29;
     bool externalGNSS_29;
@@ -164,16 +152,12 @@ struct CompFrame {
         accelX_28 = 0.0f; accelY_28 = 0.0f; accelZ_28 = 0.0f; gyroX_28 = 0.0f; gyroY_28 = 0.0f;
         gyroZ_28 = 0.0f; magX_28 = 0.0f; magY_28 = 0.0f; magZ_28 = 0.0f; imuTemperature_28 = 0.0f;
         pressure_28 = 0.0f; pressureTemperature_28 = 0.0f;
-        sigmaAccX_28 = 0.0f; sigmaAccY_28 = 0.0f; sigmaAccZ_28 = 0.0f;
-        sigmaGyrX_28 = 0.0f; sigmaGyrY_28 = 0.0f; sigmaGyrZ_28 = 0.0f;
-        biasAccX_28 = 0.0f; biasAccY_28 = 0.0f; biasAccZ_28 = 0.0f;
-        biasGyrX_28 = 0.0f; biasGyrY_28 = 0.0f; biasGyrZ_28 = 0.0f;
 
         // Clear ID29
         timestamp_29 = 0.0; latitude_29 = 0.0; longitude_29 = 0.0; altitude_29 = 0.0; velocityNorth_29 = 0.0f;
         velocityEast_29 = 0.0f; velocityDown_29 = 0.0f; sigmaLatitude_29 = 0.0f; sigmaLongitude_29 = 0.0f;
         sigmaAltitude_29 = 0.0f; tilt_29 = 0.0f; heading_29 = 0.0f; sigmaTilt_29 = 0.0f; sigmaHeading_29 = 0.0f;
-        gnssFixStatus_29 = 0; dopplerVelocityValid_29 = false; timeValid_29 = false; externalGNSS_29 = false;
+        GNSSFixStatus_29 = 0; dopplerVelocityValid_29 = false; timeValid_29 = false; externalGNSS_29 = false;
         tiltValid_29 = false;
     }
 
@@ -242,18 +226,7 @@ struct CompFrame {
         result.imuTemperature_28 = a.imuTemperature_28 + clamped_t * (b.imuTemperature_28 - a.imuTemperature_28);
         result.pressure_28 = a.pressure_28 + clamped_t * (b.pressure_28 - a.pressure_28);
         result.pressureTemperature_28 = a.pressureTemperature_28 + clamped_t * (b.pressureTemperature_28 - a.pressureTemperature_28);
-        result.sigmaAccX_28 = a.sigmaAccX_28 + clamped_t * (b.sigmaAccX_28 - a.sigmaAccX_28);
-        result.sigmaAccY_28 = a.sigmaAccY_28 + clamped_t * (b.sigmaAccY_28 - a.sigmaAccY_28);
-        result.sigmaAccZ_28 = a.sigmaAccZ_28 + clamped_t * (b.sigmaAccZ_28 - a.sigmaAccZ_28);
-        result.sigmaGyrX_28 = a.sigmaGyrX_28 + clamped_t * (b.sigmaGyrX_28 - a.sigmaGyrX_28);
-        result.sigmaGyrY_28 = a.sigmaGyrY_28 + clamped_t * (b.sigmaGyrY_28 - a.sigmaGyrY_28);
-        result.sigmaGyrZ_28 = a.sigmaGyrZ_28 + clamped_t * (b.sigmaGyrZ_28 - a.sigmaGyrZ_28);
-        result.biasAccX_28 = a.biasAccX_28 + clamped_t * (b.biasAccX_28 - a.biasAccX_28);
-        result.biasAccY_28 = a.biasAccY_28 + clamped_t * (b.biasAccY_28 - a.biasAccY_28);
-        result.biasAccZ_28 = a.biasAccZ_28 + clamped_t * (b.biasAccZ_28 - a.biasAccZ_28);
-        result.biasGyrX_28 = a.biasGyrX_28 + clamped_t * (b.biasGyrX_28 - a.biasGyrX_28);
-        result.biasGyrY_28 = a.biasGyrY_28 + clamped_t * (b.biasGyrY_28 - a.biasGyrY_28);
-        result.biasGyrZ_28 = a.biasGyrZ_28 + clamped_t * (b.biasGyrZ_28 - a.biasGyrZ_28);
+
         // ID29
         result.timestamp_29 = a.timestamp_29 + clamped_t * (b.timestamp_29 - a.timestamp_29);
         result.latitude_29 = a.latitude_29 + clamped_t * (b.latitude_29 - a.latitude_29);
@@ -315,7 +288,7 @@ struct CompFrame {
 
         // --- STRATEGY 5: Nearest Neighbor (for discrete status codes) ---
         result.GNSSFixStatus_20 = (clamped_t < 0.5) ? a.GNSSFixStatus_20 : b.GNSSFixStatus_20;
-        result.gnssFixStatus_29 = (clamped_t < 0.5) ? a.gnssFixStatus_29 : b.gnssFixStatus_29;
+        result.GNSSFixStatus_29 = (clamped_t < 0.5) ? a.GNSSFixStatus_29 : b.GNSSFixStatus_29;
 
         return result;
     }
@@ -324,7 +297,7 @@ struct CompFrame {
 struct VisualizationData {
     std::shared_ptr<gtsam::Values> poses;
     std::shared_ptr<PointsHashMap> points;
-    std::shared_ptr<PoseHashMap> insposes;
+    std::shared_ptr<StateHashMap> insposes;
 };
 // %            ... struct representing single 3d point data
 struct PCLPointCloud{
