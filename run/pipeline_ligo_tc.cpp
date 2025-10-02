@@ -503,7 +503,7 @@ int main() {
         Eigen::Vector3d current_cam_pos = target_focal_point + kCameraOffset;
 
         // --- Visualization State ---
-        const size_t kSlidingWindowSize = 50;
+        const size_t kSlidingWindowSize = 2;
         std::set<uint64_t> displayed_frame_ids;
         pcl::VoxelGrid<pcl::PointXYZI> vg;
         vg.setLeafSize(0.5f, 0.5f, 0.5f);
@@ -522,56 +522,56 @@ int main() {
                 continue;
             }
 
-            // // --- 1. GET THE SET OF VALID FRAME IDS TO DISPLAY ---
-            // std::vector<uint64_t> valid_ids;
-            // for (const auto& key_value : *(vizData->poses)) {
-            //     gtsam::Symbol symbol(key_value.key);
-            //     if (symbol.chr() == 'x') {
-            //         uint64_t id = symbol.index();
-            //         if (vizData->points->count(id)) {
-            //             valid_ids.push_back(id);
-            //         }
-            //     }
-            // }
+            // --- 1. GET THE SET OF VALID FRAME IDS TO DISPLAY ---
+            std::vector<uint64_t> valid_ids;
+            for (const auto& key_value : *(vizData->poses)) {
+                gtsam::Symbol symbol(key_value.key);
+                if (symbol.chr() == 'x') {
+                    uint64_t id = symbol.index();
+                    if (vizData->points->count(id)) {
+                        valid_ids.push_back(id);
+                    }
+                }
+            }
 
-            // std::set<uint64_t> desired_ids;
-            // if (!valid_ids.empty()) {
-            //     size_t start_index = (valid_ids.size() > kSlidingWindowSize) ? (valid_ids.size() - kSlidingWindowSize) : 0;
-            //     for (size_t i = start_index; i < valid_ids.size(); ++i) {
-            //         desired_ids.insert(valid_ids[i]);
-            //     }
-            // }
+            std::set<uint64_t> desired_ids;
+            if (!valid_ids.empty()) {
+                size_t start_index = (valid_ids.size() > kSlidingWindowSize) ? (valid_ids.size() - kSlidingWindowSize) : 0;
+                for (size_t i = start_index; i < valid_ids.size(); ++i) {
+                    desired_ids.insert(valid_ids[i]);
+                }
+            }
 
-            // // --- 2. UPDATE POINT CLOUDS (SLIDING WINDOW) ---
-            // std::vector<uint64_t> ids_to_remove;
-            // for (uint64_t displayed_id : displayed_frame_ids) {
-            //     if (desired_ids.find(displayed_id) == desired_ids.end()) {
-            //         ids_to_remove.push_back(displayed_id);
-            //     }
-            // }
-            // for (uint64_t id : ids_to_remove) {
-            //     viewer->removePointCloud("map_cloud_" + std::to_string(id));
-            //     displayed_frame_ids.erase(id);
-            // }
+            // --- 2. UPDATE POINT CLOUDS (SLIDING WINDOW) ---
+            std::vector<uint64_t> ids_to_remove;
+            for (uint64_t displayed_id : displayed_frame_ids) {
+                if (desired_ids.find(displayed_id) == desired_ids.end()) {
+                    ids_to_remove.push_back(displayed_id);
+                }
+            }
+            for (uint64_t id : ids_to_remove) {
+                viewer->removePointCloud("map_cloud_" + std::to_string(id));
+                displayed_frame_ids.erase(id);
+            }
 
-            // for (uint64_t id : desired_ids) {
-            //     const auto& raw_cloud = vizData->points->at(id).points;
-            //     gtsam::Pose3 optimized_pose = vizData->poses->at<gtsam::Pose3>(gtsam::Symbol('x', id));
-            //     pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-            //     pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-            //     pcl::transformPointCloud(*raw_cloud, *transformed_cloud, optimized_pose.matrix().cast<float>());
-            //     vg.setInputCloud(transformed_cloud);
-            //     vg.filter(*downsampled_cloud);
-            //     std::string cloud_id = "map_cloud_" + std::to_string(id);
-            //     pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_cloud, "intensity");
-            //     if (displayed_frame_ids.count(id)) {
-            //         viewer->updatePointCloud(downsampled_cloud, color_handler, cloud_id);
-            //     } else {
-            //         viewer->addPointCloud(downsampled_cloud, color_handler, cloud_id);
-            //         viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id);
-            //         displayed_frame_ids.insert(id);
-            //     }
-            // }
+            for (uint64_t id : desired_ids) {
+                const auto& raw_cloud = vizData->points->at(id).points;
+                gtsam::Pose3 optimized_pose = vizData->poses->at<gtsam::Pose3>(gtsam::Symbol('x', id));
+                pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                pcl::transformPointCloud(*raw_cloud, *transformed_cloud, optimized_pose.matrix().cast<float>());
+                vg.setInputCloud(transformed_cloud);
+                vg.filter(*downsampled_cloud);
+                std::string cloud_id = "map_cloud_" + std::to_string(id);
+                pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_cloud, "intensity");
+                if (displayed_frame_ids.count(id)) {
+                    viewer->updatePointCloud(downsampled_cloud, color_handler, cloud_id);
+                } else {
+                    viewer->addPointCloud(downsampled_cloud, color_handler, cloud_id);
+                    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id);
+                    displayed_frame_ids.insert(id);
+                }
+            }
 
             // --- 3. UPDATE TRAJECTORIES ---
             // Optimized GTSAM Trajectory (Deep Pink)
