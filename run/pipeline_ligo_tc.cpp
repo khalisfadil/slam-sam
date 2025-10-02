@@ -364,12 +364,12 @@ int main() {
                         const auto& insInitialVelocity = current_ins_state.velocity();
                         // const gtsam::imuBias::ConstantBias imuInitialBias(STATIC_BIAS_ACCELEROMETER, STATIC_BIAS_GYROSCOPE);
                         newEstimates.insert(gtsam::Symbol('x', id), insInitialPose);                                                                                                                                                                                                    
-                        newEstimates.insert(gtsam::Symbol('v', id), insInitialVelocity);
+                        // newEstimates.insert(gtsam::Symbol('v', id), insInitialVelocity);
                         // newEstimates.insert(gtsam::Symbol('b', id), imuInitialBias); 
                         auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), insInitialPose, insPoseNoiseModel));
-                        auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), insInitialVelocity, insVelocityNoiseModel));
+                        // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
+                        // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), insInitialVelocity, insVelocityNoiseModel));
                         // gtsam::Vector6 bias_instability_sigmas;
                         // bias_instability_sigmas << BIAS_INSTABILITY_ACC, BIAS_INSTABILITY_GYRO;
                         // auto insBiasNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(bias_instability_sigmas);
@@ -381,7 +381,7 @@ int main() {
                         gtsam::Pose3 currTb2m = insInitialPose;
                         predTb2m = currTb2m;
 
-                        gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
+                        // gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                         // prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
                         prev_state_optimized = gtsam::NavState(currTb2m, prev_velocity_optimized);
                         // imu_preintegrator = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(imu_params, prev_bias_optimized);
@@ -422,7 +422,7 @@ int main() {
                     // // This provides a high-quality initial guess for the new variables.
                     // gtsam::NavState predicted_state = imu_preintegrator->predict(prev_state_optimized, prev_bias_optimized);
                     newEstimates.insert(gtsam::Symbol('x', id), predTb2m);
-                    newEstimates.insert(gtsam::Symbol('v', id), prev_state_optimized.velocity());
+                    // newEstimates.insert(gtsam::Symbol('v', id), prev_state_optimized.velocity());
                     // newEstimates.insert(gtsam::Symbol('b', id), prev_bias_optimized); // Assume bias is constant for the initial guess
                     
                     // // 3.3. Add the IMU factor to the graph.
@@ -431,12 +431,12 @@ int main() {
                     //     gtsam::Symbol('x', id), gtsam::Symbol('v', id),
                     //     gtsam::Symbol('b', last_id), gtsam::Symbol('b', id),
                     //     *imu_preintegrator));
-                    if (insValid){
-                        auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
-                        auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
-                    }
+                    // if (insValid){
+                    //     auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
+                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
+                    //     // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
+                    //     // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
+                    // }
                     
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
                     if (lidarValid){
