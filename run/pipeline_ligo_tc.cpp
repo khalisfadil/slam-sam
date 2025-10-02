@@ -258,14 +258,14 @@ int main() {
         const uint8_t MIN_INS_FIX_STATUS = 3; // Require a good fix (e.g., RTK Float/Fixed) for a quality start
         const uint8_t MIN_GNSS_FIX_STATUS = 3; // Can accept a 3D fix for continuous updates
 
-        const gtsam::Vector3 STATIC_BIAS_ACCELEROMETER = compCallback.getStaticBiasAccelerometer();
-        const gtsam::Vector3 STATIC_BIAS_GYROSCOPE = compCallback.getStaticBiasGyroscope();
-        const gtsam::Vector3 VELOCITY_RANDOM_WALK = compCallback.getVelocityRandomWalk();
-        const gtsam::Vector3 ANGULAR_RANDOM_WALK = compCallback.getAngularRandomWalk();
-        const gtsam::Vector3 BIAS_RANDOM_WALK_ACC = compCallback.getBiasRandomWalkAccelerometer();
-        const gtsam::Vector3 BIAS_RANDOM_WALK_GYRO = compCallback.getBiasRandomWalkGyroscope();
-        const gtsam::Vector3 BIAS_INSTABILITY_ACC = compCallback.getBiasInstabilityAccelerometer();
-        const gtsam::Vector3 BIAS_INSTABILITY_GYRO = compCallback.getBiasInstabilityGyroscope();
+        // const gtsam::Vector3 STATIC_BIAS_ACCELEROMETER = compCallback.getStaticBiasAccelerometer();
+        // const gtsam::Vector3 STATIC_BIAS_GYROSCOPE = compCallback.getStaticBiasGyroscope();
+        // const gtsam::Vector3 VELOCITY_RANDOM_WALK = compCallback.getVelocityRandomWalk();
+        // const gtsam::Vector3 ANGULAR_RANDOM_WALK = compCallback.getAngularRandomWalk();
+        // const gtsam::Vector3 BIAS_RANDOM_WALK_ACC = compCallback.getBiasRandomWalkAccelerometer();
+        // const gtsam::Vector3 BIAS_RANDOM_WALK_GYRO = compCallback.getBiasRandomWalkGyroscope();
+        // const gtsam::Vector3 BIAS_INSTABILITY_ACC = compCallback.getBiasInstabilityAccelerometer();
+        // const gtsam::Vector3 BIAS_INSTABILITY_GYRO = compCallback.getBiasInstabilityGyroscope();
 
         // =================================================================================
         // B. NDT SETUP
@@ -300,9 +300,9 @@ int main() {
 
         gtsam::Pose3 predTb2m;
         gtsam::NavState prev_state_optimized;
-        gtsam::imuBias::ConstantBias prev_bias_optimized;
-        std::shared_ptr<gtsam::PreintegrationCombinedParams> imu_params;
-        std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> imu_preintegrator;
+        // gtsam::imuBias::ConstantBias prev_bias_optimized;
+        // std::shared_ptr<gtsam::PreintegrationCombinedParams> imu_params;
+        // std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> imu_preintegrator;
 
         // =================================================================================
         // D. GTSAM SETUP
@@ -348,43 +348,43 @@ int main() {
                         ins_rlla = ins_lla;
                         const gtsam::Point3 ins_tb2m{registerCallback.lla2ned(ins_lla.x(), ins_lla.y(), ins_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
                         current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
-                        gtsam::Vector3 ins_gravity(0.0, 0.0, compCallback.GravityWGS84(ins_lla.x(), ins_lla.y(), ins_lla.z()));
-                        imu_params = std::make_shared<gtsam::PreintegrationCombinedParams>(ins_gravity);
-                        gtsam::Vector3 accel_variances              = VELOCITY_RANDOM_WALK.array().square();
-                        gtsam::Vector3 gyro_variances               = ANGULAR_RANDOM_WALK.array().square();
-                        gtsam::Vector3 bias_accel_variances         = BIAS_RANDOM_WALK_ACC.array().square();
-                        gtsam::Vector3 bias_gyro_variances          = BIAS_RANDOM_WALK_GYRO.array().square();
-                        imu_params->accelerometerCovariance         = accel_variances.asDiagonal();
-                        imu_params->gyroscopeCovariance             = gyro_variances.asDiagonal();
-                        imu_params->biasAccCovariance               = bias_accel_variances.asDiagonal();
-                        imu_params->biasOmegaCovariance             = bias_gyro_variances.asDiagonal();
-                        imu_params->integrationCovariance           = gtsam::Matrix33::Identity() * 1e-8;
-                        imu_params->biasAccOmegaInt                 = gtsam::Matrix66::Zero();
+                        // gtsam::Vector3 ins_gravity(0.0, 0.0, compCallback.GravityWGS84(ins_lla.x(), ins_lla.y(), ins_lla.z()));
+                        // imu_params = std::make_shared<gtsam::PreintegrationCombinedParams>(ins_gravity);
+                        // gtsam::Vector3 accel_variances              = VELOCITY_RANDOM_WALK.array().square();
+                        // gtsam::Vector3 gyro_variances               = ANGULAR_RANDOM_WALK.array().square();
+                        // gtsam::Vector3 bias_accel_variances         = BIAS_RANDOM_WALK_ACC.array().square();
+                        // gtsam::Vector3 bias_gyro_variances          = BIAS_RANDOM_WALK_GYRO.array().square();
+                        // imu_params->accelerometerCovariance         = accel_variances.asDiagonal();
+                        // imu_params->gyroscopeCovariance             = gyro_variances.asDiagonal();
+                        // imu_params->biasAccCovariance               = bias_accel_variances.asDiagonal();
+                        // imu_params->biasOmegaCovariance             = bias_gyro_variances.asDiagonal();
+                        // imu_params->integrationCovariance           = gtsam::Matrix33::Identity() * 1e-8;
+                        // imu_params->biasAccOmegaInt                 = gtsam::Matrix66::Zero();
                         const auto& insInitialPose = current_ins_state.pose();
                         const auto& insInitialVelocity = current_ins_state.velocity();
-                        const gtsam::imuBias::ConstantBias imuInitialBias(STATIC_BIAS_ACCELEROMETER, STATIC_BIAS_GYROSCOPE);
+                        // const gtsam::imuBias::ConstantBias imuInitialBias(STATIC_BIAS_ACCELEROMETER, STATIC_BIAS_GYROSCOPE);
                         newEstimates.insert(gtsam::Symbol('x', id), insInitialPose);                                                                                                                                                                                                    
                         newEstimates.insert(gtsam::Symbol('v', id), insInitialVelocity);
-                        newEstimates.insert(gtsam::Symbol('b', id), imuInitialBias); 
+                        // newEstimates.insert(gtsam::Symbol('b', id), imuInitialBias); 
                         auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), insInitialPose, insPoseNoiseModel));
                         auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
                         newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), insInitialVelocity, insVelocityNoiseModel));
-                        gtsam::Vector6 bias_instability_sigmas;
-                        bias_instability_sigmas << BIAS_INSTABILITY_ACC, BIAS_INSTABILITY_GYRO;
-                        auto insBiasNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(bias_instability_sigmas);
-                        newFactors.add(gtsam::PriorFactor<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id), imuInitialBias, insBiasNoiseModel));
+                        // gtsam::Vector6 bias_instability_sigmas;
+                        // bias_instability_sigmas << BIAS_INSTABILITY_ACC, BIAS_INSTABILITY_GYRO;
+                        // auto insBiasNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(bias_instability_sigmas);
+                        // newFactors.add(gtsam::PriorFactor<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id), imuInitialBias, insBiasNoiseModel));
 
                         isam2.update(newFactors, newEstimates);
                         currentEstimates = isam2.calculateEstimate();
 
-                        gtsam::Pose3 currTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', id));
+                        gtsam::Pose3 currTb2m = insInitialPose;
                         predTb2m = currTb2m;
 
                         gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
-                        prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
+                        // prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
                         prev_state_optimized = gtsam::NavState(currTb2m, prev_velocity_optimized);
-                        imu_preintegrator = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(imu_params, prev_bias_optimized);
+                        // imu_preintegrator = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(imu_params, prev_bias_optimized);
 
                         pointsArchive[id] = {pointsBody, timestamp};
                         insStateArchive[id] = {current_ins_state, timestamp};
@@ -404,56 +404,62 @@ int main() {
                     const gtsam::Point3 ins_tb2m{registerCallback.lla2ned(ins_lla.x(), ins_lla.y(), ins_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
                     current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
 
-                    // 3.1. Integrate IMU measurements between the last keyframe and this one.
-                    imu_preintegrator->resetIntegrationAndSetBias(prev_bias_optimized);
-                    double last_timestamp = 0.0;
-                    for (const auto& measurement : data_frame->ins) {
-                        // This assumes your IMU measurements are ordered correctly in the vector
-                        double dt = measurement.timestamp_20 - last_timestamp;
-                        if (dt > 0) {
-                            gtsam::Vector3 accel(measurement.accelX_28, measurement.accelY_28, measurement.accelZ_28);
-                            gtsam::Vector3 gyro(measurement.gyroX_28, measurement.gyroY_28, measurement.gyroZ_28);
-                            imu_preintegrator->integrateMeasurement(accel, gyro, dt);
-                        }
-                        last_timestamp = measurement.timestamp_20;
-                    }
-
-                    // 3.2. PREDICT the current state using the IMU preintegration.
-                    // This provides a high-quality initial guess for the new variables.
-                    gtsam::NavState predicted_state = imu_preintegrator->predict(prev_state_optimized, prev_bias_optimized);
-                    newEstimates.insert(gtsam::Symbol('x', id), predicted_state.pose());
-                    newEstimates.insert(gtsam::Symbol('v', id), predicted_state.velocity());
-                    newEstimates.insert(gtsam::Symbol('b', id), prev_bias_optimized); // Assume bias is constant for the initial guess
-                    
-                    // 3.3. Add the IMU factor to the graph.
-                    newFactors.add(gtsam::CombinedImuFactor(
-                        gtsam::Symbol('x', last_id), gtsam::Symbol('v', last_id),
-                        gtsam::Symbol('x', id), gtsam::Symbol('v', id),
-                        gtsam::Symbol('b', last_id), gtsam::Symbol('b', id),
-                        *imu_preintegrator));
-
-                    // 3.4. (Conceptual) Add Lidar Odometry Factor
-                    // if (lidarValid){
-
-                    //     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
-                    //     pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                    //     const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
-                    //     gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
-                    //     pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
-                    //     ndt_omp->setInputTarget(lidarFactorPointsTarget);
-                    //     ndt_omp->setInputSource(pointsBody);
-                    //     ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
-                    //     gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
-                    //     gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
-                        
-                    //     auto ndt_result = ndt_omp->getResult();
-                    //     ndt_iter = ndt_result.iteration_num;
-                    //     const auto& hessian = ndt_result.hessian;
-                    //     Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                    //     Eigen::Matrix<double, 6, 6> lidar_cov = (-regularized_hessian).inverse();
-                    //     gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
-                    //     newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
+                    // // 3.1. Integrate IMU measurements between the last keyframe and this one.
+                    // imu_preintegrator->resetIntegrationAndSetBias(prev_bias_optimized);
+                    // double last_timestamp = 0.0;
+                    // for (const auto& measurement : data_frame->ins) {
+                    //     // This assumes your IMU measurements are ordered correctly in the vector
+                    //     double dt = measurement.timestamp_20 - last_timestamp;
+                    //     if (dt > 0) {
+                    //         gtsam::Vector3 accel(measurement.accelX_28, measurement.accelY_28, measurement.accelZ_28);
+                    //         gtsam::Vector3 gyro(measurement.gyroX_28, measurement.gyroY_28, measurement.gyroZ_28);
+                    //         imu_preintegrator->integrateMeasurement(accel, gyro, dt);
+                    //     }
+                    //     last_timestamp = measurement.timestamp_20;
                     // }
+
+                    // // 3.2. PREDICT the current state using the IMU preintegration.
+                    // // This provides a high-quality initial guess for the new variables.
+                    // gtsam::NavState predicted_state = imu_preintegrator->predict(prev_state_optimized, prev_bias_optimized);
+                    newEstimates.insert(gtsam::Symbol('x', id), predTb2m);
+                    newEstimates.insert(gtsam::Symbol('v', id), prev_state_optimized.velocity());
+                    // newEstimates.insert(gtsam::Symbol('b', id), prev_bias_optimized); // Assume bias is constant for the initial guess
+                    
+                    // // 3.3. Add the IMU factor to the graph.
+                    // newFactors.add(gtsam::CombinedImuFactor(
+                    //     gtsam::Symbol('x', last_id), gtsam::Symbol('v', last_id),
+                    //     gtsam::Symbol('x', id), gtsam::Symbol('v', id),
+                    //     gtsam::Symbol('b', last_id), gtsam::Symbol('b', id),
+                    //     *imu_preintegrator));
+                    if (insValid){
+                        auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
+                        auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
+                        newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
+                    }
+                    
+                    // 3.4. (Conceptual) Add Lidar Odometry Factor
+                    if (lidarValid){
+
+                        pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
+                        pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+                        const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
+                        gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
+                        pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
+                        ndt_omp->setInputTarget(lidarFactorPointsTarget);
+                        ndt_omp->setInputSource(pointsBody);
+                        ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
+                        gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
+                        gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
+                        
+                        auto ndt_result = ndt_omp->getResult();
+                        ndt_iter = ndt_result.iteration_num;
+                        const auto& hessian = ndt_result.hessian;
+                        Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                        Eigen::Matrix<double, 6, 6> lidar_cov = (-regularized_hessian).inverse();
+                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
+                    }
                     // 3.4. (Conceptual) Add GPS Factor
                     if(gnssValid){
                         const Eigen::Vector3d gnss_lla{ins.latitude_29, ins.longitude_29, ins.altitude_29};
@@ -471,7 +477,7 @@ int main() {
                     predTb2m = currTb2m * Tbc2bp;
 
                     gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
-                    prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
+                    // prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
                     prev_state_optimized = gtsam::NavState(currTb2m, prev_velocity_optimized);
 
                     // =========================================================================
