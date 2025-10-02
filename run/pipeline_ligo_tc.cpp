@@ -231,7 +231,7 @@ int main() {
                 // Add intermediate points
                 for (const auto& data : *current_comp_window) {
                     if (data.timestamp_20 > start_interval && data.timestamp_20 < end_interval) { //
-                        dataFrame->ins.push_back(start_frame);
+                        dataFrame->ins.push_back(data);
                     }
                 }
 
