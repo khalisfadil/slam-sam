@@ -503,7 +503,7 @@ int main() {
         Eigen::Vector3d current_cam_pos = target_focal_point + kCameraOffset;
 
         // --- Visualization State ---
-        const size_t kSlidingWindowSize = 2;
+        const size_t kSlidingWindowSize = 50;
         std::set<uint64_t> displayed_frame_ids;
         pcl::VoxelGrid<pcl::PointXYZI> vg;
         vg.setLeafSize(0.5f, 0.5f, 0.5f);
@@ -522,54 +522,57 @@ int main() {
                 continue;
             }
 
-            // --- 1. GET THE SET OF VALID FRAME IDS TO DISPLAY ---
-            std::vector<uint64_t> valid_ids;
-            for (const auto& key_value : *(vizData->poses)) {
-                gtsam::Symbol symbol(key_value.key);
-                if (symbol.chr() == 'x') {
-                    uint64_t id = symbol.index();
-                    if (vizData->points->count(id)) {
-                        valid_ids.push_back(id);
+            gtsam::Pose3 latest_pose;
+            uint64_t max_id = 0;
+            if (!vizData->poses->empty()) { // Ensure poses are not empty before finding max
+                for (const auto& key_value : *(vizData->poses)) {
+                    uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+                    if (frame_id > max_id) {
+                        max_id = frame_id;
                     }
                 }
             }
+            
+            if (max_id > 0 && max_id != last_processed_id) {
+                last_processed_id = max_id;
+                latest_pose = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
+                
+                // --- NEW: Update the target focal point when a new pose is available ---
+                target_focal_point = latest_pose.translation();
 
-            std::set<uint64_t> desired_ids;
-            if (!valid_ids.empty()) {
-                size_t start_index = (valid_ids.size() > kSlidingWindowSize) ? (valid_ids.size() - kSlidingWindowSize) : 0;
-                for (size_t i = start_index; i < valid_ids.size(); ++i) {
-                    desired_ids.insert(valid_ids[i]);
-                }
-            }
+                auto it = vizData->points->find(max_id);
+                if (it != vizData->points->end()) {
+                    // ... (your existing point cloud processing logic is unchanged)
+                    if (displayed_frame_ids.size() >= kSlidingWindowSize) {
+                        uint64_t id_to_remove = displayed_frame_ids.front();
+                        std::string cloud_id_to_remove = "map_cloud_" + std::to_string(id_to_remove);
+                        if (viewer->contains(cloud_id_to_remove)) {
+                            viewer->removePointCloud(cloud_id_to_remove);
+                        }
+                        displayed_frame_ids.pop_front();
+                    }
 
-            // --- 2. UPDATE POINT CLOUDS (SLIDING WINDOW) ---
-            std::vector<uint64_t> ids_to_remove;
-            for (uint64_t displayed_id : displayed_frame_ids) {
-                if (desired_ids.find(displayed_id) == desired_ids.end()) {
-                    ids_to_remove.push_back(displayed_id);
-                }
-            }
-            for (uint64_t id : ids_to_remove) {
-                viewer->removePointCloud("map_cloud_" + std::to_string(id));
-                displayed_frame_ids.erase(id);
-            }
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr raw_cloud = it->second.points;
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                    
+                    pcl::transformPointCloud(*raw_cloud, *transformed_cloud, latest_pose.matrix().cast<float>());
+                    vg.setInputCloud(transformed_cloud);
+                    vg.filter(*downsampled_cloud);
+                    
+                    pcl::PassThrough<pcl::PointXYZI> pass_spatial;
+                    pass_spatial.setFilterFieldName("z");
+                    pass_spatial.setFilterLimits(-300.0, 0.0);
+                    pass_spatial.setInputCloud(downsampled_cloud);
+                    pass_spatial.filter(*spatial_cloud);
 
-            for (uint64_t id : desired_ids) {
-                const auto& raw_cloud = vizData->points->at(id).points;
-                gtsam::Pose3 optimized_pose = vizData->poses->at<gtsam::Pose3>(gtsam::Symbol('x', id));
-                pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*raw_cloud, *transformed_cloud, optimized_pose.matrix().cast<float>());
-                vg.setInputCloud(transformed_cloud);
-                vg.filter(*downsampled_cloud);
-                std::string cloud_id = "map_cloud_" + std::to_string(id);
-                pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_cloud, "intensity");
-                if (displayed_frame_ids.count(id)) {
-                    viewer->updatePointCloud(downsampled_cloud, color_handler, cloud_id);
-                } else {
-                    viewer->addPointCloud(downsampled_cloud, color_handler, cloud_id);
-                    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id);
-                    displayed_frame_ids.insert(id);
+                    std::string cloud_id_to_add = "map_cloud_" + std::to_string(max_id);
+                    pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(spatial_cloud, "intensity");
+                    viewer->addPointCloud(spatial_cloud, color_handler, cloud_id_to_add);
+                    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
+                    
+                    displayed_frame_ids.push_back(max_id);
                 }
             }
 
@@ -610,19 +613,19 @@ int main() {
                 viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "ins_trajectory_cloud");
             }
 
-            // --- 4. UPDATE CAMERA ---
-            // if (!valid_ids.empty()) {
-            //     uint64_t max_id = valid_ids.back();
-            //     target_focal_point = vizData->poses->at<gtsam::Pose3>(gtsam::Symbol('x', max_id)).translation();
-            // }
-            // current_focal_point += (target_focal_point - current_focal_point) * kSmoothingFactor;
-            // Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
-            // current_cam_pos += (target_cam_pos - current_cam_pos) * kSmoothingFactor;
-            // viewer->setCameraPosition(
-            //     current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
-            //     current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
-            //     kUpVector.x(), kUpVector.y(), kUpVector.z()
-            // );
+            --- 4. UPDATE CAMERA ---
+            if (!valid_ids.empty()) {
+                uint64_t max_id = valid_ids.back();
+                target_focal_point = vizData->poses->at<gtsam::Pose3>(gtsam::Symbol('x', max_id)).translation();
+            }
+            current_focal_point += (target_focal_point - current_focal_point) * kSmoothingFactor;
+            Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
+            current_cam_pos += (target_cam_pos - current_cam_pos) * kSmoothingFactor;
+            viewer->setCameraPosition(
+                current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
+                current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
+                kUpVector.x(), kUpVector.y(), kUpVector.z()
+            );
             
             viewer->spinOnce(100);
         }
