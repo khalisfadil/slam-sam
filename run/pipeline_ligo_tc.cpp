@@ -461,11 +461,18 @@ int main() {
                     prev_state_optimized = gtsam::NavState(prev_pose_optimized, prev_velocity_optimized);
 
                     // =========================================================================
-                    // --- NEW: POSE COMPARISON OUTPUT ---
+                    // --- UPDATED: FULL POSE COMPARISON OUTPUT ---
                     // =========================================================================
                     std::cout << "\n--- POSE COMPARISON (Frame ID: " << id << ") ---\n";
-                    std::cout << "Raw INS Pose:     T = [" << current_ins_state.pose().translation().transpose() << "]\n";
-                    std::cout << "GTSAM Opt. Pose:  T = [" << prev_pose_optimized.translation().transpose() << "]\n";
+                    const auto& raw_pose = current_ins_state.pose();
+                    const gtsam::Vector3 raw_rpy_deg = raw_pose.rotation().rpy() * 180.0 / M_PI;
+                    std::cout << "Raw INS Pose:     T = [" << raw_pose.translation().transpose() << "]\n"
+                            << "                  RPY(deg) = [" << raw_rpy_deg.transpose() << "]\n";
+                    
+                    const auto& opt_pose = prev_state_optimized.pose();
+                    const gtsam::Vector3 opt_rpy_deg = opt_pose.rotation().rpy() * 180.0 / M_PI;
+                    std::cout << "GTSAM Opt. Pose:  T = [" << opt_pose.translation().transpose() << "]\n"
+                            << "                  RPY(deg) = [" << opt_rpy_deg.transpose() << "]\n";
                     // =========================================================================
 
                     pointsArchive[id] = {pointsBody, timestamp};
