@@ -267,6 +267,13 @@ int main() {
         const gtsam::Vector3 BIAS_INSTABILITY_ACC = compCallback.getBiasInstabilityAccelerometer();
         const gtsam::Vector3 BIAS_INSTABILITY_GYRO = compCallback.getBiasInstabilityGyroscope();
 
+        // Trust Gain parameters defined here ---
+        Eigen::Vector<double, 6> gnssCovScalingVector{1e1, 1e1, 1e1, 1e1, 1e1, 1e1}; // High uncertainty for denied state
+        bool was_gps_denied = false; // Assume we start in a denied state
+        double current_trust_factor = 1.0;
+        const double recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
+        const Eigen::Vector<double, 3> full_trust_scaling_vector = Eigen::Vector<double, 3>::Ones();
+
         // =================================================================================
         // B. NDT SETUP
         // =================================================================================
@@ -472,9 +479,35 @@ int main() {
                     // }
                     // 3.4. (Conceptual) Add GPS Factor
                     // if(gnssValid){
+                        Eigen::Vector<double, 3> gnssStdDev = Eigen::Vector<double, 3>::Zero();
+                        gnssStdDev << ins.sigmaLatitude_29, ins.sigmaLongitude_29, ins.sigmaAltitude_29;
+                        double gnssChecker = gnssStdDev.norm();
+                        bool is_gnss_available_now = (gnssChecker < 1.0);
+                        if (is_gnss_available_now && was_gps_denied) {
+                            std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
+                            current_trust_factor = 0.0; // Reset to begin recovery from zero trust
+                        }
+                        was_gps_denied = !is_gnss_available_now;
+                        Eigen::Vector<double, 3> current_gnss_scaling_vector;
+                        if (is_gnss_available_now) {
+                            // If available, increase trust factor and interpolate the scaling vector.
+                            current_trust_factor = std::min(1.0, current_trust_factor + recovery_rate);
+                            current_gnss_scaling_vector = gnssCovScalingVector + current_trust_factor * (full_trust_scaling_vector - gnssCovScalingVector);
+                            std::cout << "Logging: GPS Available. Current ins scalling factor.\n" << current_gnss_scaling_vector.transpose() << std::endl;;
+                        } else {
+                            // If denied, reset trust and use the high uncertainty scaling.
+                            std::cout << "Warning: GPS Denied. Using low-trust covariance.\n";
+                            // current_trust_factor = 0.0;
+                            current_gnss_scaling_vector = gnssCovScalingVector;
+                        }
+                        gtsam::Vector3 scaled_sigmas;
+                        scaled_sigmas << gnssStdDev(0) * current_gnss_scaling_vector(0), 
+                                     gnssStdDev(1) * current_gnss_scaling_vector(1), 
+                                     gnssStdDev(2) * current_gnss_scaling_vector(2);
+                        
                         const Eigen::Vector3d gnss_lla{ins.latitude_29, ins.longitude_29, ins.altitude_29};
                         const gtsam::Point3 gnss_tb2m{registerCallback.lla2ned(gnss_lla.x(), gnss_lla.y(), gnss_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
-                        auto gnssNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaLatitude_29, ins.sigmaLongitude_29, ins.sigmaAltitude_29).finished());
+                        gtsam::SharedNoiseModel gnssNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(scaled_sigmas);
                         newFactors.add(gtsam::GPSFactor(gtsam::Symbol('x', id), gnss_tb2m, gnssNoiseModel));
                     // }
                     
