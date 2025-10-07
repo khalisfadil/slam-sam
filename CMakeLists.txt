@@ -87,6 +87,11 @@ add_executable(pipeline_calib_compass run/pipeline_calib_compass.cpp)
 target_link_libraries(pipeline_calib_compass PRIVATE pipeline_lib)
 target_compile_options(pipeline_calib_compass PRIVATE -O3)
 
+# 2. Compass calibration executable
+add_executable(pipeline run/pipeline.cpp)
+target_link_libraries(pipeline PRIVATE pipeline_lib)
+target_compile_options(pipeline PRIVATE -O3)
+
 
 # --- Final Checks ---
 if(NOT VTK_FOUND)
