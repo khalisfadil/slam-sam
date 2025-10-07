@@ -303,7 +303,7 @@ int main() {
             }
         } 
 
-        const int targetWinSize = 10;
+        const int targetWinSize = 20;
         std::deque<uint64_t> targetID;
 
         // =================================================================================
@@ -508,7 +508,7 @@ int main() {
                         use_const_vel = true;
                     } else {
                         gtsam::Vector6 cv_scaled_sigmas;
-                        cv_scaled_sigmas << 0.01, 0.01, 0.01, 0.1, 0.1, 0.1;
+                        cv_scaled_sigmas << 0.05, 0.05, 0.05, 0.5, 0.5, 0.5;
                         gtsam::SharedNoiseModel cvNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(cv_scaled_sigmas);
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), predTb2m, cvNoiseModel));
                     }
