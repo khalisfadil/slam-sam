@@ -488,18 +488,18 @@ int main() {
                                         insStdDev(1) * current_ins_scaling_vector(1), // y (from lon)
                                         insStdDev(2) * current_ins_scaling_vector(2);
 
-                        gtsam::Vector3 ins_vel_scaled_sigmas;
-                        ins_vel_scaled_sigmas << insStdDev(6) * current_ins_scaling_vector(6), // roll
-                                        insStdDev(7) * current_ins_scaling_vector(7), // pitch
-                                        insStdDev(8) * current_ins_scaling_vector(8);
+                        // gtsam::Vector3 ins_vel_scaled_sigmas;
+                        // ins_vel_scaled_sigmas << insStdDev(6) * current_ins_scaling_vector(6), // roll
+                        //                 insStdDev(7) * current_ins_scaling_vector(7), // pitch
+                        //                 insStdDev(8) * current_ins_scaling_vector(8);
 
                         gtsam::Pose3 insFactor = current_ins_state.pose();
                         gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(ins_scaled_sigmas);
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), insFactor, insNoiseModel));
 
-                        gtsam::Vector3 insVelFactor = current_ins_state.velocity();
-                        gtsam::SharedNoiseModel insVelNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(ins_vel_scaled_sigmas);
-                        newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(Symbol('v', id),insVelFactor, insVelNoiseModel));
+                        // gtsam::Vector3 insVelFactor = current_ins_state.velocity();
+                        // gtsam::SharedNoiseModel insVelNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(ins_vel_scaled_sigmas);
+                        // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(Symbol('v', id),insVelFactor, insVelNoiseModel));
                     // }
                     
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
