@@ -292,8 +292,9 @@ int main() {
         // =================================================================================
         // C. STATE & ARCHIVE VARIABLES
         // =================================================================================
-        StateHashMap insStateArchive;
+        // StateHashMap insStateArchive;
         PointsHashMap pointsArchive;
+        PoseHashMap insPoseArchive;
         Eigen::Vector3d ins_rlla = Eigen::Vector3d::Zero();
         bool is_first_keyframe = true;
         uint64_t last_id = 0;
@@ -329,9 +330,9 @@ int main() {
                 const auto& ins = data_frame->ins.back();
                 const uint64_t& id = data_frame->points.frame_id;
                 const auto& timestamp = data_frame->timestamp;
-                const bool& insValid = (ins.GNSSFixStatus_20 > MIN_INS_FIX_STATUS || ins.timestamp_20 > 0.0 || ins.latitude_20 != 0.0 || ins.longitude_20 != 0.0);         // this check because reading is scalar but it give 0 rad.
-                const bool& gnssValid = (ins.GNSSFixStatus_29 > MIN_GNSS_FIX_STATUS || ins.timestamp_29 > 0.0 || ins.latitude_29 != 0.0 || ins.longitude_29 != 0.0);        // this check because reading is scalar but it give 0 rad.                                                                                         // add better condition for this check
-                const bool& lidarValid = (data_frame->points.pointsBody.size() > 0);   
+                // const bool& insValid = (ins.GNSSFixStatus_20 > MIN_INS_FIX_STATUS || ins.timestamp_20 > 0.0 || ins.latitude_20 != 0.0 || ins.longitude_20 != 0.0);         // this check because reading is scalar but it give 0 rad.
+                // const bool& gnssValid = (ins.GNSSFixStatus_29 > MIN_GNSS_FIX_STATUS || ins.timestamp_29 > 0.0 || ins.latitude_29 != 0.0 || ins.longitude_29 != 0.0);        // this check because reading is scalar but it give 0 rad.                                                                                         // add better condition for this check
+                // const bool& lidarValid = (data_frame->points.pointsBody.size() > 0);   
                 
                 gtsam::NonlinearFactorGraph newFactors;
                 gtsam::Values newEstimates;
@@ -344,7 +345,7 @@ int main() {
                 int ndt_iter = 0;
                 // --- 2. Initialization (First Keyframe) ---
                 if (is_first_keyframe) {
-                    if (insValid) {
+                    // if (insValid) {
                         ins_rlla = ins_lla;
                         const gtsam::Point3 ins_tb2m{registerCallback.lla2ned(ins_lla.x(), ins_lla.y(), ins_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
                         current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
@@ -378,16 +379,16 @@ int main() {
                         isam2.update(newFactors, newEstimates);
                         currentEstimates = isam2.calculateEstimate();
 
-                        gtsam::Pose3 currTb2m = insInitialPose;
-                        predTb2m = currTb2m;
+                        predTb2m = insInitialPose;
                         gtsam::Vector3 prev_velocity_optimized;
                         // gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                         // prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
-                        prev_state_optimized = gtsam::NavState(currTb2m, prev_velocity_optimized);
+                        prev_state_optimized = gtsam::NavState(insInitialPose, prev_velocity_optimized);
                         // imu_preintegrator = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(imu_params, prev_bias_optimized);
 
                         pointsArchive[id] = {pointsBody, timestamp};
-                        insStateArchive[id] = {current_ins_state, timestamp};
+                        // insStateArchive[id] = {current_ins_state, timestamp};#
+                        insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
                         last_id = id;
                         is_first_keyframe = false;
 
@@ -399,7 +400,7 @@ int main() {
                         //     vizData->insposes = std::make_shared<StateHashMap>(insStateArchive);
                         //     vizQueue.push(std::move(vizData));
                         // }
-                    }
+                    // }
                 } else { // --- 3. Main Loop for Subsequent Keyframes ---
                     const gtsam::Point3 ins_tb2m{registerCallback.lla2ned(ins_lla.x(), ins_lla.y(), ins_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
                     current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
@@ -432,14 +433,14 @@ int main() {
                     //     gtsam::Symbol('b', last_id), gtsam::Symbol('b', id),
                     //     *imu_preintegrator));
                     // if (insValid){
-                    //     auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
-                    //     newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
-                    //     // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
-                    //     // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
+                        auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
+                        // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
+                        // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
                     // }
                     
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
-                    if (lidarValid){
+                    // if (lidarValid){
 
                         pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
                         pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
@@ -459,7 +460,7 @@ int main() {
                         Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
-                    }
+                    // }
                     // 3.4. (Conceptual) Add GPS Factor
                     // if(gnssValid){
                     //     const Eigen::Vector3d gnss_lla{ins.latitude_29, ins.longitude_29, ins.altitude_29};
@@ -467,12 +468,13 @@ int main() {
                     //     auto gnssNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaLatitude_29, ins.sigmaLongitude_29, ins.sigmaAltitude_29).finished());
                     //     newFactors.add(gtsam::GPSFactor(gtsam::Symbol('x', id), gnss_tb2m, gnssNoiseModel));
                     // }
+                    
 
                     isam2.update(newFactors, newEstimates);
                     currentEstimates = isam2.calculateEstimate();
 
                     gtsam::Pose3 currTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', id));
-                    gtsam::Pose3 prevTb2m = prev_state_optimized.pose();
+                    gtsam::Pose3 prevTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
                     gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
                     predTb2m = currTb2m * Tbc2bp;
                     gtsam::Vector3 prev_velocity_optimized;
@@ -496,17 +498,19 @@ int main() {
                     // =========================================================================
 
                     pointsArchive[id] = {pointsBody, timestamp};
-                    insStateArchive[id] = {current_ins_state, timestamp};
+                    // insStateArchive[id] = {current_ins_state, timestamp};
+                    insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
                     last_id = id;   
 
                     //3.5 push vizual
-                    // if (!currentEstimates.empty()) {
-                    //     auto vizData = std::make_unique<VisualizationData>();
-                    //     vizData->poses = std::make_shared<gtsam::Values>(currentEstimates);
-                    //     vizData->points = std::make_shared<PointsHashMap>(pointsArchive);
-                    //     vizData->insposes = std::make_shared<StateHashMap>(insStateArchive);
-                    //     vizQueue.push(std::move(vizData));
-                    // }
+                    if (!currentEstimates.empty()) {
+                        auto vizData = std::make_unique<VisualizationData>();
+                        vizData->poses = std::make_shared<gtsam::Values>(currentEstimates);
+                        vizData->points = std::make_shared<PointsHashMap>(pointsArchive);
+                        // vizData->insposes = std::make_shared<StateHashMap>(insStateArchive);
+                        vizData->insposes = std::make_shared<PoseHashMap>(insPoseArchive);
+                        vizQueue.push(std::move(vizData));
+                    }
                 }
             }
         } catch (const std::exception& e) {
@@ -671,6 +675,166 @@ int main() {
     //     }
     //     std::cout << "Visualization thread exiting\n";
     // });
+    auto viz_thread = std::thread([&vizQueue]() {
+        auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("GTSAM Optimized Map");
+        viewer->setBackgroundColor(0.1, 0.1, 0.1);
+        viewer->addCoordinateSystem(10.0, "world_origin");
+        viewer->initCameraParameters();
+
+        // --- NEW: Camera Following & Smoothing Logic ---
+        // This factor controls how quickly the camera catches up to the target.
+        // Lower values (e.g., 0.05) are smoother but have more lag.
+        // Higher values (e.g., 0.2) are more responsive but can be jumpy.
+        const double kSmoothingFactor = 0.1;
+
+        // This defines the camera's position relative to the focal point (view from above).
+        const Eigen::Vector3d kCameraOffset(0.0, 0.0, -250.0);
+
+        // The "up" vector for the camera. Your original code used (1,0,0), which is non-standard but preserved here.
+        // A more common "up" vector would be (0, -1, 0) for Z-forward or (0, 0, 1) for Y-forward systems.
+        const Eigen::Vector3d kUpVector(1.0, 0.0, 0.0);
+
+        // State variables to hold the camera's current and target focus points.
+        // Initialize them to the starting view.
+        Eigen::Vector3d target_focal_point(0.0, 0.0, 0.0);
+        Eigen::Vector3d current_focal_point = target_focal_point;
+        Eigen::Vector3d current_cam_pos = target_focal_point + kCameraOffset;
+
+        // --- MODIFIED: The initial setCameraPosition is now managed by the loop ---
+        // viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // This is now handled dynamically
+
+        const size_t kSlidingWindowSize = 50;
+        std::deque<uint64_t> displayed_frame_ids;
+        uint64_t last_processed_id = 0;
+
+        pcl::VoxelGrid<pcl::PointXYZI> vg;
+        vg.setLeafSize(0.5f, 0.5f, 0.5f);
+
+        // Point cloud for the OPTIMIZED trajectory (colored RED)
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        // Point cloud for the RAW INS trajectory (colored GREEN)
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr ins_trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+
+        while (running && !viewer->wasStopped()) {
+            auto vizData = vizQueue.pop();
+            if (!vizData) {
+                if (!running) std::cout << "Visualization queue stopped, exiting viz thread.\n";
+                break;
+            }
+
+            gtsam::Pose3 latest_pose;
+            uint64_t max_id = 0;
+            if (!vizData->poses->empty()) { // Ensure poses are not empty before finding max
+                for (const auto& key_value : *(vizData->poses)) {
+                    uint64_t frame_id = gtsam::Symbol(key_value.key).index();
+                    if (frame_id > max_id) {
+                        max_id = frame_id;
+                    }
+                }
+            }
+            
+            if (max_id > 0 && max_id != last_processed_id) {
+                last_processed_id = max_id;
+                latest_pose = vizData->poses->at<gtsam::Pose3>(Symbol('x', max_id));
+                
+                // --- NEW: Update the target focal point when a new pose is available ---
+                target_focal_point = latest_pose.translation();
+
+                auto it = vizData->points->find(max_id);
+                if (it != vizData->points->end()) {
+                    // ... (your existing point cloud processing logic is unchanged)
+                    if (displayed_frame_ids.size() >= kSlidingWindowSize) {
+                        uint64_t id_to_remove = displayed_frame_ids.front();
+                        std::string cloud_id_to_remove = "map_cloud_" + std::to_string(id_to_remove);
+                        if (viewer->contains(cloud_id_to_remove)) {
+                            viewer->removePointCloud(cloud_id_to_remove);
+                        }
+                        displayed_frame_ids.pop_front();
+                    }
+
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr raw_cloud = it->second.points;
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+                    
+                    pcl::transformPointCloud(*raw_cloud, *transformed_cloud, latest_pose.matrix().cast<float>());
+                    vg.setInputCloud(transformed_cloud);
+                    vg.filter(*downsampled_cloud);
+                    
+                    pcl::PassThrough<pcl::PointXYZI> pass_spatial;
+                    pass_spatial.setFilterFieldName("z");
+                    pass_spatial.setFilterLimits(-300.0, 0.0);
+                    pass_spatial.setInputCloud(downsampled_cloud);
+                    pass_spatial.filter(*spatial_cloud);
+
+                    std::string cloud_id_to_add = "map_cloud_" + std::to_string(max_id);
+                    pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(spatial_cloud, "intensity");
+                    viewer->addPointCloud(spatial_cloud, color_handler, cloud_id_to_add);
+                    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, cloud_id_to_add);
+                    
+                    displayed_frame_ids.push_back(max_id);
+                }
+            }
+
+            // ... (your existing trajectory update logic is unchanged)
+            trajectory_cloud->clear();
+            for (const auto& key_value : *(vizData->poses)) {
+                gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+                pcl::PointXYZRGB trajectory_point;
+                trajectory_point.x = pose.translation().x();
+                trajectory_point.y = pose.translation().y();
+                trajectory_point.z = pose.translation().z();
+                trajectory_point.r = 255;
+                trajectory_point.g = 20;
+                trajectory_point.b = 147;
+                trajectory_cloud->push_back(trajectory_point);
+            }
+
+            if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
+                viewer->addPointCloud(trajectory_cloud, "trajectory_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, "trajectory_cloud");
+            }
+
+            // Update RAW INS trajectory (GREEN)
+            ins_trajectory_cloud->clear();
+            if (vizData->insposes) {
+                for (const auto& key_value : *(vizData->insposes)) {
+                    const auto& pose_matrix = key_value.second.pose;
+                    pcl::PointXYZRGB ins_point;
+                    ins_point.x = pose_matrix(0, 3);
+                    ins_point.y = pose_matrix(1, 3);
+                    ins_point.z = pose_matrix(2, 3);
+                    ins_point.r = 30;
+                    ins_point.g = 144;
+                    ins_point.b = 255;
+                    ins_trajectory_cloud->push_back(ins_point);
+                }
+            }
+
+            if (!viewer->updatePointCloud(ins_trajectory_cloud, "ins_trajectory_cloud")) {
+                viewer->addPointCloud(ins_trajectory_cloud, "ins_trajectory_cloud");
+                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, "ins_trajectory_cloud");
+            }
+
+            // --- NEW: Smoothly update camera on every spin ---
+            // Interpolate the focal point
+            current_focal_point = current_focal_point + (target_focal_point - current_focal_point) * kSmoothingFactor;
+            // Calculate the desired camera position based on the smoothed focal point
+            Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
+            // Interpolate the camera's actual position
+            current_cam_pos = current_cam_pos + (target_cam_pos - current_cam_pos) * kSmoothingFactor;
+
+            // Set the new camera position and view direction in the visualizer
+            viewer->setCameraPosition(
+                current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
+                current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
+                kUpVector.x(), kUpVector.y(), kUpVector.z()
+            );
+            
+            viewer->spinOnce(100);
+        }
+        std::cout << "Visualization thread exiting\n";
+    });
 
     //####################################################################################################
     // Cleanup
@@ -688,7 +852,7 @@ int main() {
     if (comp_iothread.joinable()) comp_iothread.join();
     if (sync_thread.joinable()) sync_thread.join();
     if (gtsam_thread.joinable()) gtsam_thread.join();
-    // if (viz_thread.joinable()) viz_thread.join();
+    if (viz_thread.joinable()) viz_thread.join();
     
     std::cout << "All threads have been joined. Shutdown complete." << std::endl;
 }
