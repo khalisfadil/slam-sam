@@ -475,8 +475,11 @@ int main() {
 
                     gtsam::Pose3 currTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', id));
                     gtsam::Pose3 prevTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
-                    gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
-                    predTb2m = currTb2m * Tbc2bp;
+                    Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
+                    // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
+                    Eigen::Matrix4d EpredTb2m = currTb2m.matrix() * Tbc2bp;
+                    gtsam::Pose3 EEpredTb2m{EpredTb2m};
+                    predTb2m = EEpredTb2m;
                     gtsam::Vector3 prev_velocity_optimized;
                     // gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                     // prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
