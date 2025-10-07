@@ -272,13 +272,13 @@ int main() {
         Eigen::Vector<double, 9> insCovScalingVector{1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_ins_denied = false; // Assume we start in a denied state
         double ins_current_trust_factor = 1.0;
-        const double ins_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
+        const double ins_recovery_rate = 0.01; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 9> ins_full_trust_scaling_vector = Eigen::Vector<double, 9>::Ones();
 
         Eigen::Vector<double, 3> gnssCovScalingVector{1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_gnss_denied = false; // Assume we start in a denied state
         double gnss_current_trust_factor = 1.0;
-        const double gnss_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
+        const double gnss_recovery_rate = 0.01; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 3> full_trust_gnss_scaling_vector = Eigen::Vector<double, 3>::Ones();
 
         // =================================================================================
@@ -303,7 +303,7 @@ int main() {
             }
         } 
 
-        const int targetWinSize = 20;
+        const int targetWinSize = 5;
         std::deque<uint64_t> targetID;
 
         // =================================================================================
@@ -508,7 +508,7 @@ int main() {
                         use_const_vel = true;
                     } else {
                         gtsam::Vector6 cv_scaled_sigmas;
-                        cv_scaled_sigmas << 0.05, 0.05, 0.05, 0.5, 0.5, 0.5;
+                        cv_scaled_sigmas << 0.02, 0.02, 0.02, 0.2, 0.2, 0.2;
                         gtsam::SharedNoiseModel cvNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(cv_scaled_sigmas);
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), predTb2m, cvNoiseModel));
                     }
@@ -527,7 +527,7 @@ int main() {
                         pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
                         ndt_omp->setInputTarget(lidarFactorPointsTarget);
                         ndt_omp->setInputSource(pointsBody);
-                        ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
+                        ndt_omp->align(*lidarFactorPointsSource, predicted_state.pose().matrix().cast<float>());
                         gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
                         gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
                         
