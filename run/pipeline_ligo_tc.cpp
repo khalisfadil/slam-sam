@@ -777,15 +777,20 @@ int main() {
             // ... (your existing trajectory update logic is unchanged)
             trajectory_cloud->clear();
             for (const auto& key_value : *(vizData->poses)) {
-                gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
-                pcl::PointXYZRGB trajectory_point;
-                trajectory_point.x = pose.translation().x();
-                trajectory_point.y = pose.translation().y();
-                trajectory_point.z = pose.translation().z();
-                trajectory_point.r = 255;
-                trajectory_point.g = 20;
-                trajectory_point.b = 147;
-                trajectory_cloud->push_back(trajectory_point);
+                gtsam::Symbol symbol(key_value.key);
+
+                // Add this check to process ONLY pose variables
+                if (symbol.chr() == 'x') { 
+                    gtsam::Pose3 pose = key_value.value.cast<gtsam::Pose3>();
+                    pcl::PointXYZRGB trajectory_point;
+                    trajectory_point.x = pose.translation().x();
+                    trajectory_point.y = pose.translation().y();
+                    trajectory_point.z = pose.translation().z();
+                    trajectory_point.r = 255;
+                    trajectory_point.g = 20;
+                    trajectory_point.b = 147;
+                    trajectory_cloud->push_back(trajectory_point);
+                }
             }
 
             if (!viewer->updatePointCloud(trajectory_cloud, "trajectory_cloud")) {
