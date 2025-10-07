@@ -275,7 +275,7 @@ int main() {
         const double ins_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 9> ins_full_trust_scaling_vector = Eigen::Vector<double, 9>::Ones();
 
-        Eigen::Vector<double, 3> gnssCovScalingVector{1e3, 1e3, 1e3}; // High uncertainty for denied state
+        Eigen::Vector<double, 3> gnssCovScalingVector{1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_gnss_denied = false; // Assume we start in a denied state
         double gnss_current_trust_factor = 1.0;
         const double gnss_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
@@ -395,7 +395,7 @@ int main() {
                         isam2.update(newFactors, newEstimates);
                         currentEstimates = isam2.calculateEstimate();
 
-                        // predTb2m = insInitialPose;
+                        predTb2m = insInitialPose;
                         gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                         prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
                         prev_state_optimized = gtsam::NavState(insInitialPose, currvned);
@@ -516,7 +516,7 @@ int main() {
                         pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
                         ndt_omp->setInputTarget(lidarFactorPointsTarget);
                         ndt_omp->setInputSource(pointsBody);
-                        ndt_omp->align(*lidarFactorPointsSource, predicted_state.pose().matrix().cast<float>());
+                        ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
                         gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
                         gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
                         
@@ -565,11 +565,11 @@ int main() {
                     isam2.update(newFactors, newEstimates);
                     currentEstimates = isam2.calculateEstimate();
                     gtsam::Pose3 currTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', id));
-                    // gtsam::Pose3 prevTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', targetID.back()));
+                    gtsam::Pose3 prevTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', targetID.back()));
                     gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(Symbol('v', id));
-                    // Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
-                    // // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
-                    // predTb2m = gtsam::Pose3{currTb2m.matrix() * Tbc2bp};
+                    Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
+                    // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
+                    predTb2m = gtsam::Pose3{currTb2m.matrix() * Tbc2bp};
                     prev_state_optimized = gtsam::NavState(currTb2m, currvned);
                     prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(Symbol('b', id));
 
