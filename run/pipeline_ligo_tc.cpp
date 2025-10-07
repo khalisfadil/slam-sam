@@ -302,8 +302,9 @@ int main() {
                 ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
             }
         } 
-
-        const int targetWinSize = 10;
+        const double MAX_TRANS_DEVIATION = 1.0; // Max translational deviation in meters
+        const double MAX_ROT_DEVIATION = 0.1;
+        const int targetWinSize = 20;
         std::deque<uint64_t> targetID;
 
         // =================================================================================
@@ -517,8 +518,20 @@ int main() {
                         ndt_omp->setInputTarget(lidarFactorPointsTarget);
                         ndt_omp->setInputSource(pointsBody);
                         ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
-                        gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
-                        gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
+                        gtsam::Pose3 registerResult(ndt_omp->getFinalTransformation().cast<double>());
+
+                        gtsam::Pose3 deviation = predTb2m.between(registerResult);
+                        double trans_error = deviation.translation().norm();
+                        double rot_error = std::abs(deviation.rotation().axisAngle().second);
+                        double w_trans = std::max(0.0, 1.0 - (trans_error / MAX_TRANS_DEVIATION));
+                        double w_rot = std::max(0.0, 1.0 - (rot_error / MAX_ROT_DEVIATION));
+                        double ndt_trust_weight = std::min(w_trans, w_rot);
+                        gtsam::Vector6 se3_const_vel = gtsam::Pose3::Logmap(predTb2m);
+                        gtsam::Vector6 se3_ndt_result = gtsam::Pose3::Logmap(registerResult);
+                        gtsam::Vector6 se3_blended = se3_const_vel + ndt_trust_weight * (se3_ndt_result - se3_const_vel);
+                        gtsam::Pose3 lidarTbs2bt = gtsam::Pose3::Expmap(se3_blended);
+
+                        // gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
                         
                         auto ndt_result = ndt_omp->getResult();
                         ndt_iter = ndt_result.iteration_num;
