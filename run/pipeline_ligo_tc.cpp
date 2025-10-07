@@ -303,7 +303,7 @@ int main() {
             }
         } 
 
-        const int targetWinSize = 5;
+        const int targetWinSize = 10;
         std::deque<uint64_t> targetID;
 
         // =================================================================================
@@ -507,12 +507,12 @@ int main() {
                         pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
                         for (const int& currID : targetID) {
                             pcl::PointCloud<pcl::PointXYZI>::Ptr currlidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                            const auto& lidarFactorPointsArchive = pointsArchive.at(currID);
-                            gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', currID));
-                            pcl::transformPointCloud(*lidarFactorPointsArchive.points, *currlidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
+                            const auto& currlidarFactorPointsArchive = pointsArchive.at(currID);
+                            gtsam::Pose3 currlidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', currID));
+                            pcl::transformPointCloud(*currlidarFactorPointsArchive.points, *currlidarFactorPointsTarget, currlidarFactorTargetTb2m.matrix());
                             *lidarFactorPointsTarget += *currlidarFactorPointsTarget;
                         }
-
+                        gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', targetID.back()));
                         pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
                         ndt_omp->setInputTarget(lidarFactorPointsTarget);
                         ndt_omp->setInputSource(pointsBody);
