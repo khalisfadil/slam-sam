@@ -435,8 +435,8 @@ int main() {
                     // if (insValid){
                         // auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
                         // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
-                        auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
+                        // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
+                        // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
                     // }
                     
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
