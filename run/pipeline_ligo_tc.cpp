@@ -268,11 +268,18 @@ int main() {
         const gtsam::Vector3 BIAS_INSTABILITY_GYRO = compCallback.getBiasInstabilityGyroscope();
 
         // Trust Gain parameters defined here ---
+
+        Eigen::Vector<double, 9> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
+        bool was_ins_denied = false; // Assume we start in a denied state
+        double ins_current_trust_factor = 1.0;
+        const double ins_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
+        const Eigen::Vector<double, 9> ins_full_trust_scaling_vector = Eigen::Vector<double, 9>::Ones();
+
         Eigen::Vector<double, 3> gnssCovScalingVector{1e3, 1e3, 1e3}; // High uncertainty for denied state
-        bool was_gps_denied = false; // Assume we start in a denied state
-        double current_trust_factor = 1.0;
-        const double recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
-        const Eigen::Vector<double, 3> full_trust_scaling_vector = Eigen::Vector<double, 3>::Ones();
+        bool was_gnss_denied = false; // Assume we start in a denied state
+        double gnss_current_trust_factor = 1.0;
+        const double gnss_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
+        const Eigen::Vector<double, 3> full_trust_gnss_scaling_vector = Eigen::Vector<double, 3>::Ones();
 
         // =================================================================================
         // B. NDT SETUP
@@ -449,6 +456,47 @@ int main() {
                         gtsam::Symbol('b', last_id), gtsam::Symbol('b', id),
                         *imu_preintegrator));
                     // if (insValid){
+                        Eigen::Vector<double, 9> insStdDev = Eigen::Vector<double, 9>::Zero();
+                        insStdDev << ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20, ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25;
+                        double insChecker = insStdDev.head(3).norm();
+                        bool is_ins_available_now = (insChecker < 0.1);
+                        if (is_ins_available_now && was_ins_denied) {
+                            std::cout << "Warning: INS return from denied position.start trust gain recovery.\n";
+                            ins_current_trust_factor = 0.0; // Reset to begin recovery from zero trust
+                        }
+                        was_ins_denied = !is_ins_available_now;
+                        Eigen::Vector<double, 9> current_ins_scaling_vector;
+                        if (is_ins_available_now) {
+                            // If available, increase trust factor and interpolate the scaling vector.
+                            ins_current_trust_factor = std::min(1.0, ins_current_trust_factor + ins_recovery_rate);
+                            current_ins_scaling_vector = insCovScalingVector + ins_current_trust_factor * (ins_full_trust_scaling_vector - insCovScalingVector);
+                            std::cout << "Logging: INS Available. Current ins scalling factor.\n" << current_ins_scaling_vector.transpose() << std::endl;;
+                        } else {
+                            // If denied, reset trust and use the high uncertainty scaling.
+                            std::cout << "Warning: INS Denied. Using low-trust covariance.\n";
+                            // current_trust_factor = 0.0;
+                            current_ins_scaling_vector = insCovScalingVector;
+                        }
+                        gtsam::Vector6 ins_scaled_sigmas;
+                        ins_scaled_sigmas << insStdDev(3) * current_ins_scaling_vector(3), // roll
+                                        insStdDev(4) * current_ins_scaling_vector(4), // pitch
+                                        insStdDev(5) * current_ins_scaling_vector(5), // yaw
+                                        insStdDev(0) * current_ins_scaling_vector(0), // x (from lat)
+                                        insStdDev(1) * current_ins_scaling_vector(1), // y (from lon)
+                                        insStdDev(2) * current_ins_scaling_vector(2);
+                                        
+                        gtsam::Vector3 ins_vel_scaled_sigmas;
+                        ins_vel_scaled_sigmas << insStdDev(6) * current_ins_scaling_vector(6), // roll
+                                        insStdDev(7) * current_ins_scaling_vector(7), // pitch
+                                        insStdDev(8) * current_ins_scaling_vector(8);
+
+                        gtsam::Pose3 insFactor = current_ins_state.pose();
+                        gtsam::SharedNoiseModel insNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(ins_scaled_sigmas);
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), insFactor, insNoiseModel));
+
+                        gtsam::Vector3 insVelFactor = current_ins_state.velocity();
+                        gtsam::SharedNoiseModel insVelNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(ins_vel_scaled_sigmas);
+                        newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(Symbol('v', id),insVelFactor, insVelNoiseModel));
                         // auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
                         // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
                         // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
@@ -475,7 +523,7 @@ int main() {
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
                         Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
                     // }
                     // 3.4. (Conceptual) Add GPS Factor
                     // if(gnssValid){
@@ -483,44 +531,44 @@ int main() {
                         gnssStdDev << ins.sigmaLatitude_29, ins.sigmaLongitude_29, ins.sigmaAltitude_29;
                         double gnssChecker = gnssStdDev.norm();
                         bool is_gnss_available_now = (gnssChecker < 1.0);
-                        if (is_gnss_available_now && was_gps_denied) {
+                        if (is_gnss_available_now && was_gnss_denied) {
                             std::cout << "Warning: GPS return from denied position.start trust gain recovery.\n";
-                            current_trust_factor = 0.0; // Reset to begin recovery from zero trust
+                            gnss_current_trust_factor = 0.0; // Reset to begin recovery from zero trust
                         }
-                        was_gps_denied = !is_gnss_available_now;
+                        was_gnss_denied = !is_gnss_available_now;
                         Eigen::Vector<double, 3> current_gnss_scaling_vector;
                         if (is_gnss_available_now) {
                             // If available, increase trust factor and interpolate the scaling vector.
-                            current_trust_factor = std::min(1.0, current_trust_factor + recovery_rate);
-                            current_gnss_scaling_vector = gnssCovScalingVector + current_trust_factor * (full_trust_scaling_vector - gnssCovScalingVector);
-                            std::cout << "Logging: GPS Available. Current ins scalling factor.\n" << current_gnss_scaling_vector.transpose() << std::endl;;
+                            gnss_current_trust_factor = std::min(1.0, gnss_current_trust_factor + gnss_recovery_rate);
+                            current_gnss_scaling_vector = gnssCovScalingVector + gnss_current_trust_factor * (full_trust_gnss_scaling_vector - gnssCovScalingVector);
+                            std::cout << "Logging: GNSS Available. Current ins scalling factor.\n" << current_gnss_scaling_vector.transpose() << std::endl;;
                         } else {
                             // If denied, reset trust and use the high uncertainty scaling.
-                            std::cout << "Warning: GPS Denied. Using low-trust covariance.\n";
+                            std::cout << "Warning: GNSS Denied. Using low-trust covariance.\n";
                             // current_trust_factor = 0.0;
                             current_gnss_scaling_vector = gnssCovScalingVector;
                         }
-                        gtsam::Vector3 scaled_sigmas;
-                        scaled_sigmas << gnssStdDev(0) * current_gnss_scaling_vector(0), 
+                        gtsam::Vector3 gnss_scaled_sigmas;
+                        gnss_scaled_sigmas << gnssStdDev(0) * current_gnss_scaling_vector(0), 
                                      gnssStdDev(1) * current_gnss_scaling_vector(1), 
                                      gnssStdDev(2) * current_gnss_scaling_vector(2);
                         
                         const Eigen::Vector3d gnss_lla{ins.latitude_29, ins.longitude_29, ins.altitude_29};
                         const gtsam::Point3 gnss_tb2m{registerCallback.lla2ned(gnss_lla.x(), gnss_lla.y(), gnss_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
-                        gtsam::SharedNoiseModel gnssNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(scaled_sigmas);
-                        newFactors.add(gtsam::GPSFactor(gtsam::Symbol('x', id), gnss_tb2m, gnssNoiseModel));
+                        gtsam::SharedNoiseModel gnssNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(gnss_scaled_sigmas);
+                        newFactors.add(gtsam::GPSFactor(Symbol('x', id), gnss_tb2m, gnssNoiseModel));
                     // }
                     
                     isam2.update(newFactors, newEstimates);
                     currentEstimates = isam2.calculateEstimate();
                     gtsam::Pose3 currTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', id));
                     gtsam::Pose3 prevTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
-                    gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
+                    gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(Symbol('v', id));
                     Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
                     // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
                     predTb2m = gtsam::Pose3{currTb2m.matrix() * Tbc2bp};
                     prev_state_optimized = gtsam::NavState(currTb2m, currvned);
-                    prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
+                    prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(Symbol('b', id));
 
                     // =========================================================================
                     // --- UPDATED: FULL POSE COMPARISON OUTPUT ---
