@@ -4,8 +4,8 @@
         "Cb2s":                             [-1.0,0.0,0.0,0.0,-1.0,0.0,0.0,0.0,1.0],
         "channelStride":                    8,
         "zAxisFilter":                      [-300.0, 0.0],
-        "reflectionThreshold":              15,
-        "rangeFilterMax":                   400.0,
-        "rangeFilterMin":                   2.0
+        "reflectionThreshold":              20,
+        "rangeFilterMax":                   200.0,
+        "rangeFilterMin":                   0.0
     }
 }
