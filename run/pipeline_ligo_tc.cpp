@@ -272,13 +272,13 @@ int main() {
         Eigen::Vector<double, 9> insCovScalingVector{1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_ins_denied = false; // Assume we start in a denied state
         double ins_current_trust_factor = 1.0;
-        const double ins_recovery_rate = 0.003; // Trust regained over 1/0.02 = 50 keyframes
+        const double ins_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 9> ins_full_trust_scaling_vector = Eigen::Vector<double, 9>::Ones();
 
         Eigen::Vector<double, 3> gnssCovScalingVector{1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_gnss_denied = false; // Assume we start in a denied state
         double gnss_current_trust_factor = 1.0;
-        const double gnss_recovery_rate = 0.003; // Trust regained over 1/0.02 = 50 keyframes
+        const double gnss_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 3> full_trust_gnss_scaling_vector = Eigen::Vector<double, 3>::Ones();
 
         // =================================================================================
@@ -366,7 +366,7 @@ int main() {
                         ins_rlla = ins_lla;
                         const gtsam::Point3 ins_tb2m{registerCallback.lla2ned(ins_lla.x(), ins_lla.y(), ins_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
                         current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
-                        gtsam::Vector3 ins_gravity(0.0, 0.0, 9.81);
+                        gtsam::Vector3 ins_gravity(0.0, 0.0, compCallback.GravityWGS84(ins_lla.x(), ins_lla.y(), ins_lla.z()));
                         imu_params = std::make_shared<gtsam::PreintegrationCombinedParams>(ins_gravity);
                         gtsam::Vector3 accel_variances              = VELOCITY_RANDOM_WALK.array().square();
                         gtsam::Vector3 gyro_variances               = ANGULAR_RANDOM_WALK.array().square();
@@ -464,7 +464,7 @@ int main() {
                         Eigen::Vector<double, 9> insStdDev = Eigen::Vector<double, 9>::Zero();
                         insStdDev << ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20, ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25;
                         double insChecker = insStdDev.head(3).norm();
-                        bool is_ins_available_now = (insChecker < 0.1);
+                        bool is_ins_available_now = (insChecker < 0.2);
                         if (is_ins_available_now && was_ins_denied) {
                             std::cout << "Warning: INS return from denied position.start trust gain recovery.\n";
                             ins_current_trust_factor = 0.0; // Reset to begin recovery from zero trust
@@ -508,7 +508,7 @@ int main() {
                         use_const_vel = true;
                     } else {
                         gtsam::Vector6 cv_scaled_sigmas;
-                        cv_scaled_sigmas << 0.01, 0.01, 0.01, 0.1, 0.1, 0.1;
+                        cv_scaled_sigmas << 0.03, 0.03, 0.03, 0.3, 0.3, 0.3;
                         gtsam::SharedNoiseModel cvNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(cv_scaled_sigmas);
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), predTb2m, cvNoiseModel));
                     }
