@@ -442,33 +442,33 @@ int main() {
                         gtsam::Symbol('b', last_id), gtsam::Symbol('b', id),
                         *imu_preintegrator));
                     // if (insValid){
-                        // auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
-                        // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
-                        // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
-                        // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
+                        auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
+                        auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
+                        newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
                     // }
                     
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
                     // if (lidarValid){
 
-                        // pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
-                        // pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                        // const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
-                        // gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
-                        // pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
-                        // ndt_omp->setInputTarget(lidarFactorPointsTarget);
-                        // ndt_omp->setInputSource(pointsBody);
-                        // ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
-                        // gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
-                        // gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
+                        pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
+                        pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+                        const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
+                        gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
+                        pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
+                        ndt_omp->setInputTarget(lidarFactorPointsTarget);
+                        ndt_omp->setInputSource(pointsBody);
+                        ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
+                        gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
+                        gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
                         
-                        // auto ndt_result = ndt_omp->getResult();
-                        // ndt_iter = ndt_result.iteration_num;
-                        // const auto& hessian = ndt_result.hessian;
-                        // Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        // Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse();
-                        // gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
-                        // newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
+                        auto ndt_result = ndt_omp->getResult();
+                        ndt_iter = ndt_result.iteration_num;
+                        const auto& hessian = ndt_result.hessian;
+                        Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
+                        Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse();
+                        gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(gtsam::Symbol('x', last_id), gtsam::Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
                     // }
                     // 3.4. (Conceptual) Add GPS Factor
                     // if(gnssValid){
