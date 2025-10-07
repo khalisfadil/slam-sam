@@ -380,10 +380,9 @@ int main() {
                         currentEstimates = isam2.calculateEstimate();
 
                         predTb2m = insInitialPose;
-                        gtsam::Vector3 prev_velocity_optimized;
-                        gtsam::Vector3 prev_velocity_optimized = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
+                        gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                         prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
-                        prev_state_optimized = gtsam::NavState(insInitialPose, prev_velocity_optimized);
+                        prev_state_optimized = gtsam::NavState(insInitialPose, currvned);
                         imu_preintegrator = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(imu_params, prev_bias_optimized);
 
                         pointsArchive[id] = {pointsBody, timestamp};
