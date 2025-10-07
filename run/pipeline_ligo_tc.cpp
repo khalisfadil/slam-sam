@@ -272,13 +272,13 @@ int main() {
         Eigen::Vector<double, 9> insCovScalingVector{1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_ins_denied = false; // Assume we start in a denied state
         double ins_current_trust_factor = 1.0;
-        const double ins_recovery_rate = 0.003; // Trust regained over 1/0.02 = 50 keyframes
+        const double ins_recovery_rate = 0.004; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 9> ins_full_trust_scaling_vector = Eigen::Vector<double, 9>::Ones();
 
         Eigen::Vector<double, 3> gnssCovScalingVector{1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_gnss_denied = false; // Assume we start in a denied state
         double gnss_current_trust_factor = 1.0;
-        const double gnss_recovery_rate = 0.003; // Trust regained over 1/0.02 = 50 keyframes
+        const double gnss_recovery_rate = 0.004; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 3> full_trust_gnss_scaling_vector = Eigen::Vector<double, 3>::Ones();
 
         // =================================================================================
@@ -508,7 +508,7 @@ int main() {
                         use_const_vel = true;
                     } else {
                         gtsam::Vector6 cv_scaled_sigmas;
-                        cv_scaled_sigmas << 0.02, 0.02, 0.02, 0.2, 0.2, 0.2;
+                        cv_scaled_sigmas << 0.025, 0.025, 0.025, 0.25, 0.25, 0.25;
                         gtsam::SharedNoiseModel cvNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(cv_scaled_sigmas);
                         newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), predTb2m, cvNoiseModel));
                     }
@@ -809,7 +809,7 @@ int main() {
         // --- MODIFIED: The initial setCameraPosition is now managed by the loop ---
         // viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // This is now handled dynamically
 
-        const size_t kSlidingWindowSize = 10;
+        const size_t kSlidingWindowSize = 20;
         std::deque<uint64_t> displayed_frame_ids;
         uint64_t last_processed_id = 0;
 
