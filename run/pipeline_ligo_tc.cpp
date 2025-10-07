@@ -809,7 +809,7 @@ int main() {
         // --- MODIFIED: The initial setCameraPosition is now managed by the loop ---
         // viewer->setCameraPosition(0, 0, -50, 0, 0, 0, 1, 0, 0); // This is now handled dynamically
 
-        const size_t kSlidingWindowSize = 1;
+        const size_t kSlidingWindowSize = 5;
         std::deque<uint64_t> displayed_frame_ids;
         uint64_t last_processed_id = 0;
 
