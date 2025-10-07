@@ -158,11 +158,9 @@ void LidarCallback::ParseParamdata(const json& json_param_data) {
         if (lidar_param.contains("reflectionThreshold")) {
             reflectivity_threshold_ = lidar_param["reflectionThreshold"].get<float>();
         }
-        if (lidar_param.contains("rangeFilterMax")) {
-            rfiltermax_ = lidar_param["rangeFilterMax"].get<float>();
-        }
-        if (lidar_param.contains("rangeFilterMin")) {
-            rfiltermin_ = lidar_param["rangeFilterMin"].get<float>();
+        if (lidar_param.contains("rangeFilter")) {
+            rfiltermin_ = lidar_param["rangeFilter"][0].get<float>();
+            rfiltermax_ = lidar_param["rangeFilter"][1].get<float>();
         }
     } catch (const json::exception& e) {
         throw std::runtime_error("JSON parsing error in metadata: " + std::string(e.what()));
