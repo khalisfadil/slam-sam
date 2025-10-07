@@ -302,9 +302,8 @@ int main() {
                 ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
             }
         } 
-        const double MAX_TRANS_DEVIATION = 1.0; // Max translational deviation in meters
-        const double MAX_ROT_DEVIATION = 0.1;
-        const int targetWinSize = 20;
+
+        const int targetWinSize = 10;
         std::deque<uint64_t> targetID;
 
         // =================================================================================
@@ -315,6 +314,7 @@ int main() {
         PoseHashMap insPoseArchive;
         Eigen::Vector3d ins_rlla = Eigen::Vector3d::Zero();
         bool is_first_keyframe = true;
+        bool use_const_vel = false;
 
         gtsam::Pose3 predTb2m;
         gtsam::NavState prev_state_optimized;
@@ -420,6 +420,7 @@ int main() {
                         }
                     // }
                 } else { // --- 3. Main Loop for Subsequent Keyframes ---
+
                     const gtsam::Point3 ins_tb2m{registerCallback.lla2ned(ins_lla.x(), ins_lla.y(), ins_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
                     current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
 
@@ -502,6 +503,15 @@ int main() {
                         // gtsam::SharedNoiseModel insVelNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(ins_vel_scaled_sigmas);
                         // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(Symbol('v', id),insVelFactor, insVelNoiseModel));
                     // }
+
+                    if (!use_const_vel){
+                        use_const_vel = true;
+                    } else {
+                        gtsam::Vector6 cv_scaled_sigmas;
+                        cv_scaled_sigmas << 0.01, 0.01, 0.01, 0.1, 0.1, 0.1;
+                        gtsam::SharedNoiseModel cvNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(cv_scaled_sigmas);
+                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(Symbol('x', id), predTb2m, cvNoiseModel));
+                    }
                     
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
                     // if (lidarValid){
@@ -518,20 +528,8 @@ int main() {
                         ndt_omp->setInputTarget(lidarFactorPointsTarget);
                         ndt_omp->setInputSource(pointsBody);
                         ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
-                        gtsam::Pose3 registerResult(ndt_omp->getFinalTransformation().cast<double>());
-
-                        gtsam::Pose3 deviation = predTb2m.between(registerResult);
-                        double trans_error = deviation.translation().norm();
-                        double rot_error = std::abs(deviation.rotation().axisAngle().second);
-                        double w_trans = std::max(0.0, 1.0 - (trans_error / MAX_TRANS_DEVIATION));
-                        double w_rot = std::max(0.0, 1.0 - (rot_error / MAX_ROT_DEVIATION));
-                        double ndt_trust_weight = std::min(w_trans, w_rot);
-                        gtsam::Vector6 se3_const_vel = gtsam::Pose3::Logmap(predTb2m);
-                        gtsam::Vector6 se3_ndt_result = gtsam::Pose3::Logmap(registerResult);
-                        gtsam::Vector6 se3_blended = se3_const_vel + ndt_trust_weight * (se3_ndt_result - se3_const_vel);
-                        gtsam::Pose3 lidarTbs2bt = gtsam::Pose3::Expmap(se3_blended);
-
-                        // gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
+                        gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
+                        gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
                         
                         auto ndt_result = ndt_omp->getResult();
                         ndt_iter = ndt_result.iteration_num;
@@ -581,7 +579,7 @@ int main() {
                     gtsam::Pose3 prevTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', targetID.back()));
                     gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(Symbol('v', id));
                     Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
-                    // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
+                    // // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
                     predTb2m = gtsam::Pose3{currTb2m.matrix() * Tbc2bp};
                     prev_state_optimized = gtsam::NavState(currTb2m, currvned);
                     prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(Symbol('b', id));
