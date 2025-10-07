@@ -303,6 +303,9 @@ int main() {
             }
         } 
 
+        const int targetWinSize = 5;
+        std::deque<uint64_t> targetID;
+
         // =================================================================================
         // C. STATE & ARCHIVE VARIABLES
         // =================================================================================
@@ -311,7 +314,6 @@ int main() {
         PoseHashMap insPoseArchive;
         Eigen::Vector3d ins_rlla = Eigen::Vector3d::Zero();
         bool is_first_keyframe = true;
-        uint64_t last_id = 0;
 
         gtsam::Pose3 predTb2m;
         gtsam::NavState prev_state_optimized;
@@ -393,7 +395,7 @@ int main() {
                         isam2.update(newFactors, newEstimates);
                         currentEstimates = isam2.calculateEstimate();
 
-                        predTb2m = insInitialPose;
+                        // predTb2m = insInitialPose;
                         gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                         prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
                         prev_state_optimized = gtsam::NavState(insInitialPose, currvned);
@@ -402,8 +404,9 @@ int main() {
                         pointsArchive[id] = {pointsBody, timestamp};
                         // insStateArchive[id] = {current_ins_state, timestamp};#
                         insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
-                        last_id = id;
                         is_first_keyframe = false;
+
+                        targetID.push_back(id);
 
                         //3.5 push vizual
                         if (!currentEstimates.empty()) {
@@ -451,9 +454,9 @@ int main() {
                     
                     // // 3.3. Add the IMU factor to the graph.
                     newFactors.add(gtsam::CombinedImuFactor(
-                        gtsam::Symbol('x', last_id), gtsam::Symbol('v', last_id),
+                        gtsam::Symbol('x', targetID.back()), gtsam::Symbol('v', targetID.back()),
                         gtsam::Symbol('x', id), gtsam::Symbol('v', id),
-                        gtsam::Symbol('b', last_id), gtsam::Symbol('b', id),
+                        gtsam::Symbol('b', targetID.back()), gtsam::Symbol('b', id),
                         *imu_preintegrator));
                     // if (insValid){
                         Eigen::Vector<double, 9> insStdDev = Eigen::Vector<double, 9>::Zero();
@@ -497,23 +500,23 @@ int main() {
                         gtsam::Vector3 insVelFactor = current_ins_state.velocity();
                         gtsam::SharedNoiseModel insVelNoiseModel = gtsam::noiseModel::Diagonal::Sigmas(ins_vel_scaled_sigmas);
                         newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(Symbol('v', id),insVelFactor, insVelNoiseModel));
-                        // auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
-                        // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
-                        // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
-                        // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
                     // }
                     
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
                     // if (lidarValid){
+                        pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+                        for (const int& currID : targetID) {
+                            pcl::PointCloud<pcl::PointXYZI>::Ptr currlidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+                            const auto& lidarFactorPointsArchive = pointsArchive.at(currID);
+                            gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', currID));
+                            pcl::transformPointCloud(*lidarFactorPointsArchive.points, *currlidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
+                            *lidarFactorPointsTarget += *currlidarFactorPointsTarget;
+                        }
 
                         pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
-                        pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                        const auto& lidarFactorPointsArchive = pointsArchive.at(last_id);
-                        gtsam::Pose3 lidarFactorTargetTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
-                        pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
                         ndt_omp->setInputTarget(lidarFactorPointsTarget);
                         ndt_omp->setInputSource(pointsBody);
-                        ndt_omp->align(*lidarFactorPointsSource, predTb2m.matrix().cast<float>());
+                        ndt_omp->align(*lidarFactorPointsSource, predicted_state.pose().matrix().cast<float>());
                         gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
                         gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);
                         
@@ -521,9 +524,9 @@ int main() {
                         ndt_iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse()*10;
+                        Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse();
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
-                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
+                        newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', targetID.back()), Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
                     // }
                     // 3.4. (Conceptual) Add GPS Factor
                     // if(gnssValid){
@@ -562,11 +565,11 @@ int main() {
                     isam2.update(newFactors, newEstimates);
                     currentEstimates = isam2.calculateEstimate();
                     gtsam::Pose3 currTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', id));
-                    gtsam::Pose3 prevTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', last_id));
+                    // gtsam::Pose3 prevTb2m = currentEstimates.at<gtsam::Pose3>(Symbol('x', targetID.back()));
                     gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(Symbol('v', id));
-                    Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
-                    // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
-                    predTb2m = gtsam::Pose3{currTb2m.matrix() * Tbc2bp};
+                    // Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
+                    // // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
+                    // predTb2m = gtsam::Pose3{currTb2m.matrix() * Tbc2bp};
                     prev_state_optimized = gtsam::NavState(currTb2m, currvned);
                     prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(Symbol('b', id));
 
@@ -587,8 +590,12 @@ int main() {
 
                     pointsArchive[id] = {pointsBody, timestamp};
                     // insStateArchive[id] = {current_ins_state, timestamp};
-                    insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
-                    last_id = id;   
+                    insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp}; 
+
+                    if (targetID.size() >= targetWinSize) {
+                        targetID.pop_front();
+                    }
+                    targetID.push_back(id);
 
                     //3.5 push vizual
                     if (!currentEstimates.empty()) {
