@@ -268,7 +268,7 @@ int main() {
         const gtsam::Vector3 BIAS_INSTABILITY_GYRO = compCallback.getBiasInstabilityGyroscope();
 
         // Trust Gain parameters defined here ---
-        Eigen::Vector<double, 6> gnssCovScalingVector{1e1, 1e1, 1e1}; // High uncertainty for denied state
+        Eigen::Vector<double, 3> gnssCovScalingVector{1e1, 1e1, 1e1}; // High uncertainty for denied state
         bool was_gps_denied = false; // Assume we start in a denied state
         double current_trust_factor = 1.0;
         const double recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
