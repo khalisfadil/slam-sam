@@ -476,7 +476,7 @@ int main() {
                     gtsam::Vector3 currvned = currentEstimates.at<gtsam::Vector3>(gtsam::Symbol('v', id));
                     Eigen::Matrix4d Tbc2bp = prevTb2m.matrix().inverse() * currTb2m.matrix();
                     // gtsam::Pose3 Tbc2bp = prevTb2m.between(currTb2m);
-                    predTb2m{currTb2m.matrix() * Tbc2bp};
+                    predTb2m = gtsam::Pose3{currTb2m.matrix() * Tbc2bp};
                     prev_state_optimized = gtsam::NavState(currTb2m, currvned);
                     prev_bias_optimized = currentEstimates.at<gtsam::imuBias::ConstantBias>(gtsam::Symbol('b', id));
 
