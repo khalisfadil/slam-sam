@@ -442,10 +442,10 @@ int main() {
                         gtsam::Symbol('b', last_id), gtsam::Symbol('b', id),
                         *imu_preintegrator));
                     // if (insValid){
-                        auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
-                        auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
-                        newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
+                        // auto insPoseNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20).finished());
+                        // newFactors.add(gtsam::PriorFactor<gtsam::Pose3>(gtsam::Symbol('x', id), current_ins_state.pose(), insPoseNoiseModel));
+                        // auto insVelocityNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25).finished());
+                        // newFactors.add(gtsam::PriorFactor<gtsam::Vector3>(gtsam::Symbol('v', id), current_ins_state.velocity(), insVelocityNoiseModel));
                     // }
                     
                     // 3.4. (Conceptual) Add Lidar Odometry Factor
@@ -472,10 +472,10 @@ int main() {
                     // }
                     // 3.4. (Conceptual) Add GPS Factor
                     // if(gnssValid){
-                    //     const Eigen::Vector3d gnss_lla{ins.latitude_29, ins.longitude_29, ins.altitude_29};
-                    //     const gtsam::Point3 gnss_tb2m{registerCallback.lla2ned(gnss_lla.x(), gnss_lla.y(), gnss_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
-                    //     auto gnssNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaLatitude_29, ins.sigmaLongitude_29, ins.sigmaAltitude_29).finished());
-                    //     newFactors.add(gtsam::GPSFactor(gtsam::Symbol('x', id), gnss_tb2m, gnssNoiseModel));
+                        const Eigen::Vector3d gnss_lla{ins.latitude_29, ins.longitude_29, ins.altitude_29};
+                        const gtsam::Point3 gnss_tb2m{registerCallback.lla2ned(gnss_lla.x(), gnss_lla.y(), gnss_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
+                        auto gnssNoiseModel = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(3) << ins.sigmaLatitude_29, ins.sigmaLongitude_29, ins.sigmaAltitude_29).finished());
+                        newFactors.add(gtsam::GPSFactor(gtsam::Symbol('x', id), gnss_tb2m, gnssNoiseModel));
                     // }
                     
                     isam2.update(newFactors, newEstimates);
