@@ -464,7 +464,7 @@ int main() {
                         Eigen::Vector<double, 9> insStdDev = Eigen::Vector<double, 9>::Zero();
                         insStdDev << ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20, ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25;
                         double insChecker = insStdDev.head(3).norm();
-                        bool is_ins_available_now = (insChecker < 0.15);
+                        bool is_ins_available_now = (insChecker < 0.1);
                         if (is_ins_available_now && was_ins_denied) {
                             std::cout << "Warning: INS return from denied position.start trust gain recovery.\n";
                             ins_current_trust_factor = 0.0; // Reset to begin recovery from zero trust
