@@ -269,13 +269,13 @@ int main() {
 
         // Trust Gain parameters defined here ---
 
-        Eigen::Vector<double, 9> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
+        Eigen::Vector<double, 9> insCovScalingVector{1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_ins_denied = false; // Assume we start in a denied state
         double ins_current_trust_factor = 1.0;
         const double ins_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
         const Eigen::Vector<double, 9> ins_full_trust_scaling_vector = Eigen::Vector<double, 9>::Ones();
 
-        Eigen::Vector<double, 3> gnssCovScalingVector{1e3, 1e3, 1e3}; // High uncertainty for denied state
+        Eigen::Vector<double, 3> gnssCovScalingVector{1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_gnss_denied = false; // Assume we start in a denied state
         double gnss_current_trust_factor = 1.0;
         const double gnss_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
@@ -459,7 +459,7 @@ int main() {
                         Eigen::Vector<double, 9> insStdDev = Eigen::Vector<double, 9>::Zero();
                         insStdDev << ins.sigmaLatitude_20, ins.sigmaLongitude_20, ins.sigmaAltitude_20, ins.sigmaRoll_26, ins.sigmaPitch_26, ins.sigmaYaw_26, ins.sigmaVelocityNorth_25, ins.sigmaVelocityEast_25, ins.sigmaVelocityDown_25;
                         double insChecker = insStdDev.head(3).norm();
-                        bool is_ins_available_now = (insChecker < 0.1);
+                        bool is_ins_available_now = (insChecker < 1.0);
                         if (is_ins_available_now && was_ins_denied) {
                             std::cout << "Warning: INS return from denied position.start trust gain recovery.\n";
                             ins_current_trust_factor = 0.0; // Reset to begin recovery from zero trust
@@ -484,7 +484,7 @@ int main() {
                                         insStdDev(0) * current_ins_scaling_vector(0), // x (from lat)
                                         insStdDev(1) * current_ins_scaling_vector(1), // y (from lon)
                                         insStdDev(2) * current_ins_scaling_vector(2);
-                                        
+
                         gtsam::Vector3 ins_vel_scaled_sigmas;
                         ins_vel_scaled_sigmas << insStdDev(6) * current_ins_scaling_vector(6), // roll
                                         insStdDev(7) * current_ins_scaling_vector(7), // pitch
@@ -521,7 +521,7 @@ int main() {
                         ndt_iter = ndt_result.iteration_num;
                         const auto& hessian = ndt_result.hessian;
                         Eigen::Matrix<double, 6, 6> regularized_hessian = hessian + (Eigen::Matrix<double, 6, 6>::Identity() * 1e-6);
-                        Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse();
+                        Eigen::Matrix<double, 6, 6> lidar_cov = -regularized_hessian.inverse()*10;
                         gtsam::SharedNoiseModel lidarNoiseModel = gtsam::noiseModel::Gaussian::Covariance(registerCallback.reorderCovarianceForGTSAM(lidar_cov));
                         newFactors.add(gtsam::BetweenFactor<gtsam::Pose3>(Symbol('x', last_id), Symbol('x', id), lidarTbs2bt, lidarNoiseModel));
                     // }
