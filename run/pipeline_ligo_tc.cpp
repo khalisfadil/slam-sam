@@ -407,16 +407,25 @@ int main() {
 
                     // 3.1. Integrate IMU measurements between the last keyframe and this one.
                     imu_preintegrator->resetIntegrationAndSetBias(prev_bias_optimized);
-                    double last_timestamp = 0.0;
-                    for (const auto& measurement : data_frame->ins) {
-                        // This assumes your IMU measurements are ordered correctly in the vector
-                        double dt = measurement.timestamp_20 - last_timestamp;
-                        if (dt > 0) {
-                            gtsam::Vector3 accel(measurement.accelX_28, measurement.accelY_28, measurement.accelZ_28);
-                            gtsam::Vector3 gyro(measurement.gyroX_28, measurement.gyroY_28, measurement.gyroZ_28);
-                            imu_preintegrator->integrateMeasurement(accel, gyro, dt);
+                    if (data_frame->ins.size() < 2) {
+                        std::cout << "Warning: Not enough IMU measurements to integrate between frames. Skipping integration." << std::endl;
+                    } else {
+                        // Initialize last_timestamp with the timestamp of the FIRST measurement
+                        double last_timestamp = data_frame->ins.front().timestamp_20;
+
+                        // Start the loop from the SECOND measurement (index 1)
+                        for (size_t i = 1; i < data_frame->ins.size(); ++i) {
+                            const auto& measurement = data_frame->ins[i];
+                            double dt = measurement.timestamp_20 - last_timestamp;
+
+                            // The dt > 0 check is still a good safety measure
+                            if (dt > 0) {
+                                gtsam::Vector3 accel(measurement.accelX_28, measurement.accelY_28, measurement.accelZ_28);
+                                gtsam::Vector3 gyro(measurement.gyroX_28, measurement.gyroY_28, measurement.gyroZ_28);
+                                imu_preintegrator->integrateMeasurement(accel, gyro, dt);
+                            }
+                            last_timestamp = measurement.timestamp_20;
                         }
-                        last_timestamp = measurement.timestamp_20;
                     }
 
                     // // 3.2. PREDICT the current state using the IMU preintegration.
