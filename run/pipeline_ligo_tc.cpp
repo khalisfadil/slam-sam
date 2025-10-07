@@ -269,7 +269,7 @@ int main() {
 
         // Trust Gain parameters defined here ---
 
-        Eigen::Vector<double, 9> insCovScalingVector{1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3, 1e3}; // High uncertainty for denied state
+        Eigen::Vector<double, 9> insCovScalingVector{1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2, 1e2}; // High uncertainty for denied state
         bool was_ins_denied = false; // Assume we start in a denied state
         double ins_current_trust_factor = 1.0;
         const double ins_recovery_rate = 0.005; // Trust regained over 1/0.02 = 50 keyframes
