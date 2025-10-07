@@ -83,6 +83,10 @@ struct KeyState {
     gtsam::NavState state; // Tb2m: body-to-map transformation in NED frame
     double timestamp;
 };
+struct KeyPose {
+    Eigen::Matrix4d pose; // Tb2m: body-to-map transformation in NED frame
+    double timestamp;
+};
 struct KeyFrameStats {
     Eigen::Vector3d rlla = Eigen::Vector3d::Zero(); 
     uint64_t frame_id = 0;
@@ -106,4 +110,5 @@ struct KeyFrameStats {
 using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyFrameInfo>, VoxelHash>;
 using PointsHashMap = tsl::robin_map<uint64_t, KeyPointInfo, KeyframeHash>;
 using StateHashMap = tsl::robin_map<uint64_t, KeyState, KeyframeHash>;
+using PoseHashMap = tsl::robin_map<uint64_t, KeyPose, KeyframeHash>;
 using StatsHashMap = tsl::robin_map<uint64_t, KeyFrameStats, KeyframeHash>;

@@ -297,7 +297,8 @@ struct CompFrame {
 struct VisualizationData {
     std::shared_ptr<gtsam::Values> poses;
     std::shared_ptr<PointsHashMap> points;
-    std::shared_ptr<StateHashMap> insposes;
+    // std::shared_ptr<StateHashMap> insposes;
+    std::shared_ptr<PoseHashMap> insposes;
 };
 // %            ... struct representing single 3d point data
 struct PCLPointCloud{
