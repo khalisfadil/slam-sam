@@ -360,7 +360,7 @@ bool LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
 
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
-        return;
+        return false;;
     }
 
     LidarFrame* p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
@@ -607,7 +607,7 @@ bool LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
 
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
-        return;
+        return false;;
     }
 
     uint16_t packet_type_raw;
@@ -615,7 +615,7 @@ bool LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
     uint16_t packet_type = le16toh(packet_type_raw);
     if (packet_type != 0x0001) {
         std::cerr << "Invalid packet type: 0x" << std::hex << packet_type << std::dec << " (expected 0x1)" << std::endl;
-        return;
+        return false;;
     }
 
     uint16_t current_packet_frame_id_raw;
