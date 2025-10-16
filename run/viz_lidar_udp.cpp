@@ -45,11 +45,9 @@ int main() {
         while (running) {
             auto packet_ptr = packetQueue.pop();
             if (!packet_ptr) break; // Queue was stopped
-
-            auto frame = std::make_unique<LidarFrame>();
             
             // No lock needed! This is the only thread calling the callback.
-            callback.DecodePacketRng19(*packet_ptr, *frame);
+            auto frame = callback.DecodePacketRng19(*packet_ptr);
             
             if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
                 *last_frame_id = frame->frame_id;
