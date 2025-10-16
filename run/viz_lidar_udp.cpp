@@ -51,6 +51,7 @@ class LidarFrameQueue {
 };
 
 int main() {
+
     std::string meta_path = "../config/lidar_meta_berlin.json";
     std::string param_path = "../config/lidar_config_berlin.json";
     LidarCallback callback(meta_path, param_path);
@@ -62,16 +63,16 @@ int main() {
 
     boost::asio::io_context io_context;
 
-    UdpSocketConfig config;
-    config.host = "192.168.75.10";
-    config.multicastGroup = std::nullopt;
-    config.localInterfaceIp = "192.168.75.10";
-    config.port = 7502;
-    config.bufferSize = 24832;
-    config.receiveTimeout = std::chrono::milliseconds(10000); 
-    config.reuseAddress = true; 
-    config.enableBroadcast = false; 
-    config.ttl =  std::nullopt; 
+    UdpSocketConfig lidarUdpConfig;
+    lidarUdpConfig.host = "192.168.75.10";
+    lidarUdpConfig.multicastGroup = std::nullopt;
+    lidarUdpConfig.localInterfaceIp = "192.168.75.10";
+    lidarUdpConfig.port = 7502;
+    lidarUdpConfig.bufferSize = 24832;
+    lidarUdpConfig.receiveTimeout = std::chrono::milliseconds(10000); 
+    lidarUdpConfig.reuseAddress = true; 
+    lidarUdpConfig.enableBroadcast = false; 
+    lidarUdpConfig.ttl =  std::nullopt; 
 
     // OPTIMIZATION 1: data_callback is now very lightweight.
     auto data_callback = [&callback, &frame_queue, last_frame_id](const DataBuffer& packet) {
@@ -91,34 +92,14 @@ int main() {
         std::cerr << "UDP error: " << ec.message() << "\n";
     };
 
-    auto socket = UdpSocket::create(io_context, config, data_callback, error_callback);
+    auto socket = UdpSocket::create(io_context, lidarUdpConfig, data_callback, error_callback);
 
     // In viz_lidar_udp.cpp
     auto viz_thread = std::thread([&frame_queue]() {
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("LiDAR Visualizer");
-        viewer->setBackgroundColor(0, 0, 0); //
+        viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "coord"); //
         viewer->initCameraParameters(); //
-        viewer->setCameraPosition(
-            0, 0, -50,   // Camera position: above the origin along z-axis
-            0, 0, 0,    // Focal point: look at origin
-            1, 0, 0     // Up direction: positive y-axis to match default view
-        );
-
-        // Spatial filter
-        pcl::PassThrough<pcl::PointXYZI> pass_spatial; //
-        // NOTE: Changed filter field to "y", which is now the forward (North) axis
-        pass_spatial.setFilterFieldName("z");
-        pass_spatial.setFilterLimits(-200.0, 0.0); // Adjust limits for forward/backward
-        
-        // VoxelGrid filter
-        pcl::VoxelGrid<pcl::PointXYZI> vg; //
-        vg.setLeafSize(0.5f, 0.5f, 0.5f); //
-        
-        // Point cloud pointers for each stage
-        pcl::PointCloud<pcl::PointXYZI>::Ptr intensity_filtered_cloud(new pcl::PointCloud<pcl::PointXYZI>()); //
-        pcl::PointCloud<pcl::PointXYZI>::Ptr spatial_filtered_cloud(new pcl::PointCloud<pcl::PointXYZI>()); //
-        pcl::PointCloud<pcl::PointXYZI>::Ptr downsampled_cloud(new pcl::PointCloud<pcl::PointXYZI>()); //
 
         while (!viewer->wasStopped()) {
             auto frame_ptr = frame_queue.pop(); //
@@ -129,23 +110,10 @@ int main() {
             pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = structcloud.pointsBody.makeShared();
             cloud->header.stamp = static_cast<std::uint64_t>(frame_ptr->timestamp_end * 1e9); //
             
-            // Apply the (x, y, z) -> (y, x, -z) transform to match the PCL viewer's frame.
-            for (auto& point : cloud->points) {
-                point.x = -point.x;    // 
-                point.y = point.y; // 
-                point.z = point.z;   // 
-            }
-
-            pass_spatial.setInputCloud(cloud); //
-            pass_spatial.filter(*spatial_filtered_cloud); //
-
-            vg.setInputCloud(spatial_filtered_cloud); //
-            vg.filter(*downsampled_cloud); //
-            
             // --- Visualization ---
-            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(downsampled_cloud, "intensity"); //
-            if (!viewer->updatePointCloud(downsampled_cloud, color_handler, "lidar_cloud")) { //
-                viewer->addPointCloud(downsampled_cloud, color_handler, "lidar_cloud"); //
+            pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(cloud, "intensity"); //
+            if (!viewer->updatePointCloud(cloud, color_handler, "lidar_cloud")) { //
+                viewer->addPointCloud(cloud, color_handler, "lidar_cloud"); //
             }
             viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "lidar_cloud"); //
             

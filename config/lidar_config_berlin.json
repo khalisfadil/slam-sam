@@ -5,6 +5,10 @@
         "channelStride":                    8,
         "zAxisFilter":                      [-300.0, 0.0],
         "reflectionThreshold":              50,
-        "rangeFilter":                      [3.0, 300.0]
+        "rangeFilter":                      [0.1, 300.0],
+        "vehicleFilterBox": {
+            "center":                       [0.5, 0.0, -1.0],
+            "dimensions":                   [4.0, 2.2, 1.5]
+        }
     }
 }
