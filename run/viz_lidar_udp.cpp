@@ -104,9 +104,10 @@ int main() {
             
             // --- Visualization ---
             pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> color_handler(cloud, "intensity"); //
-            viewer->removePointCloud("lidar_cloud");
-            viewer->addPointCloud(cloud, color_handler, "lidar_cloud");
-            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "lidar_cloud");
+            if (!viewer->updatePointCloud(cloud, color_handler, "lidar_cloud")) { //
+                viewer->addPointCloud(cloud, color_handler, "lidar_cloud"); //
+            }
+            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "lidar_cloud"); //
             
             viewer->spinOnce(1); //
         }
