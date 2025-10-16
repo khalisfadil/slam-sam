@@ -355,13 +355,11 @@ void LidarCallback::Initialize() {
 }
 // %            ... decode_packet_legacy
 // %            ... decode_packet_legacy
-std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
-
-    std::unique_ptr<LidarFrame> completed_frame = nullptr;
+void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, LidarFrame& frame) {
 
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
-        return completed_frame;
+        return;
     }
 
     LidarFrame* p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
@@ -401,7 +399,6 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
             if (this->frame_id_ != 0 || this->number_points_ > 0) {
                 p_current_write_buffer->numberpoints = this->number_points_;
                 p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
-                completed_frame = std::make_unique<LidarFrame>(*p_current_write_buffer);
             }
             prev_frame_completed_latest_ts = this->latest_timestamp_s;
             SwapBuffer();
@@ -600,15 +597,14 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
     if (p_current_write_buffer) {
         p_current_write_buffer->numberpoints = this->number_points_;
     }
-    return completed_frame;;
+    frame = GetLatestFrame();
 }
 // %            ... decode_packet_single_return
-std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
-    std::unique_ptr<LidarFrame> completed_frame = nullptr;
+void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarFrame& frame) {
 
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
-        return completed_frame;;
+        return;
     }
 
     uint16_t packet_type_raw;
@@ -616,7 +612,7 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
     uint16_t packet_type = le16toh(packet_type_raw);
     if (packet_type != 0x0001) {
         std::cerr << "Invalid packet type: 0x" << std::hex << packet_type << std::dec << " (expected 0x1)" << std::endl;
-        return completed_frame;;
+        return;
     }
 
     uint16_t current_packet_frame_id_raw;
@@ -630,7 +626,6 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
         if (this->frame_id_ != 0 || this->number_points_ > 0) {
             p_current_write_buffer->numberpoints = this->number_points_;
             p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
-            completed_frame = std::make_unique<LidarFrame>(*p_current_write_buffer);
         }
         prev_frame_completed_latest_ts = this->latest_timestamp_s;
         SwapBuffer();
@@ -851,5 +846,5 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
         p_current_write_buffer->numberpoints = this->number_points_;
     }
 
-    return completed_frame;
+    frame = GetLatestFrame();
 }

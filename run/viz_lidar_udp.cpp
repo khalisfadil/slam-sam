@@ -20,7 +20,7 @@ int main() {
     FrameQueue<DataBuffer> packetQueue;
     
     // Using a shared_ptr for frameid allows safe sharing with the lambda
-    auto last_frame_id = std::make_shared<uint16_t>(0);
+    auto lidarLastID = std::make_shared<uint16_t>(0);
 
     boost::asio::io_context io_context;
 
@@ -47,12 +47,13 @@ int main() {
                 if (!packet_ptr) {
                     break;
                 }
-                auto frame = callback.DecodePacketRng19(*packet_ptr);
-                if (frame) {
-                    auto finished_frame = std::make_unique<LidarFrame>(callback.GetLatestFrame());
-                    std::cout << "Processed complete frame " << finished_frame->frame_id 
-                            << " with " << finished_frame->numberpoints << " points\n";
-                    lidarQueue.push(std::move(finished_frame));
+                auto frame = std::make_unique<LidarFrame>();
+                callback.DecodePacketRng19(*packet_ptr, *frame);
+                if (frame->numberpoints > 0 && frame->frame_id != *lidarLastID) {
+                    *lidarLastID = frame->frame_id;
+                    std::cout << "Processed complete frame " << frame->frame_id 
+                            << " with " << frame->numberpoints << " points\n";
+                    lidarQueue.push(std::move(frame));
                 }
             }
         } catch (const std::exception& e) {
