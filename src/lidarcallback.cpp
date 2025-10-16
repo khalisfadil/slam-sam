@@ -850,5 +850,5 @@ bool LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
         p_current_write_buffer->numberpoints = this->number_points_;
     }
 
-    frame_completed = true;
+    return frame_completed;
 }
