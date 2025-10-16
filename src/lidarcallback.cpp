@@ -750,11 +750,11 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
                 if (subset_idx >= static_cast<uint16_t>(subset_channels_)) break;
                 if (range_m[i] >= r_min_vals[i] && range_m[i] <= r_max_vals[i] && range_m[i] > 0) {
 
-                    bool is_in_vehicle_box = (pt_x_arr[i] >= vehicle_box_min_.x() && pt_x_arr[i] <= vehicle_box_max_.x() &&
-                                  pt_y_arr[i] >= vehicle_box_min_.y() && pt_y_arr[i] <= vehicle_box_max_.y() &&
-                                  pt_z_arr[i] >= vehicle_box_min_.z() && pt_z_arr[i] <= vehicle_box_max_.z());
+                    // bool is_in_vehicle_box = (pt_x_arr[i] >= vehicle_box_min_.x() && pt_x_arr[i] <= vehicle_box_max_.x() &&
+                    //               pt_y_arr[i] >= vehicle_box_min_.y() && pt_y_arr[i] <= vehicle_box_max_.y() &&
+                    //               pt_z_arr[i] >= vehicle_box_min_.z() && pt_z_arr[i] <= vehicle_box_max_.z());
                     // Check if the Z coordinate is within the desired range [-200.0, 0.0]
-                    if (!is_in_vehicle_box && ((pt_z_arr[i] >= zfiltermin_ && pt_z_arr[i] <= zfiltermax_) || (reflectivity[i] >= reflectivity_threshold_))) {
+                    if (((pt_z_arr[i] >= zfiltermin_ && pt_z_arr[i] <= zfiltermax_) || (reflectivity[i] >= reflectivity_threshold_))) {
                         p_current_write_buffer->x.push_back(pt_x_arr[i]);
                         p_current_write_buffer->y.push_back(pt_y_arr[i]);
                         p_current_write_buffer->z.push_back(pt_z_arr[i]);
@@ -808,12 +808,12 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
             float pt_y = range_m * y_1_[m_id][c_id] + y_2_[m_id];
             float pt_z = range_m * z_1_[m_id][c_id] + z_2_[m_id];
 
-            bool is_in_vehicle_box = (pt_x >= vehicle_box_min_.x() && pt_x <= vehicle_box_max_.x() &&
-                                     pt_y >= vehicle_box_min_.y() && pt_y <= vehicle_box_max_.y() &&
-                                     pt_z >= vehicle_box_min_.z() && pt_z <= vehicle_box_max_.z());
+            // bool is_in_vehicle_box = (pt_x >= vehicle_box_min_.x() && pt_x <= vehicle_box_max_.x() &&
+            //                          pt_y >= vehicle_box_min_.y() && pt_y <= vehicle_box_max_.y() &&
+            //                          pt_z >= vehicle_box_min_.z() && pt_z <= vehicle_box_max_.z());
             
             // Check if the Z coordinate is within the desired range [-200.0, 0.0]
-            if (!is_in_vehicle_box && ((pt_z >= zfiltermin_ && pt_z <= zfiltermax_) || (current_reflectivity >= reflectivity_threshold_))) { // <-- ADDED FILTER
+            if ( ((pt_z >= zfiltermin_ && pt_z <= zfiltermax_) || (current_reflectivity >= reflectivity_threshold_))) { // <-- ADDED FILTER
                 double relative_timestamp_s = (p_current_write_buffer->numberpoints > 0 || this->number_points_ > 0) && p_current_write_buffer->timestamp > 0
                     ? std::max(0.0, current_col_timestamp_s - p_current_write_buffer->timestamp)
                     : 0.0;
