@@ -47,8 +47,8 @@ int main() {
                 if (!packet_ptr) {
                     break;
                 }
-                bool frame_is_complete = callback.DecodePacketRng19(*packet_ptr);
-                if (frame_is_complete) {
+                auto frame = callback.DecodePacketRng19(*packet_ptr);
+                if (frame) {
                     auto finished_frame = std::make_unique<LidarFrame>(callback.GetLatestFrame());
                     std::cout << "Processed complete frame " << finished_frame->frame_id 
                             << " with " << finished_frame->numberpoints << " points\n";
