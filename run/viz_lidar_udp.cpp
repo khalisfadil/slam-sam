@@ -35,9 +35,8 @@ int main() {
     lidarUdpConfig.enableBroadcast = false; 
     lidarUdpConfig.ttl =  std::nullopt; 
 
-    auto lidar_callback = [&packetQueue](const DataBuffer& packet) {
+    auto lidar_callback = [&packetQueue](std::unique_ptr<DataBuffer> packet_ptr) {
         if (!running) return;
-        auto packet_ptr = std::make_unique<DataBuffer>(packet);
         packetQueue.push(std::move(packet_ptr));
     };
 

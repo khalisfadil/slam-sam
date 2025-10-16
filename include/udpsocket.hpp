@@ -27,7 +27,7 @@ struct UdpSocketConfig {
 
 using DataBuffer = std::vector<uint8_t>;
 using UdpSocketPtr = std::shared_ptr<class UdpSocket>;
-using DataCallback = std::function<void(const DataBuffer&)>;
+using DataCallback = std::function<void(std::unique_ptr<DataBuffer>)>;
 using ErrorCallback = std::function<void(const boost::system::error_code&)>;
 
 
@@ -235,8 +235,12 @@ private:
 
         if (!ec) {
             if (bytesReceived > 0) {
-                DataBuffer data(buffer_.begin(), buffer_.begin() + bytesReceived);
-                if (dataCallback_) dataCallback_(data);
+                auto packet_ptr = std::make_unique<DataBuffer>(buffer_.begin(), buffer_.begin() + bytesReceived);
+                if (dataCallback_) {
+                    dataCallback_(std::move(packet_ptr));
+                }
+                // DataBuffer data(buffer_.begin(), buffer_.begin() + bytesReceived);
+                // if (dataCallback_) dataCallback_(data);
             }
         } else if (ec == boost::asio::error::operation_aborted) {
             // Expected on timeout or stop(). Do nothing.
