@@ -81,10 +81,6 @@ class LidarCallback {
         float rfiltermax_ = 200.0f;
         float rfiltermin_ = 1.0f;
         uint8_t reflectivity_threshold_ = 0;
-        Eigen::Vector3f vehicle_box_center_ = Eigen::Vector3f::Zero();
-        Eigen::Vector3f vehicle_box_dimensions_ = Eigen::Vector3f::Zero();
-        Eigen::Vector3f vehicle_box_min_ = Eigen::Vector3f::Zero();
-        Eigen::Vector3f vehicle_box_max_ = Eigen::Vector3f::Zero();
 
         void Initialize();
         void ParseMetadata(const nlohmann::json& json_data);
