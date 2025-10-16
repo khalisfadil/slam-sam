@@ -1,9 +1,16 @@
 #include <pipeline.hpp>
 
-// OPTIMIZATION 1: The queue now holds the lightweight LidarFrame struct.
-// Using std::unique_ptr to avoid copying large frame objects.
+static std::atomic<bool> running = true;
+
+void signal_handler(int) {
+    running = false;
+}
 
 int main() {
+
+    struct sigaction sa = {};
+    sa.sa_handler = signal_handler;
+    sigaction(SIGINT, &sa, nullptr);
 
     std::string meta_path = "../config/lidar_meta_berlin.json";
     std::string param_path = "../config/lidar_config_berlin.json";
@@ -29,27 +36,46 @@ int main() {
     lidarUdpConfig.ttl =  std::nullopt; 
 
     auto data_callback = [&packetQueue](std::unique_ptr<DataBuffer> packet_ptr) {
+        if (!running) return;
         packetQueue.push(std::move(packet_ptr));
     };
 
     auto lidar_thread = std::thread([&callback, &packetQueue, &lidarQueue, last_frame_id]() {
-        auto packet = packetQueue.pop();
-        callback.DecodePacketRng19(*packet);
-        auto frame = std::make_unique<LidarFrame>(callback.GetLatestFrame());
+        try {
+            while (running) {
+                auto packet = packetQueue.pop();
+                callback.DecodePacketRng19(*packet);
+                auto frame = std::make_unique<LidarFrame>(callback.GetLatestFrame());
 
-        if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
-            *last_frame_id = frame->frame_id;
-            std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
-            // Move the frame pointer into the queue. No heavy copying.
-            lidarQueue.push(std::move(frame));
+                if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
+                    *last_frame_id = frame->frame_id;
+                    std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
+                    // Move the frame pointer into the queue. No heavy copying.
+                    lidarQueue.push(std::move(frame));
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "lidar thread error: " << e.what() << "\n";
         }
     });
 
     auto error_callback = [](const boost::system::error_code& ec) {
-        std::cerr << "UDP error: " << ec.message() << "\n";
+       if (running) {
+            std::cerr << "LiDAR IO error: " << ec.message() << " (code: " << ec.value() << ")\n";
+        }
     };
 
     auto socket = UdpSocket::create(io_context, lidarUdpConfig, data_callback, error_callback);
+
+    auto io_thread = std::thread([&io_context]() {
+        try {
+            while (running) {
+                io_context.run_one();
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "IO context error: " << e.what() << "\n";
+        }
+    });
 
     // In viz_lidar_udp.cpp
     auto viz_thread = std::thread([&lidarQueue]() {
@@ -68,7 +94,7 @@ int main() {
                 kUpVector.x(), kUpVector.y(), kUpVector.z()
             );
 
-        while (!viewer->wasStopped()) {
+        while (running && !viewer->wasStopped()) {
             auto frame_ptr = lidarQueue.pop(); //
             if (!frame_ptr) break;
 
@@ -88,16 +114,9 @@ int main() {
         }
     });
 
-    auto io_thread = std::thread([&io_context]() {
-        try {
-            io_context.run();
-        } catch (const std::exception& e) {
-            std::cerr << "IO context error: " << e.what() << "\n";
-        }
-    });
-
-    std::cout << "Press Enter to stop...\n";
-    std::cin.get();
+    while (running) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
     socket->stop();
     packetQueue.stop();
