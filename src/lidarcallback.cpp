@@ -322,6 +322,10 @@ void LidarCallback::Initialize() {
     data_buffer1_.reserve(columns_per_frame_ * pixels_per_column_);
     data_buffer2_.reserve(columns_per_frame_ * pixels_per_column_);
 
+    Eigen::Vector3f half_dims = vehicle_box_dimensions_ / 2.0f;
+    vehicle_box_min_ = vehicle_box_center_ - half_dims;
+    vehicle_box_max_ = vehicle_box_center_ + half_dims;
+
     // Sanity checks for lookup table sizes
     if (x_1_.size() != static_cast<size_t>(columns_per_frame_) || (!x_1_.empty() && x_1_[0].size() != static_cast<size_t>(pixels_per_column_))) {
         throw std::runtime_error("x_1_ lookup table size mismatch after initialization");
