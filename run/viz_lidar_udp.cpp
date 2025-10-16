@@ -42,7 +42,7 @@ int main() {
         
         if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
             *last_frame_id = frame->frame_id;
-            // std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
+            std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
             // Move the frame pointer into the queue. No heavy copying.
             lidarQueue.push(std::move(frame));
         }};
