@@ -186,6 +186,7 @@ void LidarCallback::ParseParamdata(const json& json_param_data) {
 }
 // %            ... initialize
 void LidarCallback::Initialize() {
+
     if (udp_profile_lidar_ == "RNG19_RFL8_SIG16_NIR16") {
         PACKET_HEADER_BYTES = 32;
         PACKET_FOOTER_BYTES = 32;
@@ -319,8 +320,11 @@ void LidarCallback::Initialize() {
         }
     }
 
-    data_buffer1_.reserve(columns_per_frame_ * pixels_per_column_);
-    data_buffer2_.reserve(columns_per_frame_ * pixels_per_column_);
+    // Pre-allocate memory for both buffers for performance
+    data_buffer1_ = std::make_unique<LidarFrame>();
+    data_buffer2_ = std::make_unique<LidarFrame>();
+    data_buffer1_->reserve(columns_per_frame_ * pixels_per_column_);
+    data_buffer2_->reserve(columns_per_frame_ * pixels_per_column_);
 
     Eigen::Vector3f half_dims = vehicle_box_dimensions_ / 2.0f;
     vehicle_box_min_ = vehicle_box_center_ - half_dims;
@@ -360,7 +364,7 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
         return nullptr;
     }
 
-    LidarFrame* p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
+    LidarFrame* p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
 
     double prev_frame_completed_latest_ts = 0.0;
     if (this->latest_timestamp_s > 0.0) {
@@ -400,7 +404,7 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
             }
             prev_frame_completed_latest_ts = this->latest_timestamp_s;
             SwapBuffer();
-            p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
+            p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
             this->number_points_ = 0;
             this->frame_id_ = current_packet_frame_id;
             p_current_write_buffer->clear();
@@ -617,17 +621,18 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
     std::memcpy(&current_packet_frame_id_raw, packet.data() + 2, sizeof(uint16_t));
     uint16_t current_packet_frame_id = le16toh(current_packet_frame_id_raw);
 
-    LidarFrame* p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
+    LidarFrame* p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
 
     double prev_frame_completed_latest_ts = 0.0;
     if (current_packet_frame_id != this->frame_id_) {
         if (this->frame_id_ != 0 || this->number_points_ > 0) {
             p_current_write_buffer->numberpoints = this->number_points_;
             p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
+            std::unique_ptr<LidarFrame> completed_frame = std::move(buffer_toggle_ ? data_buffer2_ : data_buffer1_);
         }
         prev_frame_completed_latest_ts = this->latest_timestamp_s;
         SwapBuffer();
-        p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
+        p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
         this->number_points_ = 0;
         this->frame_id_ = current_packet_frame_id;
         p_current_write_buffer->clear();
