@@ -35,8 +35,9 @@ int main() {
     lidarUdpConfig.enableBroadcast = false; 
     lidarUdpConfig.ttl =  std::nullopt; 
 
-    auto data_callback = [&packetQueue](std::unique_ptr<DataBuffer> packet_ptr) {
+    auto data_callback = [&packetQueue](const DataBuffer& packet) {
         if (!running) return;
+        auto packet_ptr = std::make_shared<DataBuffer>(packet);
         packetQueue.push(std::move(packet_ptr));
     };
 
