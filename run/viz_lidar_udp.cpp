@@ -100,8 +100,10 @@ int main() {
     std::cin.get();
 
     socket->stop();
+    packetQueue.stop();
     lidarQueue.stop();
     io_context.stop();
+    if (lidar_thread.joinable()) lidar_thread.join();
     if (viz_thread.joinable()) viz_thread.join();
     if (io_thread.joinable()) io_thread.join();
 
