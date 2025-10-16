@@ -35,32 +35,17 @@ int main() {
     lidarUdpConfig.enableBroadcast = false; 
     lidarUdpConfig.ttl =  std::nullopt; 
 
-    auto data_callback = [&packetQueue](const DataBuffer& packet) {
+    auto lidar_callback = [&callback, &lidarQueue, last_frame_id](const DataBuffer& packet) {
         if (!running) return;
-        auto packet_ptr = std::make_unique<DataBuffer>(packet);
-        packetQueue.push(std::move(packet_ptr));
-    };
-
-    auto lidar_thread = std::thread([&callback, &packetQueue, &lidarQueue, last_frame_id]() {
-        try {
-            while (running) {
-                auto packet_ptr = packetQueue.pop();
-                if (!packet_ptr) {
-                    break;
-                }
-                auto frame = std::make_unique<LidarFrame>();
-                callback.DecodePacketRng19(*packet_ptr, *frame);
-                if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
-                    *last_frame_id = frame->frame_id;
-                    std::cout << "Processed complete frame " << frame->frame_id 
-                            << " with " << frame->numberpoints << " points\n";
-                    lidarQueue.push(std::move(frame));
-                }
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "lidar thread error: " << e.what() << "\n";
-        }
-    });
+        auto frame = std::make_unique<LidarFrame>();
+        callback.DecodePacketRng19(packet, *frame);
+        
+        if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
+            *last_frame_id = frame->frame_id;
+            // std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
+            // Move the frame pointer into the queue. No heavy copying.
+            lidarQueue.push(std::move(frame));
+        }};
 
     auto error_callback = [](const boost::system::error_code& ec) {
        if (running) {
@@ -68,7 +53,7 @@ int main() {
         }
     };
 
-    auto socket = UdpSocket::create(io_context, lidarUdpConfig, data_callback, error_callback);
+    auto socket = UdpSocket::create(io_context, lidarUdpConfig, lidar_callback, error_callback);
 
     auto io_thread = std::thread([&io_context]() {
         try {
@@ -123,7 +108,6 @@ int main() {
     packetQueue.stop();
     lidarQueue.stop();
     io_context.stop();
-    if (lidar_thread.joinable()) lidar_thread.join();
     if (viz_thread.joinable()) viz_thread.join();
     if (io_thread.joinable()) io_thread.join();
 
