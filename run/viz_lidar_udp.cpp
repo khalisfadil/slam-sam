@@ -106,8 +106,8 @@ int main() {
         Eigen::Vector3d target_focal_point(0.0, 0.0, 0.0);
 
         viewer->setCameraPosition(
+                kCameraOffset.x(), kCameraOffset.y(), kCameraOffset.z(),
                 target_focal_point.x(), target_focal_point.y(), target_focal_point.z(),
-                current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
                 kUpVector.x(), kUpVector.y(), kUpVector.z()
             );
 
