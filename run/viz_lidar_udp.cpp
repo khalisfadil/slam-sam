@@ -48,8 +48,7 @@ int main() {
             // No lock needed! This is the only thread calling the callback.
             auto frame = callback.DecodePacketRng19(*packet_ptr);
             
-            if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
-                *last_frame_id = frame->frame_id;
+            if (frame) {
                 std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
                 lidarQueue.push(std::move(frame));
             }

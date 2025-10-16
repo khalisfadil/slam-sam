@@ -360,6 +360,9 @@ void LidarCallback::Initialize() {
 // %            ... decode_packet_legacy
 // %            ... decode_packet_legacy
 std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
+
+    std::unique_ptr<LidarFrame> completed_frame = nullptr;
+
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
         return nullptr;
@@ -403,14 +406,15 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
             if (this->frame_id_ != 0 || this->number_points_ > 0) {
                 p_current_write_buffer->numberpoints = this->number_points_;
                 p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
+                completed_frame = buffer_toggle_ ? std::move(data_buffer2_) : std::move(data_buffer1_);
+                if (buffer_toggle_) {
+                    data_buffer2_ = std::make_unique<LidarFrame>();
+                } else {
+                    data_buffer1_ = std::make_unique<LidarFrame>();
+                }
             }
             prev_frame_completed_latest_ts = this->latest_timestamp_s;
             SwapBuffer();
-            if (buffer_toggle_) {
-                data_buffer2_ = std::make_unique<LidarFrame>();
-            } else {
-                data_buffer1_ = std::make_unique<LidarFrame>();
-            }
             p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
             // p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
             this->number_points_ = 0;
@@ -608,10 +612,13 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
     if (p_current_write_buffer) {
         p_current_write_buffer->numberpoints = this->number_points_;
     }
-    return std::make_unique<LidarFrame>(GetLatestFrame());
+    return completed_frame;;
 }
 // %            ... decode_packet_single_return
 std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
+
+    std::unique_ptr<LidarFrame> completed_frame = nullptr;
+
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
         return nullptr;
@@ -637,15 +644,15 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
         if (this->frame_id_ != 0 || this->number_points_ > 0) {
             p_current_write_buffer->numberpoints = this->number_points_;
             p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
+            completed_frame = buffer_toggle_ ? std::move(data_buffer2_) : std::move(data_buffer1_);
+            if (buffer_toggle_) {
+                data_buffer2_ = std::make_unique<LidarFrame>();
+            } else {
+                data_buffer1_ = std::make_unique<LidarFrame>();
+            }
         }
         prev_frame_completed_latest_ts = this->latest_timestamp_s;
         SwapBuffer();
-
-        if (buffer_toggle_) {
-            data_buffer2_ = std::make_unique<LidarFrame>();
-        } else {
-            data_buffer1_ = std::make_unique<LidarFrame>();
-        }
         p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
         // p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
         this->number_points_ = 0;
@@ -863,5 +870,5 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
     if (p_current_write_buffer) {
         p_current_write_buffer->numberpoints = this->number_points_;
     }
-    return std::make_unique<LidarFrame>(GetLatestFrame());
+    return completed_frame;
 }
