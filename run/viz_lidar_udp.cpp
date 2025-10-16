@@ -101,6 +101,16 @@ int main() {
         viewer->addCoordinateSystem(10.0, "coord"); //
         viewer->initCameraParameters(); //
 
+        const Eigen::Vector3d kCameraOffset(0.0, 0.0, -250.0);
+        const Eigen::Vector3d kUpVector(1.0, 0.0, 0.0);
+        Eigen::Vector3d target_focal_point(0.0, 0.0, 0.0);
+
+        viewer->setCameraPosition(
+                target_focal_point.x(), target_focal_point.y(), target_focal_point.z(),
+                current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
+                kUpVector.x(), kUpVector.y(), kUpVector.z()
+            );
+
         while (!viewer->wasStopped()) {
             auto frame_ptr = frame_queue.pop(); //
             if (!frame_ptr) break;
