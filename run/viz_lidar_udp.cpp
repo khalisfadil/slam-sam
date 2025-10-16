@@ -35,17 +35,29 @@ int main() {
     lidarUdpConfig.enableBroadcast = false; 
     lidarUdpConfig.ttl =  std::nullopt; 
 
-    auto lidar_callback = [&callback, &lidarQueue, last_frame_id](const DataBuffer& packet) {
+    auto lidar_callback = [&packetQueue](const DataBuffer& packet) {
         if (!running) return;
-        auto frame = std::make_unique<LidarFrame>();
-        callback.DecodePacketRng19(packet, *frame);
-        
-        if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
-            *last_frame_id = frame->frame_id;
-            std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
-            // Move the frame pointer into the queue. No heavy copying.
-            lidarQueue.push(std::move(frame));
-        }};
+        auto packet_ptr = std::make_unique<DataBuffer>(packet);
+        packetQueue.push(std::move(packet_ptr));
+    };
+
+    auto processing_thread = std::thread([&]() {
+        while (running) {
+            auto packet_ptr = packetQueue.pop();
+            if (!packet_ptr) break; // Queue was stopped
+
+            auto frame = std::make_unique<LidarFrame>();
+            
+            // No lock needed! This is the only thread calling the callback.
+            callback.DecodePacketRng19(*packet_ptr, *frame);
+            
+            if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
+                *last_frame_id = frame->frame_id;
+                std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
+                lidarQueue.push(std::move(frame));
+            }
+        }
+    });
 
     auto error_callback = [](const boost::system::error_code& ec) {
        if (running) {
@@ -108,8 +120,10 @@ int main() {
     packetQueue.stop();
     lidarQueue.stop();
     io_context.stop();
-    if (viz_thread.joinable()) viz_thread.join();
     if (io_thread.joinable()) io_thread.join();
+    if (processing_thread.joinable()) processing_thread.join();
+    if (viz_thread.joinable()) viz_thread.join();
+    
 
     return 0;
 }
