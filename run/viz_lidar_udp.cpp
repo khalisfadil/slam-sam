@@ -43,15 +43,16 @@ int main() {
     auto lidar_thread = std::thread([&callback, &packetQueue, &lidarQueue, last_frame_id]() {
         try {
             while (running) {
-                auto packet = packetQueue.pop();
-                callback.DecodePacketRng19(*packet);
-                auto frame = std::make_unique<LidarFrame>(callback.GetLatestFrame());
-
-                if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
-                    *last_frame_id = frame->frame_id;
-                    std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
-                    // Move the frame pointer into the queue. No heavy copying.
-                    lidarQueue.push(std::move(frame));
+                auto packet_ptr = packetQueue.pop();
+                if (!packet_ptr) {
+                    break;
+                }
+                bool frame_is_complete = callback.DecodePacketRng19(*packet_ptr);
+                if (frame_is_complete) {
+                    auto finished_frame = std::make_unique<LidarFrame>(callback.GetLatestFrame());
+                    std::cout << "Processed complete frame " << finished_frame->frame_id 
+                            << " with " << finished_frame->numberpoints << " points\n";
+                    lidarQueue.push(std::move(finished_frame));
                 }
             }
         } catch (const std::exception& e) {
@@ -69,9 +70,7 @@ int main() {
 
     auto io_thread = std::thread([&io_context]() {
         try {
-            while (running) {
-                io_context.run_one();
-            }
+                io_context.run();
         } catch (const std::exception& e) {
             std::cerr << "IO context error: " << e.what() << "\n";
         }

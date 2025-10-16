@@ -355,7 +355,9 @@ void LidarCallback::Initialize() {
 }
 // %            ... decode_packet_legacy
 // %            ... decode_packet_legacy
-void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
+bool LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
+    bool frame_completed = false;
+
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
         return;
@@ -398,6 +400,7 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
             if (this->frame_id_ != 0 || this->number_points_ > 0) {
                 p_current_write_buffer->numberpoints = this->number_points_;
                 p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
+                frame_completed = true;
             }
             prev_frame_completed_latest_ts = this->latest_timestamp_s;
             SwapBuffer();
@@ -596,9 +599,12 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
     if (p_current_write_buffer) {
         p_current_write_buffer->numberpoints = this->number_points_;
     }
+    return frame_completed;
 }
 // %            ... decode_packet_single_return
-void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
+bool LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
+    bool frame_completed = false;
+
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
         return;
@@ -623,6 +629,7 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
         if (this->frame_id_ != 0 || this->number_points_ > 0) {
             p_current_write_buffer->numberpoints = this->number_points_;
             p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
+            frame_completed = true;
         }
         prev_frame_completed_latest_ts = this->latest_timestamp_s;
         SwapBuffer();
@@ -842,4 +849,6 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
     if (p_current_write_buffer) {
         p_current_write_buffer->numberpoints = this->number_points_;
     }
+
+    frame_completed = true;
 }
