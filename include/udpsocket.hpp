@@ -27,7 +27,7 @@ struct UdpSocketConfig {
 
 using DataBuffer = std::vector<uint8_t>;
 using UdpSocketPtr = std::shared_ptr<class UdpSocket>;
-using DataCallback = std::function<void(std::unique_ptr<DataBuffer>)>;
+using DataCallback = std::function<void(std::unique_ptr<DataBuffer>&)>;
 using ErrorCallback = std::function<void(const boost::system::error_code&)>;
 
 
