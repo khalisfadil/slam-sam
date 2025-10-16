@@ -17,7 +17,7 @@ class LidarCallback {
         explicit LidarCallback(const nlohmann::json& json_meta,const nlohmann::json& json_param);
         std::unique_ptr<LidarFrame> DecodePacketRng19(const std::vector<uint8_t>& packet);
         std::unique_ptr<LidarFrame> DecodePacketLegacy(const std::vector<uint8_t>& packet); 
-        const LidarFrame& GetLatestFrame() const { return buffer_toggle_ ? data_buffer1_ : data_buffer2_; }
+        const LidarFrame& GetLatestFrame() const { return buffer_toggle_ ? *data_buffer1_ : *data_buffer2_; }
         const nlohmann::json& GetMetadata() const { return metadata_; }
 
     private:
@@ -73,8 +73,8 @@ class LidarCallback {
         uint16_t frame_id_ = 0;
         uint32_t number_points_ = 0;
         double latest_timestamp_s = 0.0;
-        LidarFrame data_buffer1_;
-        LidarFrame data_buffer2_;
+        std::unique_ptr<LidarFrame> data_buffer1_;
+        std::unique_ptr<LidarFrame> data_buffer2_;
         bool buffer_toggle_ = true;
         float zfiltermax_ = 0.0f;
         float zfiltermin_ = -300.0f;
