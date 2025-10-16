@@ -95,7 +95,7 @@ target_compile_options(pipeline PRIVATE -O3)
 # 2. Compass calibration executable
 add_executable(viz_lidar_udp run/viz_lidar_udp.cpp)
 target_link_libraries(viz_lidar_udp PRIVATE pipeline_lib)
-target_compile_options(pipviz_lidar_udpeline PRIVATE -O3)
+target_compile_options(viz_lidar_udp PRIVATE -O3)
 
 # --- Final Checks ---
 if(NOT VTK_FOUND)
