@@ -2,10 +2,10 @@
     "lidar_parameter": {
         "tb2s":                             [0.135, 0.0, 0.1243],
         "Cb2s":                             [-1.0,0.0,0.0,0.0,-1.0,0.0,0.0,0.0,1.0],
-        "channelStride":                    8,
-        "zAxisFilter":                      [-300.0, 0.0],
+        "channelStride":                    4,
+        "zAxisFilter":                      [-250.0, 0.0],
         "reflectionThreshold":              60,
-        "rangeFilter":                      [0.0, 300.0],
+        "rangeFilter":                      [0.0, 250.0],
         "vehicleFilterBox": {
             "center":                       [-3.0, 0.0, 1.0],
             "dimensions":                   [10.5, 3.0, 2.1]
