@@ -1,54 +1,7 @@
-// viz_lidar_udp.cpp (Optimized)
-#include <iostream>
-#include <thread>
-#include <mutex>
-#include <queue>
-#include <condition_variable>
-#include <chrono>
-#include <cstdint>
-#include <pcl/visualization/pcl_visualizer.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/filters/passthrough.h>
-#include <boost/asio.hpp>
-
-#include <lidarcallback.hpp>
-#include <udpsocket.hpp>
+#include <pipeline.hpp>
 
 // OPTIMIZATION 1: The queue now holds the lightweight LidarFrame struct.
 // Using std::unique_ptr to avoid copying large frame objects.
-using LidarFramePtr = std::unique_ptr<LidarFrame>;
-
-class LidarFrameQueue {
-    public:
-        void push(LidarFramePtr frame) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            queue_.push(std::move(frame));
-            cv_.notify_one();
-        }
-
-        LidarFramePtr pop() {
-            std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [this] { return !queue_.empty() || stopped_; });
-            if (queue_.empty() && stopped_) return nullptr;
-            LidarFramePtr frame = std::move(queue_.front());
-            queue_.pop();
-            return frame;
-        }
-
-        void stop() {
-            std::lock_guard<std::mutex> lock(mutex_);
-            stopped_ = true;
-            cv_.notify_all();
-        }
-
-    private:
-        std::queue<LidarFramePtr> queue_;
-        mutable std::mutex mutex_;
-        std::condition_variable cv_;
-        bool stopped_ = false;
-};
 
 int main() {
 
@@ -56,7 +9,8 @@ int main() {
     std::string param_path = "../config/lidar_config_berlin.json";
     LidarCallback callback(meta_path, param_path);
 
-    LidarFrameQueue frame_queue; // Use the new queue
+    FrameQueue<LidarFrame> lidarQueue;
+    FrameQueue<DataBuffer> packetQueue;
     
     // Using a shared_ptr for frameid allows safe sharing with the lambda
     auto last_frame_id = std::make_shared<uint16_t>(0);
@@ -74,19 +28,22 @@ int main() {
     lidarUdpConfig.enableBroadcast = false; 
     lidarUdpConfig.ttl =  std::nullopt; 
 
-    // OPTIMIZATION 1: data_callback is now very lightweight.
-    auto data_callback = [&callback, &frame_queue, last_frame_id](const DataBuffer& packet) {
-        // Use a unique_ptr to manage the frame's lifetime.
-        auto frame = std::make_unique<LidarFrame>();
-        callback.DecodePacketRng19(packet, *frame);
-        
+    auto data_callback = [&packetQueue](std::unique_ptr<DataBuffer> packet_ptr) {
+        packetQueue.push(std::move(packet_ptr));
+    };
+
+    auto lidar_thread = std::thread([&callback, &packetQueue, &lidarQueue, last_frame_id]() {
+        auto packet = packetQueue.pop();
+        callback.DecodePacketRng19(*packet);
+        auto frame = std::make_unique<LidarFrame>(callback.GetLatestFrame());
+
         if (frame->numberpoints > 0 && frame->frame_id != *last_frame_id) {
             *last_frame_id = frame->frame_id;
             std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
             // Move the frame pointer into the queue. No heavy copying.
-            frame_queue.push(std::move(frame));
+            lidarQueue.push(std::move(frame));
         }
-    };
+    });
 
     auto error_callback = [](const boost::system::error_code& ec) {
         std::cerr << "UDP error: " << ec.message() << "\n";
@@ -95,7 +52,7 @@ int main() {
     auto socket = UdpSocket::create(io_context, lidarUdpConfig, data_callback, error_callback);
 
     // In viz_lidar_udp.cpp
-    auto viz_thread = std::thread([&frame_queue]() {
+    auto viz_thread = std::thread([&lidarQueue]() {
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("LiDAR Visualizer");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "coord"); //
@@ -112,7 +69,7 @@ int main() {
             );
 
         while (!viewer->wasStopped()) {
-            auto frame_ptr = frame_queue.pop(); //
+            auto frame_ptr = lidarQueue.pop(); //
             if (!frame_ptr) break;
 
             // Create cloud in original NED coordinate system
@@ -143,7 +100,7 @@ int main() {
     std::cin.get();
 
     socket->stop();
-    frame_queue.stop();
+    lidarQueue.stop();
     io_context.stop();
     if (viz_thread.joinable()) viz_thread.join();
     if (io_thread.joinable()) io_thread.join();

@@ -77,20 +77,20 @@ target_link_libraries(pipeline_lib PUBLIC
 # Now, define each program. They are much simpler because all the heavy
 # lifting is done by the library.
 
-# 1. Main pipeline executable
-add_executable(pipeline_ligo_tc run/pipeline_ligo_tc.cpp)
-target_link_libraries(pipeline_ligo_tc PRIVATE pipeline_lib)
-target_compile_options(pipeline_ligo_tc PRIVATE -O3)
+# # 1. Main pipeline executable
+# add_executable(pipeline_ligo_tc run/pipeline_ligo_tc.cpp)
+# target_link_libraries(pipeline_ligo_tc PRIVATE pipeline_lib)
+# target_compile_options(pipeline_ligo_tc PRIVATE -O3)
 
-# 2. Compass calibration executable
-add_executable(pipeline_calib_compass run/pipeline_calib_compass.cpp)
-target_link_libraries(pipeline_calib_compass PRIVATE pipeline_lib)
-target_compile_options(pipeline_calib_compass PRIVATE -O3)
+# # 2. Compass calibration executable
+# add_executable(pipeline_calib_compass run/pipeline_calib_compass.cpp)
+# target_link_libraries(pipeline_calib_compass PRIVATE pipeline_lib)
+# target_compile_options(pipeline_calib_compass PRIVATE -O3)
 
-# 2. Compass calibration executable
-add_executable(pipeline run/pipeline.cpp)
-target_link_libraries(pipeline PRIVATE pipeline_lib)
-target_compile_options(pipeline PRIVATE -O3)
+# # 2. Compass calibration executable
+# add_executable(pipeline run/pipeline.cpp)
+# target_link_libraries(pipeline PRIVATE pipeline_lib)
+# target_compile_options(pipeline PRIVATE -O3)
 
 # 2. Compass calibration executable
 add_executable(viz_lidar_udp run/viz_lidar_udp.cpp)

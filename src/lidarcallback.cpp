@@ -355,7 +355,7 @@ void LidarCallback::Initialize() {
 }
 // %            ... decode_packet_legacy
 // %            ... decode_packet_legacy
-void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, LidarFrame& frame) {
+void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
         return;
@@ -596,10 +596,9 @@ void LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet, Lidar
     if (p_current_write_buffer) {
         p_current_write_buffer->numberpoints = this->number_points_;
     }
-    frame = GetLatestFrame();
 }
 // %            ... decode_packet_single_return
-void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarFrame& frame) {
+void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
         return;
@@ -843,5 +842,4 @@ void LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet, LidarF
     if (p_current_write_buffer) {
         p_current_write_buffer->numberpoints = this->number_points_;
     }
-    frame = GetLatestFrame();
 }
