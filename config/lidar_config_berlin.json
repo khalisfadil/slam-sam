@@ -4,7 +4,7 @@
         "Cb2s":                             [-1.0,0.0,0.0,0.0,-1.0,0.0,0.0,0.0,1.0],
         "channelStride":                    1,
         "zAxisFilter":                      [-300.0, 0.0],
-        "reflectionThreshold":              25,
+        "reflectionThreshold":              60,
         "rangeFilter":                      [0.0, 300.0],
         "vehicleFilterBox": {
             "center":                       [-3.0, 0.0, 1.0],
