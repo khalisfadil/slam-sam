@@ -37,7 +37,7 @@ int main() {
 
     auto data_callback = [&packetQueue](const DataBuffer& packet) {
         if (!running) return;
-        auto packet_ptr = std::make_shared<DataBuffer>(packet);
+        auto packet_ptr = std::make_unique<DataBuffer>(packet);
         packetQueue.push(std::move(packet_ptr));
     };
 
