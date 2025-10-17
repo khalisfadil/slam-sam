@@ -408,14 +408,17 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
         std::memcpy(&current_packet_frame_id_raw, packet.data() + block_offset + 10, sizeof(uint16_t));
         uint16_t current_packet_frame_id = le16toh(current_packet_frame_id_raw);
 
-        if (current_packet_frame_id != this->frame_id_ && this->number_points_ > 0) {
-            active_frame_->numberpoints = this->number_points_;
-            active_frame_->timestamp_end = this->latest_timestamp_s;
-            completed_frame = std::move(active_frame_);
-            active_frame_ = GetFrameFromPool();
+        if (current_packet_frame_id != this->frame_id_) {
+            if (this->number_points_ > 0) {
+                // A real frame is complete. Finalize it.
+                active_frame_->numberpoints = this->number_points_;
+                active_frame_->timestamp_end = this->latest_timestamp_s;
+                completed_frame = std::move(active_frame_);
+                active_frame_ = GetFrameFromPool();
+                prev_frame_completed_latest_ts = this->latest_timestamp_s; // Update before reset
+            }
             this->number_points_ = 0;
             this->frame_id_ = current_packet_frame_id;
-            prev_frame_completed_latest_ts = this->latest_timestamp_s;
         }
 
         this->latest_timestamp_s = current_col_timestamp_s;
@@ -633,14 +636,17 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
     uint16_t current_packet_frame_id = le16toh(current_packet_frame_id_raw);
 
     double prev_frame_completed_latest_ts = 0.0;
-    if (current_packet_frame_id != this->frame_id_ && this->number_points_ > 0) {
-        active_frame_->numberpoints = this->number_points_;
-        active_frame_->timestamp_end = this->latest_timestamp_s;
-        completed_frame = std::move(active_frame_);
-        active_frame_ = GetFrameFromPool();
+    if (current_packet_frame_id != this->frame_id_) {
+        if (this->number_points_ > 0) {
+            // A real frame is complete. Finalize it.
+            active_frame_->numberpoints = this->number_points_;
+            active_frame_->timestamp_end = this->latest_timestamp_s;
+            completed_frame = std::move(active_frame_);
+            active_frame_ = GetFrameFromPool();
+            prev_frame_completed_latest_ts = this->latest_timestamp_s; // Update before reset
+        }
         this->number_points_ = 0;
         this->frame_id_ = current_packet_frame_id;
-        prev_frame_completed_latest_ts = this->latest_timestamp_s;
     }
 
     bool is_first_point_of_current_frame = (this->number_points_ == 0);
