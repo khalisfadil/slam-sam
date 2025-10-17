@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <Eigen/Core>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
@@ -9,7 +10,7 @@
 #include <gtsam/linear/NoiseModel.h>
 
 #include <map.hpp>
-
+#include <algorithm>
 #include <cstdint> 
 #include <memory>
 
@@ -361,6 +362,26 @@ struct LidarFrame {
         reflectivity.clear();
         signal.clear();
         nir.clear();
+    }
+
+    void swap(LidarFrame& other) noexcept {
+        std::swap(frame_id, other.frame_id);
+        std::swap(timestamp, other.timestamp);
+        std::swap(timestamp_end, other.timestamp_end);
+        std::swap(interframe_timedelta, other.interframe_timedelta);
+        std::swap(numberpoints, other.numberpoints);
+
+        // Swap the vectors. This is the key to efficiency!
+        x.swap(other.x);
+        y.swap(other.y);
+        z.swap(other.z);
+        c_id.swap(other.c_id);
+        m_id.swap(other.m_id);
+        timestamp_points.swap(other.timestamp_points);
+        relative_timestamp.swap(other.relative_timestamp);
+        reflectivity.swap(other.reflectivity);
+        signal.swap(other.signal);
+        nir.swap(other.nir);
     }
 
     [[nodiscard]] PCLPointCloud toPCLPointCloud() const {
