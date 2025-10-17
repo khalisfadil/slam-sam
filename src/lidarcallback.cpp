@@ -350,13 +350,27 @@ void LidarCallback::Initialize() {
         throw std::runtime_error("pixel_shifts_subset_ size mismatch after initialization");
     }
     
-    // These assertions will now pass because the flat vector's allocator guarantees alignment.
+
+#endif
+
+#ifdef __AVX2__
+    std::cout << "AVX2" << std::endl;
     assert(reinterpret_cast<uintptr_t>(x_1_.data()) % 32 == 0 && "x_1_.data() not 32-byte aligned!");
     assert(reinterpret_cast<uintptr_t>(y_1_.data()) % 32 == 0 && "y_1_.data() not 32-byte aligned!");
     assert(reinterpret_cast<uintptr_t>(z_1_.data()) % 32 == 0 && "z_1_.data() not 32-byte aligned!");
     assert(reinterpret_cast<uintptr_t>(x_1_subset_.data()) % 32 == 0 && "x_1_subset_.data() not 32-byte aligned!");
     assert(reinterpret_cast<uintptr_t>(y_1_subset_.data()) % 32 == 0 && "y_1_subset_.data() not 32-byte aligned!");
     assert(reinterpret_cast<uintptr_t>(z_1_subset_.data()) % 32 == 0 && "z_1_subset_.data() not 32-byte aligned!");
+#else
+    std::cout << "non AVX2" << std::endl;
+    assert(reinterpret_cast<uintptr_t>(x_1_.data()) % 16 == 0 && "x_1_.data() not 16-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(y_1_.data()) % 16 == 0 && "y_1_.data() not 16-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(z_1_.data()) % 16 == 0 && "z_1_.data() not 16-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(x_1_subset_.data()) % 16 == 0 && "x_1_subset_.data() not 16-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(y_1_subset_.data()) % 16 == 0 && "y_1_subset_.data() not 16-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(z_1_subset_.data()) % 16 == 0 && "z_1_subset_.data() not 16-byte aligned!");
+#endif
+    
 }
 
 std::unique_ptr<LidarFrame> LidarCallback::DecodePacket(const std::vector<uint8_t>& packet) {

@@ -23,10 +23,17 @@ find_package(Eigen3 REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(GTSAM REQUIRED)
+find_library(CPUID_LIBRARY NAMES cpuid libcpuid)
+
+# Check for CPUID for runtime detection
+if(CPUID_LIBRARY)
+    message(STATUS "Found cpuid library: ${CPUID_LIBRARY}")
+else()
+    message(STATUS "cpuid library not found; runtime CPU detection disabled")
+    add_compile_definitions(NO_CPUID)
+endif()
 
 # --- Define Shared Library Sources ---
-# These are all the .cpp files that contain the core logic of your application,
-# excluding any files with a main() function.
 set(PIPELINE_LIB_SOURCES
     src/lidarcallback.cpp
     src/compcallback.cpp
@@ -40,7 +47,6 @@ set(PIPELINE_LIB_SOURCES
 )
 
 # --- Define Shared Include Directories ---
-# These directories are needed by the library and the executables.
 set(INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/ndt_omp/include
@@ -52,14 +58,9 @@ set(INCLUDE_DIRS
 )
 
 # --- Create the Shared Library ---
-# This command compiles all the source files above into a single library
-# named "pipeline_lib".
 add_library(pipeline_lib ${PIPELINE_LIB_SOURCES})
 
 # --- Configure the Shared Library ---
-# Set the necessary include paths and link the dependencies for the library.
-# Using PUBLIC ensures that any executable linking against pipeline_lib
-# will automatically inherit these properties.
 target_include_directories(pipeline_lib PUBLIC ${INCLUDE_DIRS})
 
 target_link_libraries(pipeline_lib PUBLIC
@@ -69,35 +70,47 @@ target_link_libraries(pipeline_lib PUBLIC
     Boost::system
     Boost::thread
     gtsam
-    TBB::tbb
-    TBB::tbbmalloc
+    # TBB::tbb and TBB::tbbmalloc are not standard find_package targets.
+    # If you have a custom FindTBB.cmake, this is fine. Otherwise, you may
+    # need to link to TBB libraries directly using their paths.
 )
 
-# --- Build the Executables ---
-# Now, define each program. They are much simpler because all the heavy
-# lifting is done by the library.
+# --- Set Target-Specific Compiler Flags ---
+# High-level optimization for the core library
+target_compile_options(pipeline_lib PUBLIC -O3)
 
+# Check for AVX2 and FMA support and apply to the library if available
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+check_cxx_compiler_flag("-mfma" COMPILER_SUPPORTS_FMA)
+if(COMPILER_SUPPORTS_AVX2 AND COMPILER_SUPPORTS_FMA)
+    message(STATUS "AVX2 and FMA are supported by the compiler. Enabling for pipeline_lib.")
+    target_compile_options(pipeline_lib PUBLIC -mavx2 -mfma)
+else()
+    message(WARNING "AVX2 or FMA not supported; using scalar implementation.")
+endif()
+
+
+# --- Build the Executables ---
 # # 1. Main pipeline executable
 # add_executable(pipeline_ligo_tc run/pipeline_ligo_tc.cpp)
 # target_link_libraries(pipeline_ligo_tc PRIVATE pipeline_lib)
-# target_compile_options(pipeline_ligo_tc PRIVATE -O3)
 
 # # 2. Compass calibration executable
 # add_executable(pipeline_calib_compass run/pipeline_calib_compass.cpp)
 # target_link_libraries(pipeline_calib_compass PRIVATE pipeline_lib)
-# target_compile_options(pipeline_calib_compass PRIVATE -O3)
 
 # # 2. Compass calibration executable
 # add_executable(pipeline run/pipeline.cpp)
 # target_link_libraries(pipeline PRIVATE pipeline_lib)
-# target_compile_options(pipeline PRIVATE -O3)
 
-# 2. Compass calibration executable
+# 2. Lidar Visualizer executable
 add_executable(viz_lidar_udp run/viz_lidar_udp.cpp)
 target_link_libraries(viz_lidar_udp PRIVATE pipeline_lib)
-target_compile_options(viz_lidar_udp PRIVATE -O3)
+# The optimization and AVX2 flags are inherited from pipeline_lib, so they're not needed here.
 
 # --- Final Checks ---
 if(NOT VTK_FOUND)
     message(FATAL_ERROR "VTK not found. Please install VTK.")
 endif()
+
