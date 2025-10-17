@@ -1,5 +1,8 @@
-// OusterLidarCallback.hpp
 #pragma once
+
+#ifdef __AVX2__
+#include <immintrin.h>
+#endif
 
 #include <Eigen/Dense>
 #include <nlohmann/json.hpp>
