@@ -17,6 +17,7 @@ int main() {
     LidarCallback callback(meta_path, param_path);
 
     FrameQueue<LidarFrame> lidarQueue;
+    FrameQueue<LidarFrame> lidarReturnQueue;
     FrameQueue<DataBuffer> packetQueue;
     
     // Using a shared_ptr for frameid allows safe sharing with the lambda
@@ -34,35 +35,37 @@ int main() {
     lidarUdpConfig.reuseAddress = true; 
     lidarUdpConfig.enableBroadcast = false; 
     lidarUdpConfig.ttl =  std::nullopt; 
-
+    // In viz_lidar_udp.cpp
     auto lidar_callback = [&packetQueue](std::unique_ptr<DataBuffer> packet_ptr) {
         if (!running) return;
         packetQueue.push(std::move(packet_ptr));
     };
-
-    auto processing_thread = std::thread([&]() {
+    // In viz_lidar_udp.cpp
+    auto processing_thread = std::thread([&callback, &packetQueue, &lidarReturnQueue, &lidarQueue]() {
         while (running) {
             auto packet_ptr = packetQueue.pop();
-            if (!packet_ptr) break; // Queue was stopped
-            
-            // No lock needed! This is the only thread calling the callback.
-            auto frame = callback.DecodePacketRng19(*packet_ptr);
-            
-            if (frame) {
-                std::cout << "Decoded frame " << frame->frame_id << " with " << frame->numberpoints << " points\n";
-                lidarQueue.push(std::move(frame));
+            if (!packet_ptr) {
+                if(running) continue;
+                else break;
             }
+            auto frame_ptr = callback.DecodePacket(*packet_ptr);
+            if (frame_ptr) {
+                std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
+                lidarQueue.push(std::move(frame_ptr));
+            }
+            auto return_packet_ptr = lidarReturnQueue.pop();
+            if (return_packet_ptr) callback.ReturnFrameToPool(std::move(return_packet_ptr));
         }
     });
-
+    // In viz_lidar_udp.cpp
     auto error_callback = [](const boost::system::error_code& ec) {
        if (running) {
             std::cerr << "LiDAR IO error: " << ec.message() << " (code: " << ec.value() << ")\n";
         }
     };
-
+    // In viz_lidar_udp.cpp
     auto socket = UdpSocket::create(io_context, lidarUdpConfig, lidar_callback, error_callback);
-
+    // In viz_lidar_udp.cpp
     auto io_thread = std::thread([&io_context]() {
         try {
                 io_context.run();
@@ -70,9 +73,8 @@ int main() {
             std::cerr << "IO context error: " << e.what() << "\n";
         }
     });
-
     // In viz_lidar_udp.cpp
-    auto viz_thread = std::thread([&lidarQueue]() {
+    auto viz_thread = std::thread([&lidarReturnQueue, &lidarQueue]() {
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("LiDAR Visualizer");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "coord"); //
@@ -105,6 +107,8 @@ int main() {
             viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "lidar_cloud"); //
             
             viewer->spinOnce(1); //
+
+            lidarReturnQueue.push(std::move(frame_ptr));
         }
     });
 
@@ -115,11 +119,11 @@ int main() {
     socket->stop();
     packetQueue.stop();
     lidarQueue.stop();
+    lidarReturnQueue.stop();
     io_context.stop();
     if (io_thread.joinable()) io_thread.join();
     if (processing_thread.joinable()) processing_thread.join();
     if (viz_thread.joinable()) viz_thread.join();
     
-
     return 0;
 }

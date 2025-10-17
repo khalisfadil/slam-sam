@@ -7,6 +7,7 @@
 #include <string>
 #include <cstdint>
 #include <mutex>
+#include <deque>
 
 #include <dataframe.hpp>
 
@@ -15,10 +16,10 @@ class LidarCallback {
 
         explicit LidarCallback(const std::string& json_meta_path, const std::string& json_param_path);
         explicit LidarCallback(const nlohmann::json& json_meta,const nlohmann::json& json_param);
+        std::unique_ptr<LidarFrame> DecodePacket(const std::vector<uint8_t>& packet);
         std::unique_ptr<LidarFrame> DecodePacketRng19(const std::vector<uint8_t>& packet);
         std::unique_ptr<LidarFrame> DecodePacketLegacy(const std::vector<uint8_t>& packet); 
-        const LidarFrame& GetLatestFrame() const { return buffer_toggle_ ? *data_buffer1_ : *data_buffer2_; }
-        const nlohmann::json& GetMetadata() const { return metadata_; }
+        void ReturnFrameToPool(std::unique_ptr<LidarFrame> frame);
 
     private:
 
@@ -73,9 +74,10 @@ class LidarCallback {
         uint16_t frame_id_ = 0;
         uint32_t number_points_ = 0;
         double latest_timestamp_s = 0.0;
-        std::unique_ptr<LidarFrame> data_buffer1_;
-        std::unique_ptr<LidarFrame> data_buffer2_;
-        bool buffer_toggle_ = true;
+
+        std::unique_ptr<LidarFrame> active_frame_;
+        std::deque<std::unique_ptr<LidarFrame>> frame_pool_;
+        
         float zfiltermax_ = 0.0f;
         float zfiltermin_ = -300.0f;
         float rfiltermax_ = 200.0f;
@@ -85,9 +87,11 @@ class LidarCallback {
         Eigen::Vector3f vehicle_box_dimensions_ = Eigen::Vector3f::Zero();
         Eigen::Vector3f vehicle_box_min_ = Eigen::Vector3f::Zero();
         Eigen::Vector3f vehicle_box_max_ = Eigen::Vector3f::Zero();
+        size_t poolsize_ = 4;
 
         void Initialize();
+        void InitializePool(size_t pool_size = 4);
+        std::unique_ptr<LidarFrame> GetFrameFromPool();
         void ParseMetadata(const nlohmann::json& json_data);
         void ParseParamdata(const nlohmann::json& json_data);
-        void SwapBuffer() { buffer_toggle_ = !buffer_toggle_; }
 };

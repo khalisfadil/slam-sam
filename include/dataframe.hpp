@@ -346,6 +346,11 @@ struct LidarFrame {
     }
 
     void clear() {
+        frame_id = 0;
+        timestamp = 0.0;
+        timestamp_end = 0.0;
+        interframe_timedelta = 0.0;
+        numberpoints = 0;
         x.clear();
         y.clear();
         z.clear();
@@ -356,7 +361,6 @@ struct LidarFrame {
         reflectivity.clear();
         signal.clear();
         nir.clear();
-        numberpoints = 0;
     }
 
     [[nodiscard]] PCLPointCloud toPCLPointCloud() const {

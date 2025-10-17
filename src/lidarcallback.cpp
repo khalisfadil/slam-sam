@@ -180,6 +180,9 @@ void LidarCallback::ParseParamdata(const json& json_param_data) {
                 );
             }
         }
+        if (lidar_param.contains("poolSize")) {
+            poolsize_ = lidar_param["poolSize"].get<size_t>();
+        }
     } catch (const json::exception& e) {
         throw std::runtime_error("JSON parsing error in metadata: " + std::string(e.what()));
     }
@@ -319,17 +322,12 @@ void LidarCallback::Initialize() {
         }
     }
 
-    // Allocate the LidarFrame objects using std::make_unique
-    data_buffer1_ = std::make_unique<LidarFrame>();
-    data_buffer2_ = std::make_unique<LidarFrame>();
-
-    // Use pointer access '->' to call member functions
-    data_buffer1_->reserve(columns_per_frame_ * pixels_per_column_);
-    data_buffer2_->reserve(columns_per_frame_ * pixels_per_column_);
-
     Eigen::Vector3f half_dims = vehicle_box_dimensions_ / 2.0f;
     vehicle_box_min_ = vehicle_box_center_ - half_dims;
     vehicle_box_max_ = vehicle_box_center_ + half_dims;
+
+    InitializePool(poolsize_); 
+    active_frame_ = GetFrameFromPool();
 
     // Sanity checks for lookup table sizes
     if (x_1_.size() != static_cast<size_t>(columns_per_frame_) || (!x_1_.empty() && x_1_[0].size() != static_cast<size_t>(pixels_per_column_))) {
@@ -347,29 +345,31 @@ void LidarCallback::Initialize() {
     if (pixel_shifts_subset_.size() != static_cast<size_t>(subset_channels_)) {
         throw std::runtime_error("pixel_shifts_subset_ size mismatch after initialization");
     }
-
-#ifdef DEBUG
     if (!x_1_.empty() && !x_1_[0].empty()) {
         assert(reinterpret_cast<uintptr_t>(x_1_[0].data()) % 32 == 0 && "x_1_[0].data() not 32-byte aligned!");
     }
     if (!x_1_subset_.empty() && !x_1_subset_[0].empty()) {
         assert(reinterpret_cast<uintptr_t>(x_1_subset_[0].data()) % 32 == 0 && "x_1_subset_[0].data() not 32-byte aligned!");
     }
-#endif
+}
+
+std::unique_ptr<LidarFrame> LidarCallback::DecodePacket(const std::vector<uint8_t>& packet) {
+    if (udp_profile_lidar_ == "RNG19_RFL8_SIG16_NIR16") {
+        return DecodePacketRng19(packet);
+    } else if (udp_profile_lidar_ == "LEGACY") {
+        return DecodePacketLegacy(packet);
+    }
+    return nullptr;
 }
 // %            ... decode_packet_legacy
-// %            ... decode_packet_legacy
 std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<uint8_t>& packet) {
-
-    std::unique_ptr<LidarFrame> completed_frame = nullptr;
 
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
         return nullptr;
     }
 
-    // LidarFrame* p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
-    LidarFrame* p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
+    std::unique_ptr<LidarFrame> completed_frame = nullptr;
 
     double prev_frame_completed_latest_ts = 0.0;
     if (this->latest_timestamp_s > 0.0) {
@@ -402,25 +402,14 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
         std::memcpy(&current_packet_frame_id_raw, packet.data() + block_offset + 10, sizeof(uint16_t));
         uint16_t current_packet_frame_id = le16toh(current_packet_frame_id_raw);
 
-        if (current_packet_frame_id != this->frame_id_) {
-            if (this->frame_id_ != 0 || this->number_points_ > 0) {
-                p_current_write_buffer->numberpoints = this->number_points_;
-                p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
-                completed_frame = buffer_toggle_ ? std::move(data_buffer2_) : std::move(data_buffer1_);
-                if (buffer_toggle_) {
-                    data_buffer2_ = std::make_unique<LidarFrame>();
-                } else {
-                    data_buffer1_ = std::make_unique<LidarFrame>();
-                }
-            }
-            prev_frame_completed_latest_ts = this->latest_timestamp_s;
-            SwapBuffer();
-            p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
-            // p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
+        if (current_packet_frame_id != this->frame_id_ && this->number_points_ > 0) {
+            active_frame_->numberpoints = this->number_points_;
+            active_frame_->timestamp_end = this->latest_timestamp_s;
+            completed_frame = std::move(active_frame_);
+            active_frame_ = GetFrameFromPool();
             this->number_points_ = 0;
             this->frame_id_ = current_packet_frame_id;
-            // p_current_write_buffer->clear();
-            p_current_write_buffer->reserve(columns_per_frame_ * pixels_per_column_);
+            prev_frame_completed_latest_ts = this->latest_timestamp_s;
         }
 
         this->latest_timestamp_s = current_col_timestamp_s;
@@ -508,8 +497,8 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
             alignas(32) float valid_mask_arr[8];
             _mm256_store_ps(valid_mask_arr, valid_mask);
 
-            double relative_timestamp_s = (p_current_write_buffer->numberpoints > 0 || this->number_points_ > 0) && p_current_write_buffer->timestamp > 0
-                ? std::max(0.0, current_col_timestamp_s - p_current_write_buffer->timestamp)
+            double relative_timestamp_s = (active_frame_->numberpoints > 0 || this->number_points_ > 0) && active_frame_->timestamp > 0
+                ? std::max(0.0, current_col_timestamp_s - active_frame_->timestamp)
                 : 0.0;
 
             for (int i = 0; i < 8; ++i) {
@@ -523,22 +512,22 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
 
                     // Check if the Z coordinate is within the desired range [-200.0, 0.0]
                     if (!is_in_vehicle_box && ((pt_z_arr[i] >= zfiltermin_ && pt_z_arr[i] <= zfiltermax_) || (reflectivity[i] >= reflectivity_threshold_))) {
-                        p_current_write_buffer->x.push_back(pt_x_arr[i]);
-                        p_current_write_buffer->y.push_back(pt_y_arr[i]);
-                        p_current_write_buffer->z.push_back(pt_z_arr[i]);
-                        p_current_write_buffer->c_id.push_back(c_ids[i]);
-                        p_current_write_buffer->m_id.push_back(m_id);
-                        p_current_write_buffer->timestamp_points.push_back(current_col_timestamp_s);
-                        p_current_write_buffer->relative_timestamp.push_back(static_cast<float>(relative_timestamp_s));
-                        p_current_write_buffer->reflectivity.push_back(reflectivity[i]);
-                        p_current_write_buffer->signal.push_back(signal[i]);
-                        p_current_write_buffer->nir.push_back(nir[i]);
+                        active_frame_->x.push_back(pt_x_arr[i]);
+                        active_frame_->y.push_back(pt_y_arr[i]);
+                        active_frame_->z.push_back(pt_z_arr[i]);
+                        active_frame_->c_id.push_back(c_ids[i]);
+                        active_frame_->m_id.push_back(m_id);
+                        active_frame_->timestamp_points.push_back(current_col_timestamp_s);
+                        active_frame_->relative_timestamp.push_back(static_cast<float>(relative_timestamp_s));
+                        active_frame_->reflectivity.push_back(reflectivity[i]);
+                        active_frame_->signal.push_back(signal[i]);
+                        active_frame_->nir.push_back(nir[i]);
 
                         this->number_points_++;
                         if (is_first_point_of_current_frame) {
-                            p_current_write_buffer->timestamp = current_col_timestamp_s;
-                            p_current_write_buffer->frame_id = this->frame_id_;
-                            p_current_write_buffer->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
+                            active_frame_->timestamp = current_col_timestamp_s;
+                            active_frame_->frame_id = this->frame_id_;
+                            active_frame_->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
                                 ? std::max(0.0, current_col_timestamp_s - prev_frame_completed_latest_ts) : 0.0;
                             is_first_point_of_current_frame = false;
                         }
@@ -581,26 +570,26 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
 
             // Check if the Z coordinate is within the desired range [-200.0, 0.0]
             if (!is_in_vehicle_box && ((pt_z >= zfiltermin_ && pt_z <= zfiltermax_) || (current_reflectivity >= reflectivity_threshold_))) { // <-- ADDED FILTER
-                double relative_timestamp_s = (p_current_write_buffer->numberpoints > 0 || this->number_points_ > 0) && p_current_write_buffer->timestamp > 0
-                    ? std::max(0.0, current_col_timestamp_s - p_current_write_buffer->timestamp)
+                double relative_timestamp_s = (active_frame_->numberpoints > 0 || this->number_points_ > 0) && active_frame_->timestamp > 0
+                    ? std::max(0.0, current_col_timestamp_s - active_frame_->timestamp)
                     : 0.0;
 
-                p_current_write_buffer->x.push_back(pt_x);
-                p_current_write_buffer->y.push_back(pt_y);
-                p_current_write_buffer->z.push_back(pt_z);
-                p_current_write_buffer->c_id.push_back(c_id);
-                p_current_write_buffer->m_id.push_back(m_id);
-                p_current_write_buffer->timestamp_points.push_back(current_col_timestamp_s);
-                p_current_write_buffer->relative_timestamp.push_back(static_cast<float>(relative_timestamp_s));
-                p_current_write_buffer->reflectivity.push_back(current_reflectivity);
-                p_current_write_buffer->signal.push_back(current_signal);
-                p_current_write_buffer->nir.push_back(current_nir);
+                active_frame_->x.push_back(pt_x);
+                active_frame_->y.push_back(pt_y);
+                active_frame_->z.push_back(pt_z);
+                active_frame_->c_id.push_back(c_id);
+                active_frame_->m_id.push_back(m_id);
+                active_frame_->timestamp_points.push_back(current_col_timestamp_s);
+                active_frame_->relative_timestamp.push_back(static_cast<float>(relative_timestamp_s));
+                active_frame_->reflectivity.push_back(current_reflectivity);
+                active_frame_->signal.push_back(current_signal);
+                active_frame_->nir.push_back(current_nir);
 
                 this->number_points_++;
                 if (is_first_point_of_current_frame) {
-                    p_current_write_buffer->timestamp = current_col_timestamp_s;
-                    p_current_write_buffer->frame_id = this->frame_id_;
-                    p_current_write_buffer->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
+                    active_frame_->timestamp = current_col_timestamp_s;
+                    active_frame_->frame_id = this->frame_id_;
+                    active_frame_->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
                         ? std::max(0.0, current_col_timestamp_s - prev_frame_completed_latest_ts) : 0.0;
                     is_first_point_of_current_frame = false;
                 }
@@ -609,20 +598,20 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
 #endif
     }
 
-    if (p_current_write_buffer) {
-        p_current_write_buffer->numberpoints = this->number_points_;
+    if (active_frame_) {
+        active_frame_->numberpoints = this->number_points_;
     }
     return completed_frame;;
 }
 // %            ... decode_packet_single_return
 std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {
 
-    std::unique_ptr<LidarFrame> completed_frame = nullptr;
-
     if (packet.size() != expected_size_) {
         std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
         return nullptr;
     }
+
+    std::unique_ptr<LidarFrame> completed_frame = nullptr;
 
     uint16_t packet_type_raw;
     std::memcpy(&packet_type_raw, packet.data(), sizeof(uint16_t));
@@ -636,29 +625,15 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
     std::memcpy(&current_packet_frame_id_raw, packet.data() + 2, sizeof(uint16_t));
     uint16_t current_packet_frame_id = le16toh(current_packet_frame_id_raw);
 
-    LidarFrame* p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
-    // LidarFrame* p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
-
     double prev_frame_completed_latest_ts = 0.0;
-    if (current_packet_frame_id != this->frame_id_) {
-        if (this->frame_id_ != 0 || this->number_points_ > 0) {
-            p_current_write_buffer->numberpoints = this->number_points_;
-            p_current_write_buffer->timestamp_end = this->latest_timestamp_s;
-            completed_frame = buffer_toggle_ ? std::move(data_buffer2_) : std::move(data_buffer1_);
-            if (buffer_toggle_) {
-                data_buffer2_ = std::make_unique<LidarFrame>();
-            } else {
-                data_buffer1_ = std::make_unique<LidarFrame>();
-            }
-        }
-        prev_frame_completed_latest_ts = this->latest_timestamp_s;
-        SwapBuffer();
-        p_current_write_buffer = buffer_toggle_ ? data_buffer2_.get() : data_buffer1_.get();
-        // p_current_write_buffer = buffer_toggle_ ? &data_buffer2_ : &data_buffer1_;
+    if (current_packet_frame_id != this->frame_id_ && this->number_points_ > 0) {
+        active_frame_->numberpoints = this->number_points_;
+        active_frame_->timestamp_end = this->latest_timestamp_s;
+        completed_frame = std::move(active_frame_);
+        active_frame_ = GetFrameFromPool();
         this->number_points_ = 0;
         this->frame_id_ = current_packet_frame_id;
-        // p_current_write_buffer->clear();
-        p_current_write_buffer->reserve(columns_per_frame_ * pixels_per_column_);
+        prev_frame_completed_latest_ts = this->latest_timestamp_s;
     }
 
     bool is_first_point_of_current_frame = (this->number_points_ == 0);
@@ -766,8 +741,8 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
             alignas(32) float valid_mask_arr[8];
             _mm256_store_ps(valid_mask_arr, valid_mask);
 
-            double relative_timestamp_s = (p_current_write_buffer->numberpoints > 0 || this->number_points_ > 0) && p_current_write_buffer->timestamp > 0
-                ? std::max(0.0, current_col_timestamp_s - p_current_write_buffer->timestamp)
+            double relative_timestamp_s = (active_frame_->numberpoints > 0 || this->number_points_ > 0) && active_frame_->timestamp > 0
+                ? std::max(0.0, current_col_timestamp_s - active_frame_->timestamp)
                 : 0.0;
 
             for (int i = 0; i < 8; ++i) {
@@ -780,22 +755,22 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
                                   pt_z_arr[i] >= vehicle_box_min_.z() && pt_z_arr[i] <= vehicle_box_max_.z());
 
                     if (!is_in_vehicle_box && ((pt_z_arr[i] >= zfiltermin_ && pt_z_arr[i] <= zfiltermax_) || (reflectivity[i] >= reflectivity_threshold_))) {
-                        p_current_write_buffer->x.push_back(pt_x_arr[i]);
-                        p_current_write_buffer->y.push_back(pt_y_arr[i]);
-                        p_current_write_buffer->z.push_back(pt_z_arr[i]);
-                        p_current_write_buffer->c_id.push_back(c_ids[i]);
-                        p_current_write_buffer->m_id.push_back(m_id);
-                        p_current_write_buffer->timestamp_points.push_back(current_col_timestamp_s);
-                        p_current_write_buffer->relative_timestamp.push_back(static_cast<float>(relative_timestamp_s));
-                        p_current_write_buffer->reflectivity.push_back(reflectivity[i]);
-                        p_current_write_buffer->signal.push_back(signal[i]);
-                        p_current_write_buffer->nir.push_back(nir[i]);
+                        active_frame_->x.push_back(pt_x_arr[i]);
+                        active_frame_->y.push_back(pt_y_arr[i]);
+                        active_frame_->z.push_back(pt_z_arr[i]);
+                        active_frame_->c_id.push_back(c_ids[i]);
+                        active_frame_->m_id.push_back(m_id);
+                        active_frame_->timestamp_points.push_back(current_col_timestamp_s);
+                        active_frame_->relative_timestamp.push_back(static_cast<float>(relative_timestamp_s));
+                        active_frame_->reflectivity.push_back(reflectivity[i]);
+                        active_frame_->signal.push_back(signal[i]);
+                        active_frame_->nir.push_back(nir[i]);
 
                         this->number_points_++;
                         if (is_first_point_of_current_frame) {
-                            p_current_write_buffer->timestamp = current_col_timestamp_s;
-                            p_current_write_buffer->frame_id = this->frame_id_;
-                            p_current_write_buffer->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
+                            active_frame_->timestamp = current_col_timestamp_s;
+                            active_frame_->frame_id = this->frame_id_;
+                            active_frame_->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
                                 ? std::max(0.0, current_col_timestamp_s - prev_frame_completed_latest_ts) : 0.0;
                             is_first_point_of_current_frame = false;
                         }
@@ -839,26 +814,26 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
 
             // Check if the Z coordinate is within the desired range [-200.0, 0.0]
             if (!is_in_vehicle_box && ((pt_z >= zfiltermin_ && pt_z <= zfiltermax_) || (current_reflectivity >= reflectivity_threshold_))) {
-                double relative_timestamp_s = (p_current_write_buffer->numberpoints > 0 || this->number_points_ > 0) && p_current_write_buffer->timestamp > 0
-                    ? std::max(0.0, current_col_timestamp_s - p_current_write_buffer->timestamp)
+                double relative_timestamp_s = (active_frame_->numberpoints > 0 || this->number_points_ > 0) && active_frame_->timestamp > 0
+                    ? std::max(0.0, current_col_timestamp_s - active_frame_->timestamp)
                     : 0.0;
 
-                p_current_write_buffer->x.push_back(pt_x);
-                p_current_write_buffer->y.push_back(pt_y);
-                p_current_write_buffer->z.push_back(pt_z);
-                p_current_write_buffer->c_id.push_back(c_id);
-                p_current_write_buffer->m_id.push_back(m_id);
-                p_current_write_buffer->timestamp_points.push_back(current_col_timestamp_s);
-                p_current_write_buffer->relative_timestamp.push_back(static_cast<float>(relative_timestamp_s));
-                p_current_write_buffer->reflectivity.push_back(current_reflectivity);
-                p_current_write_buffer->signal.push_back(current_signal);
-                p_current_write_buffer->nir.push_back(current_nir);
+                active_frame_->x.push_back(pt_x);
+                active_frame_->y.push_back(pt_y);
+                active_frame_->z.push_back(pt_z);
+                active_frame_->c_id.push_back(c_id);
+                active_frame_->m_id.push_back(m_id);
+                active_frame_->timestamp_points.push_back(current_col_timestamp_s);
+                active_frame_->relative_timestamp.push_back(static_cast<float>(relative_timestamp_s));
+                active_frame_->reflectivity.push_back(current_reflectivity);
+                active_frame_->signal.push_back(current_signal);
+                active_frame_->nir.push_back(current_nir);
 
                 this->number_points_++;
                 if (is_first_point_of_current_frame) {
-                    p_current_write_buffer->timestamp = current_col_timestamp_s;
-                    p_current_write_buffer->frame_id = this->frame_id_;
-                    p_current_write_buffer->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
+                    active_frame_->timestamp = current_col_timestamp_s;
+                    active_frame_->frame_id = this->frame_id_;
+                    active_frame_->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
                         ? std::max(0.0, current_col_timestamp_s - prev_frame_completed_latest_ts) : 0.0;
                     is_first_point_of_current_frame = false;
                 }
@@ -867,8 +842,34 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
 #endif
     }
 
-    if (p_current_write_buffer) {
-        p_current_write_buffer->numberpoints = this->number_points_;
+    if (active_frame_) {
+        active_frame_->numberpoints = this->number_points_;
     }
     return completed_frame;
+}
+
+void LidarCallback::InitializePool(size_t pool_size) {
+    for (size_t i = 0; i < pool_size; ++i) {
+        auto frame = std::make_unique<LidarFrame>();
+        frame->reserve(columns_per_frame_ * pixels_per_column_);
+        frame_pool_.push_back(std::move(frame));
+    }
+}
+
+std::unique_ptr<LidarFrame> LidarCallback::GetFrameFromPool() {
+    if (!frame_pool_.empty()) {
+        std::unique_ptr<LidarFrame> frame = std::move(frame_pool_.front());
+        frame_pool_.pop_front();
+        return frame;
+    }
+    auto frame = std::make_unique<LidarFrame>();
+    frame->reserve(columns_per_frame_ * pixels_per_column_);
+    return frame;
+}
+
+void LidarCallback::ReturnFrameToPool(std::unique_ptr<LidarFrame> frame) {
+    if (frame) {
+        frame->clear(); // Reset the frame for reuse
+        frame_pool_.push_back(std::move(frame));
+    }
 }
