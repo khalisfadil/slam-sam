@@ -349,9 +349,6 @@ void LidarCallback::Initialize() {
     if (pixel_shifts_subset_.size() != static_cast<size_t>(subset_channels_)) {
         throw std::runtime_error("pixel_shifts_subset_ size mismatch after initialization");
     }
-    
-
-#endif
 
 #ifdef __AVX2__
     std::cout << "AVX2" << std::endl;
