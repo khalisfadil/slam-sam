@@ -1,7 +1,5 @@
 #pragma once
 
-#include <immintrin.h>
-
 #include <Eigen/Dense>
 #include <nlohmann/json.hpp>
 #include <vector>

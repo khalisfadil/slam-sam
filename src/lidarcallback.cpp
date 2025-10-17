@@ -419,6 +419,10 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
         std::memcpy(&current_packet_frame_id_raw, packet.data() + block_offset + 10, sizeof(uint16_t));
         uint16_t current_packet_frame_id = le16toh(current_packet_frame_id_raw);
 
+        if (this->number_points_ == 0 && active_frame_->timestamp == 0.0) {
+            this->frame_id_ = current_packet_frame_id;
+        }
+
         if (current_packet_frame_id != this->frame_id_) {
             if (this->number_points_ > 0) {
                 // A real frame is complete. Finalize it.
@@ -647,6 +651,11 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
     uint16_t current_packet_frame_id = le16toh(current_packet_frame_id_raw);
 
     double prev_frame_completed_latest_ts = 0.0;
+
+    if (this->number_points_ == 0 && active_frame_->timestamp == 0.0) {
+        this->frame_id_ = current_packet_frame_id;
+    }
+
     if (current_packet_frame_id != this->frame_id_) {
         if (this->number_points_ > 0) {
             // A real frame is complete. Finalize it.
