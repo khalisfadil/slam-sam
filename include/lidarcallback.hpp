@@ -32,9 +32,9 @@ class LidarCallback {
         uint16_t subset_channels_;    // Number of channels in subset tables (ceiling(pixels_per_column_ / N))
 
         // Original lookup tables
-        std::vector<std::vector<float, Eigen::aligned_allocator<float>>> x_1_;
-        std::vector<std::vector<float, Eigen::aligned_allocator<float>>> y_1_;
-        std::vector<std::vector<float, Eigen::aligned_allocator<float>>> z_1_;
+        std::vector<float, Eigen::aligned_allocator<float>> x_1_;
+        std::vector<float, Eigen::aligned_allocator<float>> y_1_;
+        std::vector<float, Eigen::aligned_allocator<float>> z_1_;
         std::vector<float> x_2_;
         std::vector<float> y_2_;
         std::vector<float> z_2_;
@@ -46,9 +46,9 @@ class LidarCallback {
         std::vector<float> cos_beam_altitudes_;
         std::vector<int> pixel_shifts_;
         // Subset lookup tables for channels that are multiples of N
-        std::vector<std::vector<float, Eigen::aligned_allocator<float>>> x_1_subset_;
-        std::vector<std::vector<float, Eigen::aligned_allocator<float>>> y_1_subset_;
-        std::vector<std::vector<float, Eigen::aligned_allocator<float>>> z_1_subset_;
+        std::vector<float, Eigen::aligned_allocator<float>> x_1_subset_;
+        std::vector<float, Eigen::aligned_allocator<float>> y_1_subset_;
+        std::vector<float, Eigen::aligned_allocator<float>> z_1_subset_;
         std::vector<float> r_min_subset_;
         std::vector<float> r_max_subset_;
         std::vector<float> sin_beam_azimuths_subset_;

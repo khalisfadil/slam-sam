@@ -220,6 +220,10 @@ void LidarCallback::Initialize() {
     // Calculate number of channels in subset
     subset_channels_ = (pixels_per_column_ + channel_stride_ - 1) / channel_stride_; // Ceiling division
 
+    // --- FIX: Use resize() on flat 1D vectors instead of assign() on 2D vectors ---
+    size_t total_size = (size_t)columns_per_frame_ * pixels_per_column_;
+    size_t subset_total_size = (size_t)columns_per_frame_ * subset_channels_;
+
     // Original lookup tables
     sin_beam_azimuths_.resize(pixels_per_column_);
     cos_beam_azimuths_.resize(pixels_per_column_);
@@ -227,9 +231,9 @@ void LidarCallback::Initialize() {
     cos_beam_altitudes_.resize(pixels_per_column_);
     r_max_.resize(pixels_per_column_, rfiltermax_);
     r_min_.resize(pixels_per_column_, rfiltermin_);
-    x_1_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(pixels_per_column_));
-    y_1_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(pixels_per_column_));
-    z_1_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(pixels_per_column_));
+    x_1_.resize(total_size);
+    y_1_.resize(total_size);
+    z_1_.resize(total_size);
     x_2_.resize(columns_per_frame_);
     y_2_.resize(columns_per_frame_);
     z_2_.resize(columns_per_frame_);
@@ -242,9 +246,9 @@ void LidarCallback::Initialize() {
     cos_beam_altitudes_subset_.resize(subset_channels_);
     r_max_subset_.resize(subset_channels_, rfiltermax_);
     r_min_subset_.resize(subset_channels_, rfiltermin_);
-    x_1_subset_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(subset_channels_));
-    y_1_subset_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(subset_channels_));
-    z_1_subset_.assign(columns_per_frame_, std::vector<float, Eigen::aligned_allocator<float>>(subset_channels_));
+    x_1_subset_.resize(subset_total_size);
+    y_1_subset_.resize(subset_total_size);
+    z_1_subset_.resize(subset_total_size);
     pixel_shifts_subset_.resize(subset_channels_);
     subset_c_ids_.resize(subset_channels_);
 
@@ -274,7 +278,7 @@ void LidarCallback::Initialize() {
     Eigen::Matrix4d lidar_to_body_transform = Eigen::Matrix4d::Identity();
     Eigen::Matrix4d body_to_lidar_transform = Eigen::Matrix4d::Identity();
     body_to_lidar_transform.block<3,3>(0,0) = body_to_lidar_rotation_;
-    body_to_lidar_transform.block<3,1>(0,3) = body_to_lidar_translation_;// Chain if needed, assuming this is the full transform
+    body_to_lidar_transform.block<3,1>(0,3) = body_to_lidar_translation_;
     lidar_to_body_transform = body_to_lidar_transform.inverse();
 
     Eigen::Matrix3d lidar_to_body_rotation = lidar_to_body_transform.block<3,3>(0,0);
@@ -303,21 +307,21 @@ void LidarCallback::Initialize() {
             float cos_alt = cos_beam_altitudes_[ch];
             float sin_alt = sin_beam_altitudes_[ch];
 
-            // --- FIX: Use 3x3 rotation for the 3D direction vector ---
             Eigen::Vector3d dir_lidar_frame(cos_alt * cos_total_az, cos_alt * sin_total_az, sin_alt);
-            Eigen::Vector3d dir_transformed = lidar_to_body_rotation * dir_lidar_frame; // Correct transformation
+            Eigen::Vector3d dir_transformed = lidar_to_body_rotation * dir_lidar_frame;
 
-            // Eigen::Vector4d dir_lidar_frame(cos_alt * cos_total_az, cos_alt * sin_total_az, sin_alt, 0.0);
-            // Eigen::Vector4d dir_transformed = lidar_to_body_transform * dir_lidar_frame;
-            x_1_[m_id][ch] = static_cast<float>(dir_transformed.x());
-            y_1_[m_id][ch] = static_cast<float>(dir_transformed.y());
-            z_1_[m_id][ch] = static_cast<float>(dir_transformed.z());
+            // --- FIX: Use 1D indexing to populate the flat lookup tables ---
+            size_t idx_1d = (size_t)m_id * pixels_per_column_ + ch;
+            x_1_[idx_1d] = static_cast<float>(dir_transformed.x());
+            y_1_[idx_1d] = static_cast<float>(dir_transformed.y());
+            z_1_[idx_1d] = static_cast<float>(dir_transformed.z());
 
             if (ch % channel_stride_ == 0) {
                 size_t subset_idx = ch / channel_stride_;
-                x_1_subset_[m_id][subset_idx] = x_1_[m_id][ch];
-                y_1_subset_[m_id][subset_idx] = y_1_[m_id][ch];
-                z_1_subset_[m_id][subset_idx] = z_1_[m_id][ch];
+                size_t subset_idx_1d = (size_t)m_id * subset_channels_ + subset_idx;
+                x_1_subset_[subset_idx_1d] = x_1_[idx_1d];
+                y_1_subset_[subset_idx_1d] = y_1_[idx_1d];
+                z_1_subset_[subset_idx_1d] = z_1_[idx_1d];
             }
         }
     }
@@ -326,14 +330,14 @@ void LidarCallback::Initialize() {
     vehicle_box_min_ = vehicle_box_center_ - half_dims;
     vehicle_box_max_ = vehicle_box_center_ + half_dims;
 
-    InitializePool(poolsize_); 
+    InitializePool(poolsize_);
     active_frame_ = GetFrameFromPool();
 
-    // Sanity checks for lookup table sizes
-    if (x_1_.size() != static_cast<size_t>(columns_per_frame_) || (!x_1_.empty() && x_1_[0].size() != static_cast<size_t>(pixels_per_column_))) {
+    // --- FIX: Update sanity checks and assertions for 1D vectors ---
+    if (x_1_.size() != total_size) {
         throw std::runtime_error("x_1_ lookup table size mismatch after initialization");
     }
-    if (x_1_subset_.size() != static_cast<size_t>(columns_per_frame_) || (!x_1_subset_.empty() && x_1_subset_[0].size() != static_cast<size_t>(subset_channels_))) {
+    if (x_1_subset_.size() != subset_total_size) {
         throw std::runtime_error("x_1_subset_ lookup table size mismatch after initialization");
     }
     if (x_2_.size() != static_cast<size_t>(columns_per_frame_)) {
@@ -345,12 +349,14 @@ void LidarCallback::Initialize() {
     if (pixel_shifts_subset_.size() != static_cast<size_t>(subset_channels_)) {
         throw std::runtime_error("pixel_shifts_subset_ size mismatch after initialization");
     }
-    // if (!x_1_.empty() && !x_1_[0].empty()) {
-    //     assert(reinterpret_cast<uintptr_t>(x_1_[0].data()) % 32 == 0 && "x_1_[0].data() not 32-byte aligned!");
-    // }
-    // if (!x_1_subset_.empty() && !x_1_subset_[0].empty()) {
-    //     assert(reinterpret_cast<uintptr_t>(x_1_subset_[0].data()) % 32 == 0 && "x_1_subset_[0].data() not 32-byte aligned!");
-    // }
+    
+    // These assertions will now pass because the flat vector's allocator guarantees alignment.
+    assert(reinterpret_cast<uintptr_t>(x_1_.data()) % 32 == 0 && "x_1_.data() not 32-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(y_1_.data()) % 32 == 0 && "y_1_.data() not 32-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(z_1_.data()) % 32 == 0 && "z_1_.data() not 32-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(x_1_subset_.data()) % 32 == 0 && "x_1_subset_.data() not 32-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(y_1_subset_.data()) % 32 == 0 && "y_1_subset_.data() not 32-byte aligned!");
+    assert(reinterpret_cast<uintptr_t>(z_1_subset_.data()) % 32 == 0 && "z_1_subset_.data() not 32-byte aligned!");
 }
 
 std::unique_ptr<LidarFrame> LidarCallback::DecodePacket(const std::vector<uint8_t>& packet) {
@@ -477,10 +483,10 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
             __m256 min_mask = _mm256_cmp_ps(m256_range, m256_r_min_vec, _CMP_GE_OQ);
             __m256 max_mask = _mm256_cmp_ps(m256_range, m256_r_max_vec, _CMP_LE_OQ);
             __m256 valid_mask = _mm256_and_ps(min_mask, max_mask);
-
-            __m256 x1_vec = _mm256_load_ps(x_1_subset_[m_id].data() + subset_idx_base);
-            __m256 y1_vec = _mm256_load_ps(y_1_subset_[m_id].data() + subset_idx_base);
-            __m256 z1_vec = _mm256_load_ps(z_1_subset_[m_id].data() + subset_idx_base);
+            size_t base_idx = (size_t)m_id * subset_channels_;
+            __m256 x1_vec = _mm256_load_ps(x_1_subset_.data() + base_idx + subset_idx_base);
+            __m256 y1_vec = _mm256_load_ps(y_1_subset_.data() + base_idx + subset_idx_base);
+            __m256 z1_vec = _mm256_load_ps(z_1_subset_.data() + base_idx + subset_idx_base);
             __m256 x2_val = _mm256_set1_ps(x_2_[m_id]);
             __m256 y2_val = _mm256_set1_ps(y_2_[m_id]);
             __m256 z2_val = _mm256_set1_ps(z_2_[m_id]);
@@ -560,9 +566,10 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
             uint16_t current_signal = le16toh(signal_raw);
             uint16_t current_nir = le16toh(nir_raw);
 
-            float pt_x = range_m * x_1_[m_id][c_id] + x_2_[m_id];
-            float pt_y = range_m * y_1_[m_id][c_id] + y_2_[m_id];
-            float pt_z = range_m * z_1_[m_id][c_id] + z_2_[m_id];
+            size_t idx_1d = (size_t)m_id * pixels_per_column_ + c_id;
+            float pt_x = range_m * x_1_[idx_1d] + x_2_[m_id];
+            float pt_y = range_m * y_1_[idx_1d] + y_2_[m_id];
+            float pt_z = range_m * z_1_[idx_1d] + z_2_[m_id];
 
             bool is_in_vehicle_box = (pt_x >= vehicle_box_min_.x() && pt_x <= vehicle_box_max_.x() &&
                                      pt_y >= vehicle_box_min_.y() && pt_y <= vehicle_box_max_.y() &&
@@ -722,9 +729,14 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
             __m256 max_mask = _mm256_cmp_ps(m256_range, m256_r_max_vec, _CMP_LE_OQ);
             __m256 valid_mask = _mm256_and_ps(min_mask, max_mask);
 
-            __m256 x1_vec = _mm256_load_ps(x_1_subset_[m_id].data() + subset_idx_base);
-            __m256 y1_vec = _mm256_load_ps(y_1_subset_[m_id].data() + subset_idx_base);
-            __m256 z1_vec = _mm256_load_ps(z_1_subset_[m_id].data() + subset_idx_base);
+            // This calculates the starting position for the current 'm_id' row in the flat vector
+            size_t base_idx = (size_t)m_id * subset_channels_;
+
+            // The AVX load instruction now correctly points to the right memory location
+            // by using the base index plus the loop's offset (subset_idx_base).
+            __m256 x1_vec = _mm256_load_ps(x_1_subset_.data() + base_idx + subset_idx_base);
+            __m256 y1_vec = _mm256_load_ps(y_1_subset_.data() + base_idx + subset_idx_base);
+            __m256 z1_vec = _mm256_load_ps(z_1_subset_.data() + base_idx + subset_idx_base);
             __m256 x2_val = _mm256_set1_ps(x_2_[m_id]);
             __m256 y2_val = _mm256_set1_ps(y_2_[m_id]);
             __m256 z2_val = _mm256_set1_ps(z_2_[m_id]);
@@ -804,9 +816,13 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
             uint16_t current_signal = le16toh(signal_raw);
             uint16_t current_nir = le16toh(nir_raw);
 
-            float pt_x = range_m * x_1_[m_id][c_id] + x_2_[m_id];
-            float pt_y = range_m * y_1_[m_id][c_id] + y_2_[m_id];
-            float pt_z = range_m * z_1_[m_id][c_id] + z_2_[m_id];
+            // This is the correct manual 2D-to-1D index calculation
+            size_t idx_1d = (size_t)m_id * pixels_per_column_ + c_id;
+
+            // The flat vectors are accessed with the 1D index
+            float pt_x = range_m * x_1_[idx_1d] + x_2_[m_id];
+            float pt_y = range_m * y_1_[idx_1d] + y_2_[m_id];
+            float pt_z = range_m * z_1_[idx_1d] + z_2_[m_id];
 
             bool is_in_vehicle_box = (pt_x >= vehicle_box_min_.x() && pt_x <= vehicle_box_max_.x() &&
                                      pt_y >= vehicle_box_min_.y() && pt_y <= vehicle_box_max_.y() &&
