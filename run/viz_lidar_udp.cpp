@@ -17,7 +17,6 @@ int main() {
     LidarCallback callback(meta_path, param_path);
 
     FrameQueue<LidarFrame> lidarQueue;
-    FrameQueue<LidarFrame> lidarReturnQueue;
     FrameQueue<DataBuffer> packetQueue;
     
     // Using a shared_ptr for frameid allows safe sharing with the lambda
@@ -117,7 +116,6 @@ int main() {
     socket->stop();
     packetQueue.stop();
     lidarQueue.stop();
-    lidarReturnQueue.stop();
     io_context.stop();
     if (io_thread.joinable()) io_thread.join();
     if (processing_thread.joinable()) processing_thread.join();
