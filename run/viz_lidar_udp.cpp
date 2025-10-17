@@ -41,7 +41,7 @@ int main() {
         packetQueue.push(std::move(packet_ptr));
     };
     // In viz_lidar_udp.cpp
-    auto processing_thread = std::thread([&callback, &packetQueue, &lidarReturnQueue, &lidarQueue]() {
+    auto processing_thread = std::thread([&callback, &packetQueue, &lidarQueue]() {
         while (running) {
             auto packet_ptr = packetQueue.pop();
             if (!packet_ptr) {
@@ -53,8 +53,6 @@ int main() {
                 std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
                 lidarQueue.push(std::move(frame_ptr));
             }
-            auto return_packet_ptr = lidarReturnQueue.pop();
-            if (return_packet_ptr) callback.ReturnFrameToPool(std::move(return_packet_ptr));
         }
     });
     // In viz_lidar_udp.cpp
@@ -74,7 +72,7 @@ int main() {
         }
     });
     // In viz_lidar_udp.cpp
-    auto viz_thread = std::thread([&lidarReturnQueue, &lidarQueue]() {
+    auto viz_thread = std::thread([&callback, &lidarQueue]() {
         auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("LiDAR Visualizer");
         viewer->setBackgroundColor(0.1, 0.1, 0.1);
         viewer->addCoordinateSystem(10.0, "coord"); //
@@ -108,7 +106,7 @@ int main() {
             
             viewer->spinOnce(1); //
 
-            lidarReturnQueue.push(std::move(frame_ptr));
+            callback.ReturnFrameToPool(std::move(frame_ptr));
         }
     });
 

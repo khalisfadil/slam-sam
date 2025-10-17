@@ -849,6 +849,8 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<u
 }
 
 void LidarCallback::InitializePool(size_t pool_size) {
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    frame_pool_.clear();
     for (size_t i = 0; i < pool_size; ++i) {
         auto frame = std::make_unique<LidarFrame>();
         frame->reserve(columns_per_frame_ * pixels_per_column_);
@@ -857,6 +859,7 @@ void LidarCallback::InitializePool(size_t pool_size) {
 }
 
 std::unique_ptr<LidarFrame> LidarCallback::GetFrameFromPool() {
+    std::lock_guard<std::mutex> lock(pool_mutex_);
     if (!frame_pool_.empty()) {
         std::unique_ptr<LidarFrame> frame = std::move(frame_pool_.front());
         frame_pool_.pop_front();
@@ -870,6 +873,7 @@ std::unique_ptr<LidarFrame> LidarCallback::GetFrameFromPool() {
 void LidarCallback::ReturnFrameToPool(std::unique_ptr<LidarFrame> frame) {
     if (frame) {
         frame->clear(); // Reset the frame for reuse
+        std::lock_guard<std::mutex> lock(pool_mutex_);
         frame_pool_.push_back(std::move(frame));
     }
 }

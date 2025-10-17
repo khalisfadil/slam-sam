@@ -77,6 +77,7 @@ class LidarCallback {
 
         std::unique_ptr<LidarFrame> active_frame_;
         std::deque<std::unique_ptr<LidarFrame>> frame_pool_;
+        std::mutex pool_mutex_;
         
         float zfiltermax_ = 0.0f;
         float zfiltermin_ = -300.0f;
