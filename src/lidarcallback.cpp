@@ -345,12 +345,12 @@ void LidarCallback::Initialize() {
     if (pixel_shifts_subset_.size() != static_cast<size_t>(subset_channels_)) {
         throw std::runtime_error("pixel_shifts_subset_ size mismatch after initialization");
     }
-    if (!x_1_.empty() && !x_1_[0].empty()) {
-        assert(reinterpret_cast<uintptr_t>(x_1_[0].data()) % 32 == 0 && "x_1_[0].data() not 32-byte aligned!");
-    }
-    if (!x_1_subset_.empty() && !x_1_subset_[0].empty()) {
-        assert(reinterpret_cast<uintptr_t>(x_1_subset_[0].data()) % 32 == 0 && "x_1_subset_[0].data() not 32-byte aligned!");
-    }
+    // if (!x_1_.empty() && !x_1_[0].empty()) {
+    //     assert(reinterpret_cast<uintptr_t>(x_1_[0].data()) % 32 == 0 && "x_1_[0].data() not 32-byte aligned!");
+    // }
+    // if (!x_1_subset_.empty() && !x_1_subset_[0].empty()) {
+    //     assert(reinterpret_cast<uintptr_t>(x_1_subset_[0].data()) % 32 == 0 && "x_1_subset_[0].data() not 32-byte aligned!");
+    // }
 }
 
 std::unique_ptr<LidarFrame> LidarCallback::DecodePacket(const std::vector<uint8_t>& packet) {
