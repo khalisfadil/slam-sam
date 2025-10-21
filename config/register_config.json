@@ -1,7 +1,7 @@
 {   
     "register_parameter": {
         "num_threads":                          8,
-        "mapvoxelsize":                         0.2,
+        "mapvoxelsize":                         0.5,
         "registration_method":                  "NDT",
         "ndt_resolution":                       1.0,
         "ndt_transform_epsilon":                0.0001,

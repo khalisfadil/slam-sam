@@ -352,7 +352,7 @@ int main() {
                 {
                     // Tight scope: NDT object destructs immediately after export
                     pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp =
-                        std::make_unique<pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>>();
+                        std::make_shared<pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>>();
 
                     ndt_omp->setNumThreads(registerCallback.num_threads_);
                     ndt_omp->setResolution(registerCallback.ndt_resolution_);
@@ -398,8 +398,9 @@ int main() {
     lidar_socket->stop();
     comp_socket->stop();
 
-    // comp_iocontext.stop();
-    // lidar_iocontext.stop();
+    comp_iocontext.stop();
+    lidar_iocontext.stop();
+
     packetCompQueue.stop();
     packetLidarQueue.stop();
     frameLidarQueue.stop();
