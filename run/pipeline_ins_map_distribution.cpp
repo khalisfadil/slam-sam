@@ -362,7 +362,7 @@ int main() {
             vg.setInputCloud(map);
             vg.filter(*ds_map);
             std::cout << "Map downsampled to " << ds_map->size() << " points." << std::endl;
-
+            ndt_omp->setInputTarget(ds_map);
             auto exported_data = extractNdtData<pcl::PointXYZI>(ndt_omp, ds_map);
             writeNdtDataToFiles(
                 exported_data,

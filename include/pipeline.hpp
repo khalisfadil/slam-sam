@@ -161,14 +161,29 @@ struct NdtExportData {
 template <typename PointT, typename NDT_Type>
 NdtExportData<PointT> extractNdtData(NDT_Type ndt,
         const typename pcl::PointCloud<PointT>::ConstPtr& map_cloud) {
-// --- End Fix 2 ---
+
     NdtExportData<PointT> export_data;
 
-    // Get the map of all computed leaves (distributions)
-    // --- FIX: Use -> to dereference the shared_ptr ---
-    auto leaves = ndt->getTargetCells().getLeaves();
-    float resolution = ndt->getResolution();
-    size_t min_points = ndt->getTargetCells().getMinPointPerVoxel();
+    // --- FIX: Workaround for pclomp const-correctness bug ---
+    // We must use const_cast because ndt->getTargetCells() returns a
+    // const TargetGrid, but the TargetGrid's methods 
+    // .getLeaves() and .getMinPointPerVoxel() are NOT marked const.
+    
+    // 1. Define the type of the grid (from ndt_omp.h)
+    using TargetGrid = pclomp::VoxelGridCovariance<PointT>;
+
+    // 2. Get the const reference to the cells
+    const TargetGrid& const_target_cells = ndt->getTargetCells();
+
+    // 3. Cast away the const-ness to call the buggy non-const methods
+    TargetGrid& non_const_target_cells = const_cast<TargetGrid&>(const_target_cells);
+
+    // 4. Now call the non-const methods on the non-const reference
+    auto leaves = non_const_target_cells.getLeaves();
+    size_t min_points = non_const_target_cells.getMinPointPerVoxel();
+    // --- End Fix ---
+
+    float resolution = ndt->getResolution(); // This method is const-correct
 
     // Reserve space for a minor efficiency gain
     export_data.ellipsoids.reserve(leaves.size());
