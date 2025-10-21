@@ -71,11 +71,11 @@ struct KeyframeHash {
     }
 };
 
-struct KeyFrameInfo {
+struct KeyFrame {
     uint64_t id;
     double timestamp;
 };
-struct KeyPointInfo{
+struct KeyPoint {
     pcl::PointCloud<pcl::PointXYZI>::Ptr points;
     double timestamp;
 };
@@ -107,8 +107,8 @@ struct KeyFrameStats {
 };
 
 
-using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyFrameInfo>, VoxelHash>;
-using PointsHashMap = tsl::robin_map<uint64_t, KeyPointInfo, KeyframeHash>;
+using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyFrame>, VoxelHash>;
+using PointsHashMap = tsl::robin_map<uint64_t, KeyPoint, KeyframeHash>;
 using StateHashMap = tsl::robin_map<uint64_t, KeyState, KeyframeHash>;
 using PoseHashMap = tsl::robin_map<uint64_t, KeyPose, KeyframeHash>;
 using StatsHashMap = tsl::robin_map<uint64_t, KeyFrameStats, KeyframeHash>;

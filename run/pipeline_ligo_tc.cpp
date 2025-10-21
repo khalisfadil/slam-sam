@@ -290,6 +290,7 @@ int main() {
             ndt_omp->setNumThreads(registerCallback.num_threads_);
             ndt_omp->setResolution(registerCallback.ndt_resolution_);
             ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
+            ndt_omp->setRegularizationScaleFactor(registerCallback.regularization_scale_factor_);
 
             if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT1") {
                 ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT1);
@@ -527,6 +528,7 @@ int main() {
                         pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsSource(new pcl::PointCloud<pcl::PointXYZI>());
                         ndt_omp->setInputTarget(lidarFactorPointsTarget);
                         ndt_omp->setInputSource(pointsBody);
+                        ndt_omp->setRegularizationPose(predicted_state.pose().matrix().cast<float>());
                         ndt_omp->align(*lidarFactorPointsSource, predicted_state.pose().matrix().cast<float>());
                         gtsam::Pose3 lidarFactorSourceTb2m(ndt_omp->getFinalTransformation().cast<double>());
                         gtsam::Pose3 lidarTbs2bt = lidarFactorTargetTb2m.between(lidarFactorSourceTb2m);

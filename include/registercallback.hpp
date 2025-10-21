@@ -37,6 +37,7 @@ class RegisterCallback {
         std::string ndt_neighborhood_search_method_ = "DIRECT7";
         float gicp_corr_dist_threshold_ = 5.0;
         float gicp_transform_epsilon_ = 0.01;
+        float regularization_scale_factor_ = 10.0;
     private:
         nlohmann::json parameter_;
 

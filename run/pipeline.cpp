@@ -556,6 +556,7 @@ int main() {
                     pcl::transformPointCloud(*lidarFactorPointsArchive.points, *lidarFactorPointsTarget, lidarFactorTargetTb2m.matrix());
                     registerCallback.registration->setInputTarget(lidarFactorPointsTarget);
                     registerCallback.registration->setInputSource(pointsBody);
+                    
                     auto align_start = std::chrono::high_resolution_clock::now();
                     registerCallback.registration->align(*lidarFactorPointsSource, lidarFactorSourceTb2m.cast<float>());
                     auto align_end = std::chrono::high_resolution_clock::now();

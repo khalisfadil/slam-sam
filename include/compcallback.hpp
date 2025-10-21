@@ -10,11 +10,16 @@
 #include <dataframe.hpp>
 #include <gtsam/geometry/Point3.h>
 
+#include <mutex>
+#include <deque>
+
 class CompCallback {
     public:
         explicit CompCallback(const std::string& json_path);
         explicit CompCallback(const nlohmann::json& json_data);
-        void Decode(const std::vector<uint8_t>& packet, CompFrame& frame);
+        std::unique_ptr<CompFrame> DecodePacket(const std::vector<uint8_t>& packet);
+        void ReturnFrameToPool(std::unique_ptr<CompFrame> frame);
+
         double GravityWGS84(double latitude, double longitude, double altitude);
         gtsam::Vector3 getStaticBiasAccelerometer() const { return Eigen::Vector3d(staticBiasAccelerometer_).cast<gtsam::Vector::Scalar>(); }
         gtsam::Vector3 getStaticBiasGyroscope() const { return Eigen::Vector3d(staticBiasGyroscope_).cast<gtsam::Vector::Scalar>(); }
@@ -24,7 +29,6 @@ class CompCallback {
         gtsam::Vector3 getBiasInstabilityGyroscope() const { return Eigen::Vector3d(biasInstabilityGyroscope_).cast<gtsam::Vector::Scalar>(); }
         gtsam::Vector3 getBiasRandomWalkAccelerometer() const { return Eigen::Vector3d(biasRandomWalkAccelerometer_).cast<gtsam::Vector::Scalar>(); } 
         gtsam::Vector3 getBiasRandomWalkGyroscope() const { return Eigen::Vector3d(biasRandomWalkGyroscope_).cast<gtsam::Vector::Scalar>(); }     
-        const CompFrame& GetLatestFrame() const { return buffer_toggle_ ? data_buffer1_ : data_buffer2_; }
     private:
 
         nlohmann::json metadata_;
@@ -37,6 +41,7 @@ class CompCallback {
         const double b_over_a = 0.996647189335;
         const double omega = 7.292115e-5;                                   
         double updateRate_ = 50;        
+        size_t poolsize_ = 4;
         Eigen::Vector3d staticBiasAccelerometer_ = Eigen::Vector3d::Zero();
         Eigen::Vector3d staticBiasGyroscope_ = Eigen::Vector3d::Zero();                                       // frequency rate Hz
         Eigen::Vector3d velocityRandomWalk_ = Eigen::Vector3d::Zero();
@@ -47,12 +52,11 @@ class CompCallback {
         Eigen::Vector3d biasRandomWalkGyroscope_ = Eigen::Vector3d::Zero();
         Eigen::Matrix3d body_to_imu_rotation_ = Eigen::Matrix3d::Zero();
         Eigen::Vector3d body_to_imu_translation_ = Eigen::Vector3d::Zero();
+        std::unique_ptr<CompFrame> active_frame_;
+        std::deque<std::unique_ptr<CompFrame>> frame_pool_;
+        std::mutex pool_mutex_;
 
-        CompFrame data_buffer1_;
-        CompFrame data_buffer2_;
-        bool buffer_toggle_ = true;
-
+        void InitializePool(size_t pool_size = 4);
+        std::unique_ptr<CompFrame> GetFrameFromPool();
         void ParseMetadata(const nlohmann::json& json_data);
-        
-        void SwapBuffer() { buffer_toggle_ = !buffer_toggle_; }
 };

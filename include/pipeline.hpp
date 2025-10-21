@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include <queue>
+#include <deque>
 #include <mutex>
 #include <condition_variable>
 #include <memory>
@@ -29,7 +30,8 @@
 
 #include <pcl/visualization/pcl_visualizer.h> 
 #include <pcl/filters/voxel_grid.h>          
-#include <pcl/common/transforms.h>           
+#include <pcl/common/transforms.h>
+#include <pcl/point_cloud.h>           
 #include <pcl/point_types.h>  
 #include <pcl/filters/passthrough.h>
 
@@ -73,6 +75,174 @@ class FrameQueue {
         std::condition_variable cv_;
         bool stopped_ = false;
 };
+//####################################################################################################
+template <typename T>
+class ObjectPool {
+public:
+
+    explicit ObjectPool(size_t initial_size = 0) {
+        Initialize(initial_size);
+    }
+
+    ObjectPool(const ObjectPool&) = delete;
+    ObjectPool& operator=(const ObjectPool&) = delete;
+    ObjectPool(ObjectPool&&) = delete;
+    ObjectPool& operator=(ObjectPool&&) = delete;
+
+    void Initialize(size_t pool_size) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pool_.clear(); // Clear existing pooled objects
+        for (size_t i = 0; i < pool_size; ++i) {
+            pool_.push_back(std::make_unique<T>());
+        }
+    }
+
+    std::unique_ptr<T> Get() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!pool_.empty()) {
+            std::unique_ptr<T> ptr = std::move(pool_.front());
+            pool_.pop_front();
+            return ptr;
+        }
+        return std::make_unique<T>();
+    }
+
+    void Return(std::unique_ptr<T> ptr) {
+        if (!ptr) {
+            return; 
+        }
+        if constexpr (requires(T* p) { p->clear(); }) {
+            // If it does, call it to reset the object's state.
+            ptr->clear();
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        pool_.push_back(std::move(ptr));
+    }
+
+    size_t GetAvailableCount() const {
+         std::lock_guard<std::mutex> lock(mutex_);
+         return pool_.size();
+    }
+
+private:
+    std::deque<std::unique_ptr<T>> pool_;
+    mutable std::mutex mutex_;
+};
+//####################################################################################################
+struct NdtEllipsoid {
+    Eigen::Vector3d mean;
+    Eigen::Matrix3d evecs; // Eigenvectors (Rotation)
+    Eigen::Vector3d evals; // Eigenvalues (Variance / Radii)
+};
+//####################################################################################################
+struct NdtVoxel {
+    Eigen::Vector3d center;
+    float resolution;
+};
+//####################################################################################################
+template <typename PointT>
+struct NdtExportData {
+    std::vector<NdtEllipsoid> ellipsoids;
+    std::vector<NdtVoxel> voxels;
+    typename pcl::PointCloud<PointT> points; // A copy of the original points
+};
+//####################################################################################################
+template <typename PointT, typename NDT_Type>
+NdtExportData<PointT> extractNdtData(const NDT_Type& ndt,
+        const typename pcl::PointCloud<PointT>::ConstPtr& map_cloud) {
+    NdtExportData<PointT> export_data;
+
+    // Get the map of all computed leaves (distributions)
+    // --- FIX: Use -> to dereference the shared_ptr ---
+    auto leaves = ndt->getTargetCells().getLeaves();
+    float resolution = ndt->getResolution();
+    size_t min_points = ndt->getTargetCells().getMinPointPerVoxel();
+
+    // Reserve space for a minor efficiency gain
+    export_data.ellipsoids.reserve(leaves.size());
+    export_data.voxels.reserve(leaves.size());
+
+    // Loop through every leaf (voxel) in the NDT map
+    for (auto const& [index, leaf] : leaves)
+    {
+        // A leaf must have enough points to be valid
+        if (leaf.getPointCount() >= min_points)
+        {
+            // --- 1. Get Distribution Data (for Ellipsoids) ---
+            export_data.ellipsoids.push_back(NdtEllipsoid{
+                .mean = leaf.getMean(),
+                .evecs = leaf.getEvecs(),
+                .evals = leaf.getEvals()
+            });
+
+            // --- 2. Get Voxel Data (for Bounding Boxes) ---
+            export_data.voxels.push_back(NdtVoxel{
+                .center = leaf.getLeafCenter(),
+                .resolution = resolution
+            });
+        }
+    }
+
+    // --- 3. Copy the original map points for reference ---
+    // We make a copy so the data is fully contained in the struct
+    if (map_cloud) { // Add a safety check for null pointer
+        export_data.points = *map_cloud; 
+    }
+
+    std::cout << "Extracted " << export_data.ellipsoids.size() << " valid NDT leaves." << std::endl;
+    std::cout << "Copied " << export_data.points.size() << " original map points." << std::endl;
+
+    return export_data;
+}
+//####################################################################################################
+template <typename PointT>
+void writeNdtDataToFiles(const NdtExportData<PointT>& data,
+                            const std::string& ellipsoid_filename,
+                            const std::string& voxel_filename,
+                            const std::string& points_filename) {
+    // Create text files to export the data
+    std::ofstream ellipsoid_file(ellipsoid_filename);
+    std::ofstream voxel_file(voxel_filename);
+    std::ofstream points_file(points_filename);
+
+    // Set precision for clean output
+    ellipsoid_file << std::fixed << std::setprecision(8);
+    voxel_file << std::fixed << std::setprecision(8);
+    points_file << std::fixed << std::setprecision(8);
+
+    // --- 1. Write Ellipsoid Data ---
+    for(const auto& ellipsoid : data.ellipsoids)
+    {
+        // Mean
+        ellipsoid_file << ellipsoid.mean(0) << " " << ellipsoid.mean(1) << " " << ellipsoid.mean(2) << " ";
+        
+        // Eigenvectors (Row-major)
+        const auto& evecs = ellipsoid.evecs;
+        ellipsoid_file << evecs(0,0) << " " << evecs(0,1) << " " << evecs(0,2) << " ";
+        ellipsoid_file << evecs(1,0) << " " << evecs(1,1) << " " << evecs(1,2) << " ";
+        ellipsoid_file << evecs(2,0) << " " << evecs(2,1) << " " << evecs(2,2) << " ";
+
+        // Eigenvalues
+        const auto& evals = ellipsoid.evals;
+        ellipsoid_file << evals(0) << " " << evals(1) << " " << evals(2) << "\n";
+    }
+
+    // --- 2. Write Voxel Data ---
+    for(const auto& voxel : data.voxels)
+    {
+        voxel_file << voxel.center(0) << " " << voxel.center(1) << " " 
+                   << voxel.center(2) << " " << voxel.resolution << "\n";
+    }
+
+    // --- 3. Write Point Data ---
+    for(const auto& point : data.points)
+    {
+        points_file << point.x << " " << point.y << " " << point.z << "\n";
+    }
+
+    // Files are closed automatically when their streams go out of scope
+    std::cout << "Successfully wrote NDT data to files." << std::endl;
+}
 //####################################################################################################
 // void writeStatsToFile(const StatsHashMap& stats, const std::string& filename) {
 //     if (stats.empty()) {

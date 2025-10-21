@@ -626,7 +626,7 @@ std::unique_ptr<LidarFrame> LidarCallback::DecodePacketLegacy(const std::vector<
     if (active_frame_) {
         active_frame_->numberpoints = this->number_points_;
     }
-    return completed_frame;;
+    return completed_frame;
 }
 // %            ... decode_packet_single_return
 std::unique_ptr<LidarFrame> LidarCallback::DecodePacketRng19(const std::vector<uint8_t>& packet) {

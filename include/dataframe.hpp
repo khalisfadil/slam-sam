@@ -306,13 +306,32 @@ struct PCLPointCloud{
     uint16_t frame_id = 0;
     pcl::PointCloud<pcl::PointXYZI> pointsBody;               
     std::vector<float> pointsAlpha;
-    std::vector<double> pointsTimestamp;                                             
+    std::vector<double> pointsTimestamp;
+
+    /**
+     * @brief Resets the struct to a default state for object pooling.
+     */
+    void clear() {
+        frame_id = 0;
+        pointsBody.clear();
+        pointsAlpha.clear();
+        pointsTimestamp.clear();
+    }                                           
 };
 // %            ... struct representing a lidar data and its encapsulated data of imu and position
 struct FrameData{
-    double timestamp;                                               // evaluation timestamp
+    double timestamp = 0.0;                                           // evaluation timestamp
     PCLPointCloud points;
     std::vector<CompFrame> ins;
+
+    /**
+     * @brief Resets the struct to a default state for object pooling.
+     */
+    void clear() {
+        timestamp = 0.0;
+        points.clear(); // Calls PCLPointCloud::clear()
+        ins.clear();    // Calls std::vector::clear()
+    }
 };
 // %             ... struct for parameter
 struct LidarFrame {

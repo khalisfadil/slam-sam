@@ -50,6 +50,9 @@ void RegisterCallback::ParseParamdata(const nlohmann::json& json_data) {
         if (register_param.contains("ndt_neighborhood_search_method")) {
             ndt_neighborhood_search_method_ = register_param["ndt_neighborhood_search_method"].get<std::string>();
         }
+        if (register_param.contains("regularization_scale_factor")) {
+            regularization_scale_factor_ = register_param["regularization_scale_factor"].get<float>();
+        }
         if (register_param.contains("gicp_corr_dist_threshold")) {
             gicp_corr_dist_threshold_ = register_param["gicp_corr_dist_threshold"].get<float>();
         }
