@@ -76,6 +76,16 @@ class FrameQueue {
         bool stopped_ = false;
 };
 //####################################################################################################
+template<typename T, typename = void>
+struct has_clear_method : std::false_type {};
+
+template<typename T>
+struct has_clear_method<T, std::void_t<decltype(std::declval<T>().clear())>> : std::true_type {};
+
+// Helper variable template
+template<typename T>
+inline constexpr bool has_clear_v = has_clear_method<T>::value;
+//####################################################################################################
 template <typename T>
 class ObjectPool {
 public:
@@ -111,10 +121,11 @@ public:
         if (!ptr) {
             return; 
         }
-        if constexpr (requires(T* p) { p->clear(); }) {
+        if constexpr (has_clear_v<T>) {
             // If it does, call it to reset the object's state.
             ptr->clear();
         }
+
         std::lock_guard<std::mutex> lock(mutex_);
         pool_.push_back(std::move(ptr));
     }
@@ -148,8 +159,9 @@ struct NdtExportData {
 };
 //####################################################################################################
 template <typename PointT, typename NDT_Type>
-NdtExportData<PointT> extractNdtData(const NDT_Type& ndt,
+NdtExportData<PointT> extractNdtData(NDT_Type& ndt,
         const typename pcl::PointCloud<PointT>::ConstPtr& map_cloud) {
+// --- End Fix 2 ---
     NdtExportData<PointT> export_data;
 
     // Get the map of all computed leaves (distributions)
