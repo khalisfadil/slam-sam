@@ -2,7 +2,7 @@
     "lidar_parameter": {
         "tb2s":                             [0.135, 0.0, 0.1243],
         "Cb2s":                             [-1.0,0.0,0.0,0.0,-1.0,0.0,0.0,0.0,1.0],
-        "channelStride":                    8,
+        "channelStride":                    4,
         "zAxisFilter":                      [-250.0, 0.0],
         "reflectionThreshold":              60,
         "rangeFilter":                      [0.0, 250.0],
