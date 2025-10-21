@@ -394,8 +394,8 @@ int main() {
     lidar_socket->stop();
     comp_socket->stop();
 
-    comp_iocontext.stop();
-    lidar_iocontext.stop();
+    // comp_iocontext.stop();
+    // lidar_iocontext.stop();
     packetCompQueue.stop();
     packetLidarQueue.stop();
     frameLidarQueue.stop();
