@@ -149,7 +149,7 @@ void CompCallback::ParseMetadata(const nlohmann::json& json_data) {
         if (!imu_params.contains("poolSize") || !imu_params["poolSize"].is_number()) {
             throw std::runtime_error("Missing or invalid 'poolSize'");
         }
-        poolsize_ = imu_params["poolsize"].get<size_t>();
+        poolsize_ = imu_params["poolSize"].get<size_t>();
 
     } catch (const nlohmann::json::exception& e) {
         throw std::runtime_error("JSON parsing error in metadata: " + std::string(e.what()));
