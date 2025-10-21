@@ -43,6 +43,7 @@
 #include <map.hpp>
 
 using gtsam::Symbol;
+using TargetGrid = pclomp::VoxelGridCovariance<PointT>;
 //####################################################################################################
 template<typename T>
 class FrameQueue {
@@ -173,14 +174,10 @@ NdtExportData<PointT> extractNdtData(NDT_Type ndt,
     using TargetGrid = pclomp::VoxelGridCovariance<PointT>;
 
     // 2. Get the const reference to the cells
-    const TargetGrid& const_target_cells = ndt->getTargetCells();
+    const TargetGrid& target_cells = ndt->getTargetCells();
 
-    // 3. Cast away the const-ness to call the buggy non-const methods
-    TargetGrid& non_const_target_cells = const_cast<TargetGrid&>(const_target_cells);
-
-    // 4. Now call the non-const methods on the non-const reference
-    auto leaves = non_const_target_cells.getLeaves();
-    size_t min_points = non_const_target_cells.getMinPointPerVoxel();
+    auto leaves = target_cells.getLeaves();
+    size_t min_points = target_cells.getMinPointPerVoxel();
     // --- End Fix ---
 
     float resolution = ndt->getResolution(); // This method is const-correct
@@ -204,7 +201,7 @@ NdtExportData<PointT> extractNdtData(NDT_Type ndt,
 
             // --- 2. Get Voxel Data (for Bounding Boxes) ---
             export_data.voxels.push_back(NdtVoxel{
-                .center = non_const_target_cells.getLeafCenter(index), // <-- Use the index here
+                .center = target_cells.getLeafCenter(index), // <-- Use the index here
                 .resolution = resolution
             });
         }
