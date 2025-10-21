@@ -354,24 +354,38 @@ int main() {
                 *map += *(pair.second.points);
             }
         }
-
+        
         if (map->empty()) {
-            std::cout << "Map is empty, nothing to filter." << std::endl;
+            std::cout << "Map is empty, nothing to filter or export." << std::endl;
         } else {
             std::cout << "Map accumulated with " << map->size() << " points. Downsampling..." << std::endl;
             vg.setInputCloud(map);
             vg.filter(*ds_map);
-            std::cout << "Map downsampled to " << ds_map->size() << " points." << std::endl;
-            ndt_omp->setInputTarget(ds_map);
-            auto exported_data = extractNdtData<pcl::PointXYZI>(ndt_omp, ds_map);
-            writeNdtDataToFiles(
-                exported_data,
-                "../output/ndt_ellipsoids.txt",
-                "../output/ndt_voxels.txt",
-                "../output/map_points.txt"
-            );
+            std::cout << "Map downsampled to " << ds_map.size() << " points." << std::endl;
+
+            // --- FIX: Only run NDT export if NDT was configured ---
+            if (registerCallback.registration_method_ == "NDT" && ndt_omp != nullptr) {
+                std::cout << "Exporting NDT data..." << std::endl;
+                ndt_omp->setInputTarget(ds_map); // Now safe to call
+                
+                // Explicitly state the template type <pcl::PointXYZI>
+                auto exported_data = extractNdtData<pcl::PointXYZI>(ndt_omp, ds_map);
+                
+                writeNdtDataToFiles(
+                    exported_data,
+                    "../output/ndt_ellipsoids.txt",
+                    "../output/ndt_voxels.txt",
+                    "../output/map_points.txt"
+                );
+            } else {
+                 std::cout << "Skipping NDT data export (method was not NDT or NDT object is null)." << std::endl;
+                 // Optionally save just the downsampled map if NDT wasn't used
+                 // pcl::io::savePCDFileASCII("../output/downsampled_map.pcd", *ds_map);
+            }
+            // --- End Fix ---
         }
-    });
+        std::cout << "Cummulation thread finished." << std::endl; // Added for clarity
+    }); // End of cumm_thread lambda
 
     while (running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
