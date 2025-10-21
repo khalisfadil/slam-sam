@@ -354,14 +354,14 @@ int main() {
                 *map += *(pair.second.points);
             }
         }
-        
+
         if (map->empty()) {
             std::cout << "Map is empty, nothing to filter or export." << std::endl;
         } else {
             std::cout << "Map accumulated with " << map->size() << " points. Downsampling..." << std::endl;
             vg.setInputCloud(map);
             vg.filter(*ds_map);
-            std::cout << "Map downsampled to " << ds_map.size() << " points." << std::endl;
+            std::cout << "Map downsampled to " << ds_map->size() << " points." << std::endl;
 
             // --- FIX: Only run NDT export if NDT was configured ---
             if (registerCallback.registration_method_ == "NDT" && ndt_omp != nullptr) {
