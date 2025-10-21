@@ -43,7 +43,6 @@
 #include <map.hpp>
 
 using gtsam::Symbol;
-using TargetGrid = pclomp::VoxelGridCovariance<PointT>;
 //####################################################################################################
 template<typename T>
 class FrameQueue {
