@@ -290,25 +290,7 @@ int main() {
         // =================================================================================
         // NDT SETUP
         // =================================================================================
-        pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
-        if (registerCallback.registration_method_ == "NDT") {
-            ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
-            ndt_omp->setNumThreads(registerCallback.num_threads_);
-            ndt_omp->setResolution(registerCallback.ndt_resolution_);
-            ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
-            ndt_omp->setRegularizationScaleFactor(registerCallback.regularization_scale_factor_);
-
-            if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT1") {
-                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT1);
-            } else if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT7") {
-                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
-            } else if (registerCallback.ndt_neighborhood_search_method_ == "KDTREE") {
-                ndt_omp->setNeighborhoodSearchMethod(pclomp::KDTREE);
-            } else {
-                std::cout << "Warning: Invalid NDT search method. Defaulting to DIRECT7." << std::endl;
-                ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
-            }
-        } 
+        
         
         while (running){
             auto data_frame_ptr = frameDataQueue.pop();
@@ -363,26 +345,48 @@ int main() {
             vg.filter(*ds_map);
             std::cout << "Map downsampled to " << ds_map->size() << " points." << std::endl;
 
-            // --- FIX: Only run NDT export if NDT was configured ---
-            if (registerCallback.registration_method_ == "NDT" && ndt_omp != nullptr) {
-                std::cout << "Exporting NDT data..." << std::endl;
-                ndt_omp->setInputTarget(ds_map); // Now safe to call
-                
-                // Explicitly state the template type <pcl::PointXYZI>
-                auto exported_data = extractNdtData<pcl::PointXYZI>(ndt_omp, ds_map);
-                
-                writeNdtDataToFiles(
-                    exported_data,
-                    "../output/ndt_ellipsoids.txt",
-                    "../output/ndt_voxels.txt",
-                    "../output/map_points.txt"
-                );
+            // =================================================================================
+            // NARROW-SCOPED NDT EXPORT (Isolates UB in destructor to this block only)
+            // =================================================================================
+            if (registerCallback.registration_method_ == "NDT") {
+                {
+                    // Tight scope: NDT object destructs immediately after export
+                    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp =
+                        std::make_unique<pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>>();
+
+                    ndt_omp->setNumThreads(registerCallback.num_threads_);
+                    ndt_omp->setResolution(registerCallback.ndt_resolution_);
+                    ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);
+                    ndt_omp->setRegularizationScaleFactor(registerCallback.regularization_scale_factor_);
+
+                    if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT1") {
+                        ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT1);
+                    } else if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT7") {
+                        ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
+                    } else if (registerCallback.ndt_neighborhood_search_method_ == "KDTREE") {
+                        ndt_omp->setNeighborhoodSearchMethod(pclomp::KDTREE);
+                    } else {
+                        std::cout << "Warning: Invalid NDT search method. Defaulting to DIRECT7." << std::endl;
+                        ndt_omp->setNeighborhoodSearchMethod(pclomp::DIRECT7);
+                    }
+
+                    std::cout << "Exporting NDT data..." << std::endl;
+                    ndt_omp->setInputTarget(ds_map); // Build voxel grid
+
+                    // Explicitly state the template type <pcl::PointXYZI>
+                    auto exported_data = extractNdtData<pcl::PointXYZI>(ndt_omp, ds_map);
+                    writeNdtDataToFiles(
+                        exported_data,
+                        "../output/ndt_ellipsoids.txt",
+                        "../output/ndt_voxels.txt",
+                        "../output/map_points.txt"
+                    );
+                }  // ndt_omp destructs here: Isolates any UB to this scope
             } else {
-                 std::cout << "Skipping NDT data export (method was not NDT or NDT object is null)." << std::endl;
-                 // Optionally save just the downsampled map if NDT wasn't used
-                 // pcl::io::savePCDFileASCII("../output/downsampled_map.pcd", *ds_map);
+                std::cout << "Skipping NDT data export (method was not NDT)." << std::endl;
+                // Optionally save just the downsampled map if NDT wasn't used
+                // pcl::io::savePCDFileASCII("../output/downsampled_map.pcd", *ds_map);
             }
-            // --- End Fix ---
         }
         std::cout << "Cummulation thread finished." << std::endl; // Added for clarity
     }); // End of cumm_thread lambda
