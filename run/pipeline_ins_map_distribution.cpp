@@ -366,9 +366,9 @@ int main() {
             auto exported_data = extractNdtData<pcl::PointXYZI>(ndt_omp, ds_map);
             writeNdtDataToFiles(
                 exported_data,
-                "ndt_ellipsoids.txt",
-                "ndt_voxels.txt",
-                "map_points.txt"
+                "../output/ndt_ellipsoids.txt",
+                "../output/ndt_voxels.txt",
+                "../output/map_points.txt"
             );
         }
     });
