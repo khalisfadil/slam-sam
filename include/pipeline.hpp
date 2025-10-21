@@ -204,7 +204,7 @@ NdtExportData<PointT> extractNdtData(NDT_Type ndt,
 
             // --- 2. Get Voxel Data (for Bounding Boxes) ---
             export_data.voxels.push_back(NdtVoxel{
-                .center = leaf.getLeafCenter(),
+                .center = non_const_target_cells.getLeafCenter(index), // <-- Use the index here
                 .resolution = resolution
             });
         }

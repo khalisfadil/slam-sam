@@ -416,15 +416,15 @@ int main() {
 
     std::cout << "Joining comp_processing_thread..." << std::endl;
     if (comp_processing_thread.joinable()) comp_processing_thread.join();
-    std::cout << "Joining comp_processing_thread..." << std::endl;
+    std::cout << "Joined comp_processing_thread..." << std::endl;
 
     std::cout << "Joining sync_thread..." << std::endl;
     if (sync_thread.joinable()) sync_thread.join();
-    std::cout << "Joining sync_thread..." << std::endl;
+    std::cout << "Joined sync_thread..." << std::endl;
 
     std::cout << "Joining cumm_thread..." << std::endl;
     if (cumm_thread.joinable()) cumm_thread.join();
-    std::cout << "Joining cumm_thread..." << std::endl;
+    std::cout << "Joined cumm_thread..." << std::endl;
 
     std::cout << "All threads joined. Returning from main..." << std::endl;
     
