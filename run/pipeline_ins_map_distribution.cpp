@@ -134,7 +134,7 @@ int main() {
             }
             auto frame_ptr = lidarCallback.DecodePacket(*packet_ptr);
             if (frame_ptr) {
-                std::cout << "Decoded Lidar frame " << frame_ptr->frame_id << "\n";
+                std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
                 frameLidarQueue.push(std::move(frame_ptr));
             }
         }
