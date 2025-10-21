@@ -159,7 +159,7 @@ struct NdtExportData {
 };
 //####################################################################################################
 template <typename PointT, typename NDT_Type>
-NdtExportData<PointT> extractNdtData(NDT_Type& ndt,
+NdtExportData<PointT> extractNdtData(NDT_Type ndt,
         const typename pcl::PointCloud<PointT>::ConstPtr& map_cloud) {
 // --- End Fix 2 ---
     NdtExportData<PointT> export_data;
