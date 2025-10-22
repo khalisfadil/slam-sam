@@ -197,7 +197,7 @@ NdtExportData<PointT> extractNdtData(NDT_Type ndt,
                 .mean = leaf.getMean(),
                 .evecs = leaf.getEvecs(),
                 .evals = leaf.getEvals(),
-                .point_count = leaf.getPointCount() // <-- ADD THIS
+                .point_count = static_cast<size_t>(leaf.getPointCount()) // <-- MODIFIED
             });
 
             // --- 2. Get Voxel Data (for Bounding Boxes) ---
