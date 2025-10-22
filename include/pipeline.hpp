@@ -144,6 +144,7 @@ struct NdtEllipsoid {
     Eigen::Vector3d mean;
     Eigen::Matrix3d evecs; // Eigenvectors (Rotation)
     Eigen::Vector3d evals; // Eigenvalues (Variance / Radii)
+    size_t point_count;    // <-- ADD THIS
 };
 //####################################################################################################
 struct NdtVoxel {
@@ -195,7 +196,8 @@ NdtExportData<PointT> extractNdtData(NDT_Type ndt,
             export_data.ellipsoids.push_back(NdtEllipsoid{
                 .mean = leaf.getMean(),
                 .evecs = leaf.getEvecs(),
-                .evals = leaf.getEvals()
+                .evals = leaf.getEvals(),
+                .point_count = leaf.getPointCount() // <-- ADD THIS
             });
 
             // --- 2. Get Voxel Data (for Bounding Boxes) ---
@@ -247,7 +249,10 @@ void writeNdtDataToFiles(const NdtExportData<PointT>& data,
 
         // Eigenvalues
         const auto& evals = ellipsoid.evals;
-        ellipsoid_file << evals(0) << " " << evals(1) << " " << evals(2) << "\n";
+        ellipsoid_file << evals(0) << " " << evals(1) << " " << evals(2) << " "; // <-- Add a space here
+
+        // Point Count <-- ADD THIS LINE
+        ellipsoid_file << ellipsoid.point_count << "\n";
     }
 
     // --- 2. Write Voxel Data ---
