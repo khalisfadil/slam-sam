@@ -371,10 +371,10 @@ int main() {
                     }
 
                     std::cout << "Exporting NDT data..." << std::endl;
-                    ndt_omp->setInputTarget(ds_map); // Build voxel grid
+                    ndt_omp->setInputTarget(map); // Build voxel grid
 
                     // Explicitly state the template type <pcl::PointXYZI>
-                    auto exported_data = extractNdtData<pcl::PointXYZI>(ndt_omp, ds_map);
+                    auto exported_data = extractNdtData<pcl::PointXYZI>(ndt_omp, map);
                     writeNdtDataToFiles(
                         exported_data,
                         "../output/ndt_ellipsoids.txt",
