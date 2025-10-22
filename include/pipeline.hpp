@@ -265,7 +265,7 @@ void writeNdtDataToFiles(const NdtExportData<PointT>& data,
     // --- 3. Write Point Data ---
     for(const auto& point : data.points)
     {
-        points_file << point.x << " " << point.y << " " << point.z << "\n";
+        points_file << point.x << " " << point.y << " " << point.z << " " << point.intensity << "\n";
     }
 
     // Files are closed automatically when their streams go out of scope
