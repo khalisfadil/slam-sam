@@ -109,8 +109,12 @@ add_executable(viz_lidar_udp run/viz_lidar_udp.cpp)
 target_link_libraries(viz_lidar_udp PRIVATE pipeline_lib)
 
 # 2. Lidar Visualizer executable
-add_executable(pipeline_ins_map_distribution run/pipeline_ins_map_distribution.cpp)
-target_link_libraries(pipeline_ins_map_distribution PRIVATE pipeline_lib)
+# add_executable(pipeline_ins_map_distribution run/pipeline_ins_map_distribution.cpp)
+# target_link_libraries(pipeline_ins_map_distribution PRIVATE pipeline_lib)
+
+# 2. Lidar Visualizer executable
+add_executable(pipeline_lo_svn run/pipeline_lo_svn.cpp)
+target_link_libraries(pipeline_lo_svn PRIVATE pipeline_lib)
 # The optimization and AVX2 flags are inherited from pipeline_lib, so they're not needed here.
 
 # --- Final Checks ---
