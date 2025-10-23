@@ -48,6 +48,8 @@
 #include <Eigen/Eigenvalues>
 #include <Eigen/Dense>
 
+#include <boost/mpl/size.hpp>
+
 #include <pcl/common/common.h>
 #include <pcl/filters/boost.h>
 #include <pcl/common/point_tests.h> // For isFinite
@@ -167,7 +169,7 @@ void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
     using FieldList = typename pcl::traits::fieldList<PointT>::type;
     int centroid_size = 3; // Start with x, y, z
     if (downsample_all_data_) {
-        centroid_size = pcl::getFieldsList<PointT>().size();
+        centroid_size = boost::mpl::size<FieldList>::value;
     }
     std::vector<pcl::PCLPointField> fields;
     int rgba_index = -1;
@@ -254,13 +256,26 @@ void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigensolver;
     bool numerical_error = false;
 
-    for (auto it = leaves_.begin(); it != leaves_.end(); /* no increment here */ ) // Use iterator loop to allow erasing invalid leaves
+    // Iterate using index-based access for modification safety with erase
+    std::vector<size_t> keys_to_process;
+    keys_to_process.reserve(leaves_.size());
+    for(const auto& pair : leaves_) {
+        keys_to_process.push_back(pair.first);
+    }
+
+    // Now process using the collected keys
+    for (const size_t index : keys_to_process)
     {
-        Leaf& leaf = it->second;
-        const size_t index = it->first; // Store index before potential erase
+
+        // Use .at() which returns a modifiable reference (throws if key disappears, shouldn't happen here)
+        // Or use find() again for safety, though slightly less efficient
+        auto it = leaves_.find(index);
+        if (it == leaves_.end()) continue; // Should not happen if key list is correct
+
+        Leaf& leaf = it->second; // Now this should be a valid non-const reference
 
         if (leaf.nr_points_ < min_points_per_voxel_) {
-            it = leaves_.erase(it); // Erase invalid leaves from the map
+            leaves_.erase(index); // Erase by key
             continue; // Skip rest of processing for this leaf
         }
 
@@ -280,6 +295,7 @@ void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
         }
 
         eigensolver.compute(leaf.cov_);
+
         Eigen::Vector3d eigen_values = eigensolver.eigenvalues();
         leaf.evecs_ = eigensolver.eigenvectors();
 
@@ -287,7 +303,7 @@ void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
         {
             // PCL_DEBUG("[%s::applyFilter] Voxel %zu has non-positive definite cov.\n", getClassName().c_str(), index);
             numerical_error = true;
-            it = leaves_.erase(it); // Erase invalid leaf
+            leaves_.erase(index); // Erase by key
             continue;
         }
 
@@ -320,37 +336,55 @@ void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
         {
            // PCL_DEBUG("[%s::applyFilter] Voxel %zu inverse cov unstable.\n", getClassName().c_str(), index);
             numerical_error = true;
-            it = leaves_.erase(it); // Erase invalid leaf
+            leaves_.erase(index); // Erase by key
             continue;
         }
 
-        // --- Add centroid to output cloud (only for valid leaves) ---
+        // --- Add centroid to output cloud (ONLY IF ALL CHECKS PASSED) ---
+        // VVV THIS IS THE BLOCK IN QUESTION VVV
         PointT downsampled_pt;
-        if (downsample_all_data_) {
+        if (downsample_all_data_) { // If averaging all fields (Uncommon for NDT)
+            // Copy averaged Nd centroid vector into the point struct fields
             pcl::for_each_type<FieldList>(pcl::NdCopyEigenPointFunctor<PointT>(leaf.centroid_, downsampled_pt));
+
+            // Manually pack RGB if necessary
             if (rgba_index >= 0) {
-                 // Packing logic (ensure NdCopyEigenPointFunctor doesn't already do this)
-                 // This assumes centroid stores r,g,b as last 3 floats
-                 // Verify this assumption based on PCL source or testing
-                 if (centroid_size >= 3) {
+                 // Assumes centroid_ vector stores r,g,b floats at the end
+                 if (centroid_size >= 3) { // Ensure centroid vector is large enough
+                     // Get float values (potentially averaged r,g,b)
                      float r = leaf.centroid_[centroid_size - 3];
                      float g = leaf.centroid_[centroid_size - 2];
                      float b = leaf.centroid_[centroid_size - 1];
+                     // Pack into uint32
                      std::uint32_t rgb = (static_cast<std::uint32_t>(r) << 16 |
                                           static_cast<std::uint32_t>(g) << 8  |
                                           static_cast<std::uint32_t>(b));
+                     // Copy packed uint32 into the correct memory location
                      memcpy(reinterpret_cast<char*>(&downsampled_pt) + rgba_index, &rgb, sizeof(std::uint32_t));
                  }
             }
-        } else {
+        } else { // Normal case for NDT: Use the 3D mean as the centroid
             downsampled_pt.x = static_cast<float>(leaf.mean_.x());
             downsampled_pt.y = static_cast<float>(leaf.mean_.y());
             downsampled_pt.z = static_cast<float>(leaf.mean_.z());
-            // Copy other fields if needed and available (e.g., intensity average)
+
+            // --- OPTIONAL: Copy other fields (e.g., average intensity) ---
+            // If PointT is PointXYZI and you want average intensity:
+            // 1. You MUST add logic in the FIRST PASS to sum intensities: leaf.sum_intensity += point.intensity;
+            // 2. You MUST add a `sum_intensity` member to the Leaf struct.
+            // 3. You would add logic HERE:
+            // if constexpr (pcl::traits::has_field<PointT, pcl::fields::intensity>::value) {
+            //    if (leaf.nr_points_ > 0) {
+            //        downsampled_pt.intensity = leaf.sum_intensity / static_cast<float>(leaf.nr_points_);
+            //    } else {
+            //        downsampled_pt.intensity = 0; // Or some default
+            //    }
+            // }
+            // --- END OPTIONAL ---
         }
+        
         output.points.push_back(downsampled_pt);
 
-        ++it; // Move to the next element only if current one wasn't erased
 
     } // End loop through leaves
 
