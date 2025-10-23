@@ -296,28 +296,28 @@ int main() {
         // =================================================================================
         // A. SVN NDT SETUP
         // =================================================================================
-        std::unique_ptr<svn_ndt::SvnNormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>> svn_ndt_ptr = nullptr;
-        if (registerCallback.registration_method_ == "SVNNDT") {
-            svn_ndt_ptr = std::make_unique<svn_ndt::SvnNormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>>();
-            svn_ndt_ptr->setResolution(registerCallback.svn_ndt_resolution_);
-            svn_ndt_ptr->setParticleCount(registerCallback.svn_ndt_number_particle_);
-            svn_ndt_ptr->setMaxIterations(registerCallback.svn_ndt_max_iterations_);       // Max SVN loops
-            svn_ndt_ptr->setKernelBandwidth(registerCallback.svn_ndt_kernel_bandwith_);    // h (needs tuning)
-            svn_ndt_ptr->setStepSize(registerCallback.svn_ndt_step_size_);           // Epsilon
-            svn_ndt_ptr->setEarlyStopThreshold(registerCallback.svn_ndt_stop_threshold_); // Convergence threshold
-            svn_ndt_ptr->setOutlierRatio(registerCallback.svn_ndt_set_outlier_ratio_);
+        // std::unique_ptr<svn_ndt::SvnNormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>> svn_ndt_ptr = nullptr;
+        // if (registerCallback.registration_method_ == "SVNNDT") {
+        //     svn_ndt_ptr = std::make_unique<svn_ndt::SvnNormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>>();
+        //     svn_ndt_ptr->setResolution(registerCallback.svn_ndt_resolution_);
+        //     svn_ndt_ptr->setParticleCount(registerCallback.svn_ndt_number_particle_);
+        //     svn_ndt_ptr->setMaxIterations(registerCallback.svn_ndt_max_iterations_);       // Max SVN loops
+        //     svn_ndt_ptr->setKernelBandwidth(registerCallback.svn_ndt_kernel_bandwith_);    // h (needs tuning)
+        //     svn_ndt_ptr->setStepSize(registerCallback.svn_ndt_step_size_);           // Epsilon
+        //     svn_ndt_ptr->setEarlyStopThreshold(registerCallback.svn_ndt_stop_threshold_); // Convergence threshold
+        //     svn_ndt_ptr->setOutlierRatio(registerCallback.svn_ndt_set_outlier_ratio_);
 
-            if (registerCallback.svn_ndt_neighborhood_search_method_ == "DIRECT1") {
-                svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT1);
-            } else if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT7") {
-                svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
-            } else if (registerCallback.ndt_neighborhood_search_method_ == "KDTREE") {
-                svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::KDTREE);
-            } else {
-                std::cout << "Warning: Invalid SVN NDT search method. Defaulting to DIRECT7." << std::endl;
-                svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
-            }
-        }
+        //     if (registerCallback.svn_ndt_neighborhood_search_method_ == "DIRECT1") {
+        //         svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT1);
+        //     } else if (registerCallback.ndt_neighborhood_search_method_ == "DIRECT7") {
+        //         svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
+        //     } else if (registerCallback.ndt_neighborhood_search_method_ == "KDTREE") {
+        //         svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::KDTREE);
+        //     } else {
+        //         std::cout << "Warning: Invalid SVN NDT search method. Defaulting to DIRECT7." << std::endl;
+        //         svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
+        //     }
+        // }
         const int targetWinSize = 5;            // how many frame from the previous lidar odometry to use 
         std::deque<uint64_t> targetID;          // the ID
 
