@@ -365,6 +365,7 @@ int main() {
                 const gtsam::Point3 ins_tb2m{registerCallback.lla2ned(ins_lla.x(), ins_lla.y(), ins_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
                 current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
                 pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
+                pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTargetDS(new pcl::PointCloud<pcl::PointXYZI>());
                 for (const int& currID : targetID) {
                     const auto& currlidarFactorPointsArchive = pointsArchive.at(currID);
                     *lidarFactorPointsTarget += *currlidarFactorPointsArchive.points;
@@ -373,9 +374,10 @@ int main() {
                 auto vs = registerCallback.mapvoxelsize_;
                 vg.setLeafSize(vs, vs, vs);
                 vg.setInputCloud(std::move(lidarFactorPointsTarget));
-                vg.filter(*lidarFactorPointsTarget);
-                svn_ndt_ptr->setInputTarget(lidarFactorPointsTarget);
+                vg.filter(*lidarFactorPointsTargetDS);
+                svn_ndt_ptr->setInputTarget(std::move(lidarFactorPointsTargetDS));
                 svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
+                predTb2m = result.final_pose;
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, result.final_pose.matrix());
                 pointsArchive[id] = {pointsMap, timestamp};
@@ -574,13 +576,31 @@ int main() {
     frameDataQueue.stop();
     visDataQueue.stop();
     
+    std::cout << "Joining comp_iothread..." << std::endl;
     if (comp_iothread.joinable()) comp_iothread.join();
+    std::cout << "Joined comp_iothread." << std::endl;
+
+    std::cout << "Joining lidar_iothread..." << std::endl;
     if (lidar_iothread.joinable()) lidar_iothread.join();
+    std::cout << "Joined lidar_iothread." << std::endl;
+
+    std::cout << "Joining lidar_processing_thread..." << std::endl;
     if (lidar_processing_thread.joinable()) lidar_processing_thread.join();
+    std::cout << "Joined lidar_processing_thread." << std::endl;
+
+    std::cout << "Joining comp_processing_thread..." << std::endl;
     if (comp_processing_thread.joinable()) comp_processing_thread.join();
+    std::cout << "Joined comp_processing_thread." << std::endl;
+
+    std::cout << "Joining sync_thread..." << std::endl;
     if (sync_thread.joinable()) sync_thread.join();
+    std::cout << "Joined sync_thread." << std::endl;
+
+    std::cout << "Joining lo_thread..." << std::endl;
     if (lo_thread.joinable()) lo_thread.join();
+    std::cout << "Joined lo_thread." << std::endl;
     // if (viz_thread.joinable()) viz_thread.join();
 
     std::cout << "All threads have been joined. Shutdown complete." << std::endl;
 }
+
