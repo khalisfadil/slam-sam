@@ -70,7 +70,8 @@ public:
 
     using Vector6d = Eigen::Matrix<double, 6, 1>;
     using Matrix6d = Eigen::Matrix<double, 6, 6>;
-
+    // Alias for the LeafConstPtr type defined in VoxelGridCovariance
+    using LeafConstPtr = typename svn_ndt::VoxelGridCovariance<PointTarget>::LeafConstPtr;
 
     // --- Constructor / Destructor ---
     SvnNormalDistributionsTransform();

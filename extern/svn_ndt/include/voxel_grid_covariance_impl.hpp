@@ -167,7 +167,7 @@ void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
     using FieldList = typename pcl::traits::fieldList<PointT>::type;
     int centroid_size = 3; // Start with x, y, z
     if (downsample_all_data_) {
-        centroid_size = pcl::getFieldList<PointT>().size();
+        centroid_size = pcl::getFieldsList<PointT>().size();
     }
     std::vector<pcl::PCLPointField> fields;
     int rgba_index = -1;
