@@ -386,13 +386,13 @@ int main() {
                     targetID.pop_front();
                 }
             }
-            if(!pointsArchive.empty() || !insPoseArchive.empty() || !loPoseArchive.empty()) {
-                auto vis_data_ptr = vis_data_pool.Get();
-                vis_data_ptr->points = std::make_shared<PointsHashMap>(pointsArchive);
-                vis_data_ptr->insposes = std::make_shared<PoseHashMap>(insPoseArchive);
-                vis_data_ptr->loposes = std::make_shared<PoseHashMap>(loPoseArchive);
-                visDataQueue.push(std::move(vis_data_ptr));
-            }
+            // if(!pointsArchive.empty() || !insPoseArchive.empty() || !loPoseArchive.empty()) {
+            //     auto vis_data_ptr = vis_data_pool.Get();
+            //     vis_data_ptr->points = std::make_shared<PointsHashMap>(pointsArchive);
+            //     vis_data_ptr->insposes = std::make_shared<PoseHashMap>(insPoseArchive);
+            //     vis_data_ptr->loposes = std::make_shared<PoseHashMap>(loPoseArchive);
+            //     visDataQueue.push(std::move(vis_data_ptr));
+            // }
             frame_data_pool.Return(std::move(data_frame_ptr));
         }
         std::cout << "Frame data pool size: " << frame_data_pool.GetAvailableCount() << std::endl; 
@@ -402,160 +402,160 @@ int main() {
     // ##########################################################################
     // Viz Processing Thread
     // ##########################################################################
-    auto viz_thread = std::thread([&visDataQueue, &vis_data_pool]() { // <-- Capture vis_data_pool
-        auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("GTSAM Optimized Map");
-        viewer->setBackgroundColor(0.1, 0.1, 0.1);
-        viewer->addCoordinateSystem(10.0, "world_origin");
-        viewer->initCameraParameters();
+    // auto viz_thread = std::thread([&visDataQueue, &vis_data_pool]() { // <-- Capture vis_data_pool
+    //     auto viewer = std::make_shared<pcl::visualization::PCLVisualizer>("GTSAM Optimized Map");
+    //     viewer->setBackgroundColor(0.1, 0.1, 0.1);
+    //     viewer->addCoordinateSystem(10.0, "world_origin");
+    //     viewer->initCameraParameters();
         
-        // --- Settings for Visualization ---
-        const size_t kNumCloudsToViz = 5; // <--- Set to 5
-        const double kSmoothingFactor = 0.1;
-        const Eigen::Vector3d kCameraOffset(0.0, 0.0, -250.0);
-        const Eigen::Vector3d kUpVector(1.0, 0.0, 0.0);
-        Eigen::Vector3d target_focal_point(0.0, 0.0, 0.0);
-        Eigen::Vector3d current_focal_point = target_focal_point;
-        Eigen::Vector3d current_cam_pos = target_focal_point + kCameraOffset;
+    //     // --- Settings for Visualization ---
+    //     const size_t kNumCloudsToViz = 5; // <--- Set to 5
+    //     const double kSmoothingFactor = 0.1;
+    //     const Eigen::Vector3d kCameraOffset(0.0, 0.0, -250.0);
+    //     const Eigen::Vector3d kUpVector(1.0, 0.0, 0.0);
+    //     Eigen::Vector3d target_focal_point(0.0, 0.0, 0.0);
+    //     Eigen::Vector3d current_focal_point = target_focal_point;
+    //     Eigen::Vector3d current_cam_pos = target_focal_point + kCameraOffset;
         
-        // Voxel grid for downsampling visualization clouds
-        pcl::VoxelGrid<pcl::PointXYZI> vg;
-        vg.setLeafSize(0.5f, 0.5f, 0.5f); 
+    //     // Voxel grid for downsampling visualization clouds
+    //     pcl::VoxelGrid<pcl::PointXYZI> vg;
+    //     vg.setLeafSize(0.5f, 0.5f, 0.5f); 
         
-        // Trajectory clouds
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr lo_trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr ins_trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+    //     // Trajectory clouds
+    //     pcl::PointCloud<pcl::PointXYZRGB>::Ptr lo_trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+    //     pcl::PointCloud<pcl::PointXYZRGB>::Ptr ins_trajectory_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
-        while (running && !viewer->wasStopped()) {
-            auto vis_data_ptr = visDataQueue.pop();
-            if (!vis_data_ptr) {
-                break; // Queue was stopped
-            }
+    //     while (running && !viewer->wasStopped()) {
+    //         auto vis_data_ptr = visDataQueue.pop();
+    //         if (!vis_data_ptr) {
+    //             break; // Queue was stopped
+    //         }
 
-            // --- 1. Update Camera Target ---
-            if (vis_data_ptr->loposes && !vis_data_ptr->loposes->empty()) {
-                auto max_it = std::max_element(
-                    vis_data_ptr->loposes->begin(), 
-                    vis_data_ptr->loposes->end(),
-                    [](const auto& a, const auto& b) {
-                        return a.first < b.first; // Compare keys
-                    }
-                );
-                const auto& last_pose_matrix = max_it->second.pose;
-                target_focal_point(0) = last_pose_matrix(0, 3);
-                target_focal_point(1) = last_pose_matrix(1, 3);
-                target_focal_point(2) = last_pose_matrix(2, 3);
-            }
+    //         // --- 1. Update Camera Target ---
+    //         if (vis_data_ptr->loposes && !vis_data_ptr->loposes->empty()) {
+    //             auto max_it = std::max_element(
+    //                 vis_data_ptr->loposes->begin(), 
+    //                 vis_data_ptr->loposes->end(),
+    //                 [](const auto& a, const auto& b) {
+    //                     return a.first < b.first; // Compare keys
+    //                 }
+    //             );
+    //             const auto& last_pose_matrix = max_it->second.pose;
+    //             target_focal_point(0) = last_pose_matrix(0, 3);
+    //             target_focal_point(1) = last_pose_matrix(1, 3);
+    //             target_focal_point(2) = last_pose_matrix(2, 3);
+    //         }
 
-            // --- 2. Update Point Clouds (Last kNumCloudsToViz) ---
+    //         // --- 2. Update Point Clouds (Last kNumCloudsToViz) ---
             
-            // Remove all clouds from the previous iteration
-            for (size_t i = 0; i < kNumCloudsToViz; ++i) {
-                viewer->removePointCloud("point_cloud_" + std::to_string(i));
-            }
+    //         // Remove all clouds from the previous iteration
+    //         for (size_t i = 0; i < kNumCloudsToViz; ++i) {
+    //             viewer->removePointCloud("point_cloud_" + std::to_string(i));
+    //         }
 
-            if (vis_data_ptr->points && !vis_data_ptr->points->empty()) {
+    //         if (vis_data_ptr->points && !vis_data_ptr->points->empty()) {
                 
-                // 1. Get all keys and sort them (oldest to newest)
-                std::vector<uint64_t> keys;
-                keys.reserve(vis_data_ptr->points->size());
-                for (const auto& pair : *(vis_data_ptr->points)) {
-                    keys.push_back(pair.first);
-                }
-                std::sort(keys.begin(), keys.end());
+    //             // 1. Get all keys and sort them (oldest to newest)
+    //             std::vector<uint64_t> keys;
+    //             keys.reserve(vis_data_ptr->points->size());
+    //             for (const auto& pair : *(vis_data_ptr->points)) {
+    //                 keys.push_back(pair.first);
+    //             }
+    //             std::sort(keys.begin(), keys.end());
 
-                // 2. Find the index to start from to get the last 5 clouds
-                size_t num_available_clouds = keys.size();
-                size_t start_index = (num_available_clouds > kNumCloudsToViz) ? (num_available_clouds - kNumCloudsToViz) : 0;
+    //             // 2. Find the index to start from to get the last 5 clouds
+    //             size_t num_available_clouds = keys.size();
+    //             size_t start_index = (num_available_clouds > kNumCloudsToViz) ? (num_available_clouds - kNumCloudsToViz) : 0;
                 
-                // 3. Loop from the (N-5)th cloud to the (N)th cloud
-                size_t cloud_viz_index = 0; // This will be our ID suffix (0 to 4)
-                for (size_t i = start_index; i < num_available_clouds; ++i) {
-                    uint64_t key = keys[i];
-                    const auto& cloud_data = vis_data_ptr->points->at(key);
-                    std::string cloud_id = "point_cloud_" + std::to_string(cloud_viz_index);
+    //             // 3. Loop from the (N-5)th cloud to the (N)th cloud
+    //             size_t cloud_viz_index = 0; // This will be our ID suffix (0 to 4)
+    //             for (size_t i = start_index; i < num_available_clouds; ++i) {
+    //                 uint64_t key = keys[i];
+    //                 const auto& cloud_data = vis_data_ptr->points->at(key);
+    //                 std::string cloud_id = "point_cloud_" + std::to_string(cloud_viz_index);
                     
-                    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZI>());
-                    vg.setInputCloud(cloud_data.points);
-                    vg.filter(*cloud_filtered);
+    //                 pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZI>());
+    //                 vg.setInputCloud(cloud_data.points);
+    //                 vg.filter(*cloud_filtered);
 
-                    // Check if this is the *most recent* cloud in the list
-                    if (i == num_available_clouds - 1) {
-                        // --- Display Last Cloud (Colored by Intensity) ---
-                        pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> intensity_handler(cloud_filtered, "intensity");
-                        if (!viewer->updatePointCloud(cloud_filtered, intensity_handler, cloud_id)) {
-                            viewer->addPointCloud(cloud_filtered, intensity_handler, cloud_id);
-                            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2.0, cloud_id);
-                        }
-                    } else {
-                        // --- Display Older Clouds (Colored Gray) ---
-                        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZI> color_handler(cloud_filtered, 128, 128, 128); 
-                        if (!viewer->updatePointCloud(cloud_filtered, color_handler, cloud_id)) {
-                            viewer->addPointCloud(cloud_filtered, color_handler, cloud_id);
-                            viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, cloud_id);
-                        }
-                    }
-                    cloud_viz_index++;
-                }
-            }
+    //                 // Check if this is the *most recent* cloud in the list
+    //                 if (i == num_available_clouds - 1) {
+    //                     // --- Display Last Cloud (Colored by Intensity) ---
+    //                     pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> intensity_handler(cloud_filtered, "intensity");
+    //                     if (!viewer->updatePointCloud(cloud_filtered, intensity_handler, cloud_id)) {
+    //                         viewer->addPointCloud(cloud_filtered, intensity_handler, cloud_id);
+    //                         viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2.0, cloud_id);
+    //                     }
+    //                 } else {
+    //                     // --- Display Older Clouds (Colored Gray) ---
+    //                     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZI> color_handler(cloud_filtered, 128, 128, 128); 
+    //                     if (!viewer->updatePointCloud(cloud_filtered, color_handler, cloud_id)) {
+    //                         viewer->addPointCloud(cloud_filtered, color_handler, cloud_id);
+    //                         viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, cloud_id);
+    //                     }
+    //                 }
+    //                 cloud_viz_index++;
+    //             }
+    //         }
 
-            // --- 3. Update Trajectories (Your Existing Code) ---
-            ins_trajectory_cloud->clear();
-            if (vis_data_ptr->insposes) {
-                for (const auto& key_value : *(vis_data_ptr->insposes)) {
-                    const auto& pose_matrix = key_value.second.pose;
-                    pcl::PointXYZRGB ins_point;
-                    ins_point.x = pose_matrix(0, 3);
-                    ins_point.y = pose_matrix(1, 3);
-                    ins_point.z = pose_matrix(2, 3);
-                    ins_point.r = 30;
-                    ins_point.g = 144;
-                    ins_point.b = 255;
-                    ins_trajectory_cloud->push_back(ins_point);
-                }
-            }
-            if (!viewer->updatePointCloud(ins_trajectory_cloud, "ins_trajectory_cloud")) {
-                viewer->addPointCloud(ins_trajectory_cloud, "ins_trajectory_cloud");
-                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, "ins_trajectory_cloud");
-            }
+    //         // --- 3. Update Trajectories (Your Existing Code) ---
+    //         ins_trajectory_cloud->clear();
+    //         if (vis_data_ptr->insposes) {
+    //             for (const auto& key_value : *(vis_data_ptr->insposes)) {
+    //                 const auto& pose_matrix = key_value.second.pose;
+    //                 pcl::PointXYZRGB ins_point;
+    //                 ins_point.x = pose_matrix(0, 3);
+    //                 ins_point.y = pose_matrix(1, 3);
+    //                 ins_point.z = pose_matrix(2, 3);
+    //                 ins_point.r = 30;
+    //                 ins_point.g = 144;
+    //                 ins_point.b = 255;
+    //                 ins_trajectory_cloud->push_back(ins_point);
+    //             }
+    //         }
+    //         if (!viewer->updatePointCloud(ins_trajectory_cloud, "ins_trajectory_cloud")) {
+    //             viewer->addPointCloud(ins_trajectory_cloud, "ins_trajectory_cloud");
+    //             viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, "ins_trajectory_cloud");
+    //         }
 
-            lo_trajectory_cloud->clear();
-            if (vis_data_ptr->loposes) {
-                for (const auto& key_value : *(vis_data_ptr->loposes)) {
-                    const auto& pose_matrix = key_value.second.pose;
-                    pcl::PointXYZRGB lo_point;
-                    lo_point.x = pose_matrix(0, 3);
-                    lo_point.y = pose_matrix(1, 3);
-                    lo_point.z = pose_matrix(2, 3);
-                    lo_point.r = 255;
-                    lo_point.g = 20;
-                    lo_point.b = 147;
-                    lo_trajectory_cloud->push_back(lo_point);
-                }
-            }
-            if (!viewer->updatePointCloud(lo_trajectory_cloud, "lo_trajectory_cloud")) {
-                viewer->addPointCloud(lo_trajectory_cloud, "lo_trajectory_cloud");
-                viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, "lo_trajectory_cloud");
-            }
+    //         lo_trajectory_cloud->clear();
+    //         if (vis_data_ptr->loposes) {
+    //             for (const auto& key_value : *(vis_data_ptr->loposes)) {
+    //                 const auto& pose_matrix = key_value.second.pose;
+    //                 pcl::PointXYZRGB lo_point;
+    //                 lo_point.x = pose_matrix(0, 3);
+    //                 lo_point.y = pose_matrix(1, 3);
+    //                 lo_point.z = pose_matrix(2, 3);
+    //                 lo_point.r = 255;
+    //                 lo_point.g = 20;
+    //                 lo_point.b = 147;
+    //                 lo_trajectory_cloud->push_back(lo_point);
+    //             }
+    //         }
+    //         if (!viewer->updatePointCloud(lo_trajectory_cloud, "lo_trajectory_cloud")) {
+    //             viewer->addPointCloud(lo_trajectory_cloud, "lo_trajectory_cloud");
+    //             viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.5, "lo_trajectory_cloud");
+    //         }
 
-            // --- 4. Update Camera Position (Your Existing Code) ---
-            current_focal_point = current_focal_point + (target_focal_point - current_focal_point) * kSmoothingFactor;
-            Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
-            current_cam_pos = current_cam_pos + (target_cam_pos - current_cam_pos) * kSmoothingFactor;
-             viewer->setCameraPosition(
-                current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
-                current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
-                kUpVector.x(), kUpVector.y(), kUpVector.z()
-            );
+    //         // --- 4. Update Camera Position (Your Existing Code) ---
+    //         current_focal_point = current_focal_point + (target_focal_point - current_focal_point) * kSmoothingFactor;
+    //         Eigen::Vector3d target_cam_pos = current_focal_point + kCameraOffset;
+    //         current_cam_pos = current_cam_pos + (target_cam_pos - current_cam_pos) * kSmoothingFactor;
+    //          viewer->setCameraPosition(
+    //             current_cam_pos.x(), current_cam_pos.y(), current_cam_pos.z(),
+    //             current_focal_point.x(), current_focal_point.y(), current_focal_point.z(),
+    //             kUpVector.x(), kUpVector.y(), kUpVector.z()
+    //         );
 
-            // --- 5. Return data to pool (CRITICAL) ---
-            std::cout << "Vis data pool size: " << vis_data_pool.GetAvailableCount() << std::endl; 
-            vis_data_pool.Return(std::move(vis_data_ptr));
+    //         // --- 5. Return data to pool (CRITICAL) ---
+    //         std::cout << "Vis data pool size: " << vis_data_pool.GetAvailableCount() << std::endl; 
+    //         vis_data_pool.Return(std::move(vis_data_ptr));
 
-            // --- 6. Spin viewer ---
-            viewer->spinOnce(100);
-        }
-        std::cout << "Visualization thread exiting\n";
-    });
+    //         // --- 6. Spin viewer ---
+    //         viewer->spinOnce(100);
+    //     }
+    //     std::cout << "Visualization thread exiting\n";
+    // });
 
     while (running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -580,7 +580,7 @@ int main() {
     if (comp_processing_thread.joinable()) comp_processing_thread.join();
     if (sync_thread.joinable()) sync_thread.join();
     if (lo_thread.joinable()) lo_thread.join();
-    if (viz_thread.joinable()) viz_thread.join();
+    // if (viz_thread.joinable()) viz_thread.join();
 
     std::cout << "All threads have been joined. Shutdown complete." << std::endl;
 }
