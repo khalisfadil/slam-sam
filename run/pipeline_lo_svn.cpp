@@ -375,14 +375,14 @@ int main() {
                 vg.setLeafSize(vs, vs, vs);
                 vg.setInputCloud(std::move(lidarFactorPointsTarget));
                 vg.filter(*lidarFactorPointsTargetDS);
-                svn_ndt_ptr->setInputTarget(std::move(lidarFactorPointsTargetDS));
-                svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
-                predTb2m = result.final_pose;
-                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*pointsBody, *pointsMap, result.final_pose.matrix());
-                pointsArchive[id] = {pointsMap, timestamp};
-                insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
-                loPoseArchive[id] = {result.final_pose.matrix(), timestamp};
+                // svn_ndt_ptr->setInputTarget(std::move(lidarFactorPointsTargetDS));
+                // svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
+                // predTb2m = result.final_pose;
+                // pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+                // pcl::transformPointCloud(*pointsBody, *pointsMap, result.final_pose.matrix());
+                // pointsArchive[id] = {pointsMap, timestamp};
+                // insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
+                // loPoseArchive[id] = {result.final_pose.matrix(), timestamp};
                 targetID.push_back(id);
                 if (targetID.size() > targetWinSize) {
                     targetID.pop_front();
