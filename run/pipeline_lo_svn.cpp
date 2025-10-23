@@ -366,7 +366,7 @@ int main() {
                 current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
                 pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTargetDS(new pcl::PointCloud<pcl::PointXYZI>());
-                *lidarFactorPointsTarget = (pointsArchive.at(currID.back())).points;
+                *lidarFactorPointsTarget = (pointsArchive.at(targetID.back())).points;
                 // for (const int& currID : targetID) {
                 //     const auto& currlidarFactorPointsArchive = pointsArchive.at(currID);
                 //     *lidarFactorPointsTarget += *currlidarFactorPointsArchive.points;
