@@ -58,6 +58,7 @@
 #include <robin_map.h> // Include the robin_map header
 #include <Eigen/Core>      // For Eigen::Vector3d, Matrix3d etc.
 #include <Eigen/Eigenvalues> // For covariance computation
+#include <Eigen/StdVector>
 
 namespace svn_ndt // Updated namespace
 {
@@ -155,7 +156,12 @@ public:
     using LeafConstPtr = const Leaf*;
 
     /** @brief Hash map storing voxel leaves, keyed by their computed 1D index. */
-    using Map = tsl::robin_map<size_t, Leaf>; // *** Use tsl::robin_map ***
+    // Define the pair type that will be stored
+    using MapPair = std::pair<const size_t, Leaf>;
+
+    // Tell robin_map to use Eigen's aligned allocator for this pair
+    using Map = tsl::robin_map<size_t, Leaf, std::hash<size_t>, std::equal_to<size_t>,
+                            Eigen::aligned_allocator<MapPair>>;
 
 public:
     /**

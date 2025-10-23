@@ -478,9 +478,9 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
     }
 
     // Allocate storage
-    std::vector<Vector6d> loss_gradients(K_);
-    std::vector<Matrix6d> loss_hessians(K_);
-    std::vector<Vector6d> particle_updates(K_);
+    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> loss_gradients(K_);
+    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> loss_hessians(K_);
+    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> particle_updates(K_);
     std::vector<PointCloudSource, Eigen::aligned_allocator<PointCloudSource>> transformed_clouds(K_); // Use aligned allocator if PointSource has Eigen types
 
     Matrix6d I6 = Matrix6d::Identity(); // Reusable identity matrix
