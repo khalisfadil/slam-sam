@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <limits>
 #include <robin_map.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -77,7 +78,7 @@ struct KeyFrame {
 };
 struct KeyPoint {
     pcl::PointCloud<pcl::PointXYZI>::Ptr points;
-    double timestamp;
+    double timestamp = std::numeric_limits<double>::lowest();
 };
 struct KeyState {
     gtsam::NavState state; // Tb2m: body-to-map transformation in NED frame
@@ -105,7 +106,6 @@ struct KeyFrameStats {
     
     double pose_rmse = 0.0; // RMSE between INS translation and GTSAM translation
 };
-
 
 using VoxelHashMap = tsl::robin_map<Voxel, std::vector<KeyFrame>, VoxelHash>;
 using PointsHashMap = tsl::robin_map<uint64_t, KeyPoint, KeyframeHash>;

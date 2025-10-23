@@ -43,6 +43,7 @@ int main() {
     FrameQueue<std::deque<CompFrame>> frameCompQueue;
     FrameQueue<DataBuffer> packetCompQueue;
     FrameQueue<FrameData> frameDataQueue;
+    FrameQueue<VisualizationData> vizQueue;
 
     ObjectPool<std::deque<CompFrame>> comp_window_pool(8);
     ObjectPool<FrameData> frame_data_pool(8);
@@ -270,7 +271,6 @@ int main() {
             frameDataQueue.push(std::move(data_frame_ptr));
             lidarCallback.ReturnFrameToPool(std::move(lidar_frame_ptr));
             comp_window_pool.Return(std::move(comp_window_frame_ptr));
-            
         }
         std::cout << "Sync processing thread stopped.\n";                          
     });
@@ -286,11 +286,6 @@ int main() {
         PointsHashMap pointsArchive;
         Eigen::Vector3d ins_rlla = Eigen::Vector3d::Zero();
         bool is_first_keyframe = true;
-
-        // =================================================================================
-        // NDT SETUP
-        // =================================================================================
-        
         
         while (running){
             auto data_frame_ptr = frameDataQueue.pop();
@@ -348,12 +343,11 @@ int main() {
             // // =================================================================================
             // NARROW-SCOPED NDT EXPORT (Isolates UB in destructor to this block only)
             // =================================================================================
+            pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp = nullptr;
             if (registerCallback.registration_method_ == "NDT") {
                 {
                     // Tight scope: NDT object destructs immediately after export
-                    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr ndt_omp =
-                        std::make_shared<pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>>();
-
+                    ndt_omp.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
                     ndt_omp->setNumThreads(registerCallback.num_threads_);
                     ndt_omp->setResolution(registerCallback.ndt_resolution_);
                     ndt_omp->setTransformationEpsilon(registerCallback.ndt_transform_epsilon_);

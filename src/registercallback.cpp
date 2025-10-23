@@ -59,6 +59,32 @@ void RegisterCallback::ParseParamdata(const nlohmann::json& json_data) {
         if (register_param.contains("gicp_transform_epsilon")) {
             gicp_transform_epsilon_ = register_param["gicp_transform_epsilon"].get<float>();
         }
+
+        if (register_param.contains("svn_ndt_resolution")) {
+            svn_ndt_resolution_ = register_param["svn_ndt_resolution"].get<float>();
+        }
+        if (register_param.contains("svn_ndt_neighborhood_search_method")) {
+            svn_ndt_neighborhood_search_method_ = register_param["svn_ndt_neighborhood_search_method"].get<std::string>();
+        }
+        if (register_param.contains("svn_ndt_number_particle")) {
+            svn_ndt_number_particle_ = register_param["svn_ndt_number_particle"].get<int>();
+        }
+        if (register_param.contains("svn_ndt_max_iterations")) {
+            svn_ndt_max_iterations_ = register_param["svn_ndt_max_iterations"].get<int>();
+        }
+        if (register_param.contains("svn_ndt_kernel_bandwith")) {
+            svn_ndt_kernel_bandwith_ = register_param["svn_ndt_kernel_bandwith"].get<float>();
+        }
+        if (register_param.contains("svn_ndt_step_size")) {
+            svn_ndt_step_size_ = register_param["svn_ndt_step_size"].get<float>();
+        }
+        if (register_param.contains("svn_ndt_stop_threshold")) {
+            svn_ndt_stop_threshold_ = register_param["svn_ndt_stop_threshold"].get<float>();
+        }
+        if (register_param.contains("svn_ndt_set_outlier_ratio")) {
+            svn_ndt_set_outlier_ratio_ = register_param["svn_ndt_set_outlier_ratio"].get<float>();
+        }
+
     } catch (const nlohmann::json::exception& e) {
         throw std::runtime_error("JSON parsing error in register_parameter: " + std::string(e.what()));
     }

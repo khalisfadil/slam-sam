@@ -12,7 +12,8 @@
                 "/usr/include/vtk-9.1",
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/extern/robin-map/include/tsl",
-                "${workspaceFolder}/extern/ndt_omp/include"
+                "${workspaceFolder}/extern/ndt_omp/include",
+                "${workspaceFolder}/extern/svn_ndt/include"
 
             ],
             "defines": [],

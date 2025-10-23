@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstdint> 
 #include <memory>
+#include <limits>
 
 // %             ... struct for parameter
 struct CompFrame {
@@ -298,12 +299,11 @@ struct CompFrame {
 struct VisualizationData {
     std::shared_ptr<gtsam::Values> poses;
     std::shared_ptr<PointsHashMap> points;
-    // std::shared_ptr<StateHashMap> insposes;
     std::shared_ptr<PoseHashMap> insposes;
 };
 // %            ... struct representing single 3d point data
 struct PCLPointCloud{
-    uint16_t frame_id = 0;
+    uint16_t frame_id = std::numeric_limits<uint16_t>::min();
     pcl::PointCloud<pcl::PointXYZI> pointsBody;               
     std::vector<float> pointsAlpha;
     std::vector<double> pointsTimestamp;
@@ -312,7 +312,7 @@ struct PCLPointCloud{
      * @brief Resets the struct to a default state for object pooling.
      */
     void clear() {
-        frame_id = 0;
+        frame_id = std::numeric_limits<uint16_t>::min();
         pointsBody.clear();
         pointsAlpha.clear();
         pointsTimestamp.clear();
@@ -320,7 +320,7 @@ struct PCLPointCloud{
 };
 // %            ... struct representing a lidar data and its encapsulated data of imu and position
 struct FrameData{
-    double timestamp = 0.0;                                           // evaluation timestamp
+    double timestamp = std::numeric_limits<double>::lowest();                                           // evaluation timestamp
     PCLPointCloud points;
     std::vector<CompFrame> ins;
 
@@ -328,18 +328,18 @@ struct FrameData{
      * @brief Resets the struct to a default state for object pooling.
      */
     void clear() {
-        timestamp = 0.0;
+        timestamp = std::numeric_limits<double>::lowest();
         points.clear(); // Calls PCLPointCloud::clear()
         ins.clear();    // Calls std::vector::clear()
     }
 };
 // %             ... struct for parameter
 struct LidarFrame {
-    uint16_t frame_id = 0;
-    double timestamp = 0.0; // Current timestamp, unix timestamp (PTP sync)
-    double timestamp_end = 0.0; // End timestamp of current frame
-    double interframe_timedelta = 0.0; // Time difference between first point in current frame and last point in last frame
-    uint32_t numberpoints = 0;
+    uint16_t frame_id = std::numeric_limits<uint16_t>::min();
+    double timestamp = std::numeric_limits<double>::lowest(); // Current timestamp, unix timestamp (PTP sync)
+    double timestamp_end = std::numeric_limits<double>::lowest(); // End timestamp of current frame
+    double interframe_timedelta = std::numeric_limits<double>::lowest(); // Time difference between first point in current frame and last point in last frame
+    uint32_t numberpoints = std::numeric_limits<uint32_t>::min();
 
     std::vector<float, Eigen::aligned_allocator<float>> x; // X coordinates
     std::vector<float, Eigen::aligned_allocator<float>> y; // Y coordinates
@@ -366,11 +366,11 @@ struct LidarFrame {
     }
 
     void clear() {
-        frame_id = 0;
-        timestamp = 0.0;
-        timestamp_end = 0.0;
-        interframe_timedelta = 0.0;
-        numberpoints = 0;
+        frame_id = std::numeric_limits<uint16_t>::min();
+        timestamp = std::numeric_limits<double>::lowest();
+        timestamp_end = std::numeric_limits<double>::lowest();
+        interframe_timedelta = std::numeric_limits<double>::lowest();
+        numberpoints = std::numeric_limits<uint32_t>::min();
         x.clear();
         y.clear();
         z.clear();
@@ -439,10 +439,3 @@ struct KeyCompasInfo {
     uint64_t frame_id = 0;
 };
 using CompasHashMap = tsl::robin_map<uint64_t, KeyCompasInfo, KeyframeHash>;
-
-
-
-
-
-
-

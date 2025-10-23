@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <memory>
 #include <functional>
+#include <limits>
 
 #include <Eigen/Dense>
 

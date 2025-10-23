@@ -11,6 +11,11 @@
 #include <pclomp/gicp_omp.h>
 #include <pclomp/gicp_omp_impl.hpp>
 
+#include <svn_ndt.h>
+#include <svn_ndt_impl.hpp>
+#include <voxel_grid_covariance.h>
+#include <voxel_grid_covariance_impl.hpp>
+
 #include <pcl/point_types.h>
 #include <pcl/registration/icp.h>
 #include <pcl/registration/gicp.h>
@@ -38,8 +43,18 @@ class RegisterCallback {
         float gicp_corr_dist_threshold_ = 5.0;
         float gicp_transform_epsilon_ = 0.01;
         float regularization_scale_factor_ = 10.0;
-    private:
-        nlohmann::json parameter_;
 
+        float svn_ndt_resolution_ = 1.0;
+        std::string svn_ndt_neighborhood_search_method_ = "DIRECT7";
+        int svn_ndt_number_particle_ = 20;
+        int svn_ndt_max_iterations_ = 50;
+        float svn_ndt_kernel_bandwith_ = 0.2;
+        float svn_ndt_step_size_ = 0.1;
+        float svn_ndt_stop_threshold_ = 1e-4;
+        float svn_ndt_set_outlier_ratio_ = 0.55;
+
+    private:
+
+        nlohmann::json parameter_;
         void ParseParamdata(const nlohmann::json& json_data);
 };
