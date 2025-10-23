@@ -284,7 +284,7 @@ int main() {
             lidarCallback.ReturnFrameToPool(std::move(lidar_frame_ptr));
             comp_window_pool.Return(std::move(comp_window_frame_ptr));
         }
-        std::cout << "Compass window pool size: " << comp_window_pool.GetAvailableCount() << "\n" << std::endl;   
+        // std::cout << "Compass window pool size: " << comp_window_pool.GetAvailableCount() << "\n" << std::endl;   
         std::cout << "Sync processing thread stopped.\n";                          
     });
 
@@ -397,7 +397,7 @@ int main() {
             // }
             frame_data_pool.Return(std::move(data_frame_ptr));
         }
-        std::cout << "Frame data pool size: " << frame_data_pool.GetAvailableCount() << "\n" << std::endl; 
+        // std::cout << "Frame data pool size: " << frame_data_pool.GetAvailableCount() << "\n" << std::endl; 
         std::cout << "LO thread exiting\n";
     });
 
