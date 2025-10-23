@@ -375,7 +375,7 @@ int main() {
                 vg.setLeafSize(vs, vs, vs);
                 vg.setInputCloud(std::move(lidarFactorPointsTarget));
                 vg.filter(*lidarFactorPointsTargetDS);
-                // svn_ndt_ptr->setInputTarget(std::move(lidarFactorPointsTargetDS));
+                svn_ndt_ptr->setInputTarget(lidarFactorPointsTargetDS);
                 // svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
                 // predTb2m = result.final_pose;
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
