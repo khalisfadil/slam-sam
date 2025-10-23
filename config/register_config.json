@@ -2,7 +2,7 @@
     "register_parameter": {
         "num_threads":                          8,
         "mapvoxelsize":                         0.5,
-        "registration_method":                  "NDT",
+        "registration_method":                  "SVNNDT",
         "ndt_resolution":                       2.0,
         "ndt_transform_epsilon":                0.0001,
         "ndt_neighborhood_search_method":       "DIRECT7",
