@@ -267,12 +267,9 @@ void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
     for (const size_t index : keys_to_process)
     {
 
-        // Use .at() which returns a modifiable reference (throws if key disappears, shouldn't happen here)
-        // Or use find() again for safety, though slightly less efficient
-        auto it = leaves_.find(index);
-        if (it == leaves_.end()) continue; // Should not happen if key list is correct
-
-        Leaf& leaf = it->second; // Now this should be a valid non-const reference
+        // Access the leaf directly using operator[]. Since we iterate over existing keys,
+        // this is safe and returns a modifiable Leaf&.
+        Leaf& leaf = leaves_[index];
 
         if (leaf.nr_points_ < min_points_per_voxel_) {
             leaves_.erase(index); // Erase by key
@@ -382,7 +379,7 @@ void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
             // }
             // --- END OPTIONAL ---
         }
-        
+
         output.points.push_back(downsampled_pt);
 
 
