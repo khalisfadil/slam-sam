@@ -84,12 +84,12 @@ target_compile_options(pipeline_lib PUBLIC -O3)
 include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
 check_cxx_compiler_flag("-mfma" COMPILER_SUPPORTS_FMA)
-if(COMPILER_SUPPORTS_AVX2 AND COMPILER_SUPPORTS_FMA)
-    message(STATUS "AVX2 and FMA are supported by the compiler. Enabling for pipeline_lib.")
-    target_compile_options(pipeline_lib PUBLIC -mavx2 -mfma)
-else()
-    message(WARNING "AVX2 or FMA not supported; using scalar implementation.")
-endif()
+# if(COMPILER_SUPPORTS_AVX2 AND COMPILER_SUPPORTS_FMA)
+#     message(STATUS "AVX2 and FMA are supported by the compiler. Enabling for pipeline_lib.")
+#     target_compile_options(pipeline_lib PUBLIC -mavx2 -mfma)
+# else()
+#     message(WARNING "AVX2 or FMA not supported; using scalar implementation.")
+# endif()
 
 
 # --- Build the Executables ---
