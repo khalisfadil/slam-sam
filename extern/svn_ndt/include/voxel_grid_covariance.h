@@ -116,7 +116,7 @@ public:
      * inverse covariance, and eigenvectors/eigenvalues. Optionally
      * stores an Nd centroid if `downsample_all_data_` is true.
      */
-    struct EIGEN_ALIGN(32) Leaf
+    struct alignas(32) Leaf
     {
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW // Crucial for fixed-size Eigen members
 
