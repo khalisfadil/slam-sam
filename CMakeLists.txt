@@ -50,6 +50,7 @@ set(PIPELINE_LIB_SOURCES
 set(INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/ndt_omp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/svn_ndt/include
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/robin-map/include/tsl
     ${PCL_INCLUDE_DIRS}
     ${VTK_INCLUDE_DIRS}
