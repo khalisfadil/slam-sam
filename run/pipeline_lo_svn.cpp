@@ -378,8 +378,8 @@ int main() {
                 // svn_ndt_ptr->setInputTarget(std::move(lidarFactorPointsTargetDS));
                 // svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
                 // predTb2m = result.final_pose;
-                // pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                // pcl::transformPointCloud(*pointsBody, *pointsMap, result.final_pose.matrix());
+                pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
+                pcl::transformPointCloud(*pointsBody, *pointsMap, current_ins_state.pose().matrix());
                 pointsArchive[id] = {pointsMap, timestamp};
                 insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
                 loPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
