@@ -590,11 +590,12 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
                     phi_k_star += k_val * loss_gradients[l] + k_grad;
 
-                    if (loss_hessians[l].allFinite()) { // <-- Restore check and use NDT Hessian
-                        H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
-                    } else {
-                        H_k_tilde += (k_grad * k_grad.transpose()); // <-- Keep fallback
-                    }
+                    // if (loss_hessians[l].allFinite()) { // <-- Restore check and use NDT Hessian
+                    //     H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
+                    // } else {
+                    //     H_k_tilde += (k_grad * k_grad.transpose()); // <-- Keep fallback
+                    // }
+                    H_k_tilde += (k_grad * k_grad.transpose());
                 }
 
                 phi_k_star /= static_cast<double>(K_);
