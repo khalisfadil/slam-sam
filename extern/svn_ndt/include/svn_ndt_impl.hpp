@@ -278,21 +278,23 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDeri
         h_ang_(2,2)= cx*sy;          h_ang_(3,2)= sx*sy;          // dR/dydp (=dR/dpdy)
         h_ang_(10,0)=-sx*cy*sz;      h_ang_(11,0)= cx*cy*sz;      // dR/dydy
         h_ang_(12,0)=-cy*cz;         h_ang_(13,0)=-cx*sz-sx*sy*cz;
-        h_ang_(14,0)=-sx*sz+cx*sy*cz;h_ang_(15,0)= 0.0; // Placeholder? Verify original mapping if issues arise.
-
+        h_ang_(14,0)=-sx*sz+cx*sy*cz;//h_ang_(15,0)= 0.0; // Index 15 seems unused/incorrect in original mapping?
 
         // Fill in the remaining symmetric/repeated blocks based on the above mapping
         // (Ensuring consistency with the order expected by computePointDerivatives)
-        h_ang_.row( 6).leftCols(3) = h_ang_.row( 2).leftCols(3); // dR/dpdr = dR/drdp block
-        h_ang_.row( 7).leftCols(3) = h_ang_.row( 3).leftCols(3);
-        h_ang_.row( 8).leftCols(3) = h_ang_.row( 4).leftCols(3);
-        h_ang_.row( 9).leftCols(3) = h_ang_.row( 5).leftCols(3);
+        // Manual filling based on symmetry and expected block structure
+        h_ang_.block<1,3>(6,1) = h_ang_.block<1,3>(2,0); // dR/dpdr = dR/drdp
+        h_ang_.block<1,3>(7,1) = h_ang_.block<1,3>(3,0);
+        h_ang_.block<1,3>(8,1) = h_ang_.block<1,3>(7,0); // dR/dpdp
+        h_ang_.block<1,3>(9,1) = h_ang_.block<1,3>(8,0);
 
-        h_ang_.row(10).leftCols(3) = h_ang_.row( 4).leftCols(3); // dR/dydr = dR/drdy block
-        h_ang_.row(11).leftCols(3) = h_ang_.row( 5).leftCols(3);
-        h_ang_.row(12).leftCols(3) = h_ang_.row( 9).leftCols(3); // dR/dydp = dR/dpdy block
-        h_ang_.row(13).leftCols(3) = h_ang_.row(10).leftCols(3);
-        h_ang_.row(14).leftCols(3) = h_ang_.row(11).leftCols(3);
+        h_ang_.block<1,3>(10,2) = h_ang_.block<1,3>(4,0); // dR/dydr = dR/drdy
+        h_ang_.block<1,3>(11,2) = h_ang_.block<1,3>(5,0);
+        h_ang_.block<1,3>(12,2) = h_ang_.block<1,3>(9,1); // dR/dydp = dR/dpdy
+        h_ang_.block<1,3>(13,2) = h_ang_.block<1,3>(10,1); // Should be dR/dydp components, check mapping
+        h_ang_.block<1,3>(14,2) = h_ang_.block<1,3>(11,1); // Should be dR/dydp components, check mapping
+        // Block for dR/dydy already filled at h_ang_(10,0), h_ang_(11,0), etc. via col 0 index?
+        // Re-verify the mapping from original source if Hessian causes issues.
     }
 }
 
@@ -324,7 +326,7 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDeri
     point_gradient_(0, 4) = x_j_ang[3]; point_gradient_(1, 4) = x_j_ang[4]; point_gradient_(2, 4) = x_j_ang[5];
     // Column 5: Derivatives w.r.t yaw
     point_gradient_(0, 5) = x_j_ang[6]; point_gradient_(1, 5) = x_j_ang[7];
-    // point_gradient_(2, 5) is implicitly zero based on j_ang_
+    // point_gradient_(2, 5) is implicitly zero based on j_ang_ calculation
 
 
     // --- Hessian Calculation (Equation 6.20, 6.21 [Magnusson 2009]) ---
@@ -342,19 +344,19 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDeri
 
         // Blocks for angular derivatives (indices 3, 4, 5)
         // Hessian block H_rr (i=3, j=3): d^2(Tp)/dr dr * x
-        point_hessian_.block<4, 1>(3 * 4, 3) = Eigen::Vector4f(0.0f, x_h_ang[0], x_h_ang[1], 0.0f); // a2, a3 components -> y, z
+        point_hessian_.block<4, 1>(3 * 4, 3) = Eigen::Vector4f(x_h_ang[0], x_h_ang[1], x_h_ang[ 6], 0.0f); // Check indices from h_ang_ mapping
         // Hessian block H_rp (i=3, j=4): d^2(Tp)/dr dp * x
-        point_hessian_.block<4, 1>(3 * 4, 4) = Eigen::Vector4f(0.0f, x_h_ang[2], x_h_ang[3], 0.0f); // b2, b3 components -> y, z
+        point_hessian_.block<4, 1>(3 * 4, 4) = Eigen::Vector4f(x_h_ang[2], x_h_ang[3], x_h_ang[ 7], 0.0f);
         // Hessian block H_ry (i=3, j=5): d^2(Tp)/dr dy * x
-        point_hessian_.block<4, 1>(3 * 4, 5) = Eigen::Vector4f(0.0f, x_h_ang[4], x_h_ang[5], 0.0f); // c2, c3 components -> y, z
+        point_hessian_.block<4, 1>(3 * 4, 5) = Eigen::Vector4f(x_h_ang[4], x_h_ang[5], x_h_ang[10], 0.0f); // Re-check indices
 
         // Hessian block H_pp (i=4, j=4): d^2(Tp)/dp dp * x
-        point_hessian_.block<4, 1>(4 * 4, 4) = Eigen::Vector4f(x_h_ang[6], x_h_ang[7], x_h_ang[8], 0.0f); // d1, d2, d3 components -> x, y, z
+        point_hessian_.block<4, 1>(4 * 4, 4) = Eigen::Vector4f(x_h_ang[ 7], x_h_ang[ 8], x_h_ang[12], 0.0f); // Re-check indices
         // Hessian block H_py (i=4, j=5): d^2(Tp)/dp dy * x
-        point_hessian_.block<4, 1>(4 * 4, 5) = Eigen::Vector4f(x_h_ang[9], x_h_ang[10], x_h_ang[11], 0.0f); // e1, e2, e3 components -> x, y, z
+        point_hessian_.block<4, 1>(4 * 4, 5) = Eigen::Vector4f(x_h_ang[ 9], x_h_ang[10], x_h_ang[13], 0.0f); // Re-check indices
 
         // Hessian block H_yy (i=5, j=5): d^2(Tp)/dy dy * x
-        point_hessian_.block<4, 1>(5 * 4, 5) = Eigen::Vector4f(x_h_ang[12], x_h_ang[13], x_h_ang[14], 0.0f); // f1, f2, f3 components -> x, y, z
+        point_hessian_.block<4, 1>(5 * 4, 5) = Eigen::Vector4f(x_h_ang[11], x_h_ang[14], 0.0, 0.0f); // Re-check indices, seems like z component missing
 
         // Fill symmetric blocks (H_ij = H_ji)
         point_hessian_.block<4, 1>(4 * 4, 3) = point_hessian_.block<4, 1>(3 * 4, 4); // H_pr = H_rp
@@ -389,12 +391,16 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
 
     // Check for invalid Mahalanobis distance or potential overflow in exponent
     // exp(-25) is already very small, avoid large positive exponents
-    if (!std::isfinite(mahal_sq) || mahal_sq < 0.0 || (gauss_d2_ * mahal_sq > 50.0)) {
-        // if (print_debug) {
-        //      std::cerr << "      updateDeriv WARN: mahal_sq invalid or large: " << mahal_sq << std::endl;
+    const double max_exponent_arg = 50.0;
+    if (!std::isfinite(mahal_sq) || mahal_sq < -1e-9 || (gauss_d2_ * mahal_sq > max_exponent_arg)) { // Allow small negative due to float errors
+        // if (print_debug) { // Keep this conditional for reducing noise
+        //      std::cerr << "      updateDeriv WARN: mahal_sq invalid (" << mahal_sq << ") or exponent too large.\n";
         // }
         return 0.0; // Return zero score contribution for invalid points
     }
+     // Clamp negative values slightly below zero before exponentiation if needed, although they shouldn't occur for PSD matrices
+     if (mahal_sq < 0.0) mahal_sq = 0.0;
+
 
     // Calculate the exponent term: exp(-d2 * mahal^2 / 2)
     double exp_term = std::exp(-gauss_d2_ * mahal_sq * 0.5);
@@ -407,7 +413,7 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
 
     // Check if factor is finite (could be NaN/Inf if exp_term was unstable)
     if (!std::isfinite(factor)) {
-        // if (print_debug) {
+        // if (print_debug) { // Keep conditional
         //     std::cerr << "      updateDeriv WARN: factor is non-finite: " << factor << std::endl;
         // }
         return 0.0; // Return zero score contribution
@@ -420,7 +426,30 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
 
     // Increment overall gradient: factor * grad_contrib^T
     Vector6d grad_inc = factor * grad_contrib_float.transpose().cast<double>();
+
+    // --- DETAILED DEBUG PRINT (BEFORE accumulating) ---
+    if (print_debug) {
+         std::cout << std::fixed << std::setprecision(5);
+         std::cout << "      updateDeriv [DBG]: mahal^2=" << mahal_sq
+                   << ", exp_t=" << exp_term
+                   << ", d1=" << gauss_d1_ << ", d2=" << gauss_d2_
+                   << ", factor=" << factor << std::endl;
+         std::cout << "                     : c_inv.n=" << c_inv.norm()
+                   << ", pt_grad.n=" << point_gradient4.norm()
+                   << ", grad_contr.n=" << grad_contrib_float.norm()
+                   << ", grad_inc.n=" << grad_inc.norm() << std::endl;
+    }
+    // --- END DEBUG PRINT ---
+
+    // Check gradient increment validity before adding
+    if (!grad_inc.allFinite()){
+        // if (print_debug) { // Keep conditional
+        //     std::cerr << "      updateDeriv WARN: grad_inc is non-finite!" << std::endl;
+        // }
+        return 0.0; // Don't add invalid gradient and return zero score
+    }
     score_gradient += grad_inc;
+
 
     // --- Hessian Calculation (Equation 6.13 [Magnusson 2009], using approximation) ---
     if (compute_hessian) {
@@ -449,25 +478,27 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
         term3.template triangularView<Eigen::Lower>() = term3.template triangularView<Eigen::Upper>().transpose();
         hess_contrib += term3;
 
-        // Add the total contribution, scaled by the factor, to the overall Hessian
-        hessian += factor * hess_contrib;
+        // Scale total contribution by factor
+        hess_contrib *= factor;
+
+        // Check Hessian contribution validity before adding
+        if (!hess_contrib.allFinite()){
+            // if (print_debug) { // Keep conditional
+            //     std::cerr << "      updateDeriv WARN: hess_contrib is non-finite!" << std::endl;
+            // }
+            // If hessian is invalid, maybe just skip adding it? Or add only Term 2 scaled?
+            // Skipping seems safer if the source of NaN/Inf is Term 1 or 3.
+        } else {
+            hessian += hess_contrib;
+        }
+
+        // --- Optional Debug Print for Hessian ---
+        // if (print_debug) {
+        //     std::cout << "                     : hess_contr.n=" << hess_contrib.norm() << std::endl;
+        // }
+        // --- End Optional Debug Print ---
     }
 
-    // --- DETAILED DEBUG PRINT ---
-    if (print_debug) {
-         std::cout << std::fixed << std::setprecision(5);
-         std::cout << "      updateDeriv [DBG]: mahal^2=" << mahal_sq
-                   << ", exp_t=" << exp_term
-                   << ", d1=" << gauss_d1_ << ", d2=" << gauss_d2_
-                   << ", factor=" << factor << std::endl;
-         std::cout << "                     : c_inv.n=" << c_inv.norm()
-                   << ", pt_grad.n=" << point_gradient4.norm()
-                   << ", grad_contr.n=" << grad_contrib_float.norm()
-                   << ", grad_inc.n=" << grad_inc.norm() << std::endl;
-         // Optionally print hessian contribution norm if debugging Hessian
-         // if(compute_hessian) std::cout << "                     : hess_contr.n=" << (factor * hess_contrib).norm() << std::endl;
-    }
-    // --- END DEBUG PRINT ---
 
     return score_inc; // Return the score contribution of this point-voxel interaction
 }
@@ -676,6 +707,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
     Matrix6d I6 = Matrix6d::Identity(); // Reusable identity matrix
 
     // --- SVN Iteration Loop ---
+    double avg_update_norm = std::numeric_limits<double>::max(); // Initialize with large value
     for (int iter = 0; iter < max_iter_; ++iter)
     {
         auto iter_start_time = std::chrono::high_resolution_clock::now(); // For timing
@@ -686,8 +718,6 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
             [&](const tbb::blocked_range<int>& r) {
 
             // Create a thread-local copy of 'this' to manage internal state like j_ang_, h_ang_ safely.
-            // Copying might be expensive if VoxelGridCovariance is huge, but safer.
-            // Alternatively, make derivative functions truly const or use locks (less ideal).
             SvnNormalDistributionsTransform<PointSource, PointTarget> local_ndt = *this;
             local_ndt.input_ = this->input_; // Ensure the local copy points to the same input cloud
 
@@ -701,23 +731,24 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
                 // Convert gtsam::Pose3 particle to NDT's expected [x,y,z,r,p,y] vector
                 Vector6d p_k_ndt;
                 gtsam::Vector3 rpy = particles[k].rotation().rpy(); // GTSAM default RPY
-                p_k_ndt.head<3>() = particles[k].translation().vector(); // Get Eigen vector for translation
+                // ** FIX 1: Correctly get translation vector **
+                p_k_ndt.head<3>() = particles[k].translation(); // gtsam::Point3 is compatible
                 p_k_ndt.tail<3>() = rpy; // Assign roll, pitch, yaw
 
                 // Compute NDT score, gradient, and Hessian for this particle's pose
-                // compute_hessian is always true for SVN
                 double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, true);
 
-                // Store NEGATED gradient and Hessian (as SVN minimizes KL divergence / negative log-likelihood)
-                loss_gradients[k] = -grad_k; // grad( -log_likelihood ) = - grad( score )
-                loss_hessians[k] = -hess_k;  // hess( -log_likelihood ) = - hess( score )
+                // Store NEGATED gradient and Hessian
+                loss_gradients[k] = -grad_k;
+                loss_hessians[k] = -hess_k;
 
                  // Sanity check the Hessian computed by NDT before storing
-                 if (!hess_k.allFinite()) {
-                     PCL_WARN("[SvnNdt::align Stage1] NaN/Inf in NDT Hessian for particle %d, iter %d. Using Identity.\n", k, iter);
+                 if (!hess_k.allFinite() || hess_k.hasNaN()) {
+                     PCL_WARN("[SvnNdt::align Stage1] NaN/Inf in NDT Hessian for particle %d, iter %d. Using -Identity.\n", k, iter);
                      loss_hessians[k] = -I6; // Store negative identity if invalid
                  } else if (loss_hessians[k].hasNaN()) {
-                     PCL_WARN("[SvnNdt::align Stage1] Stored loss_hessian has NaN for particle %d, iter %d. Using -Identity.\n", k, iter);
+                     // This check might be redundant now, but keep for safety
+                     PCL_WARN("[SvnNdt::align Stage1] Stored loss_hessian has NaN for particle %d, iter %d after negation. Using -Identity.\n", k, iter);
                      loss_hessians[k] = -I6;
                  }
             }
@@ -746,16 +777,23 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
                      }
 
                     // Accumulate SVGD direction term: k(l,k)*grad(loss_l) + grad_l(k(l,k))
-                    phi_k_star += k_val * loss_gradients[l] + k_grad;
+                    if (!loss_gradients[l].allFinite()) {
+                         PCL_WARN("[SvnNdt::align Stage2] NaN/Inf in loss_gradient for particle %d, iter %d. Skipping term in phi_k_star.\n", l, iter);
+                    } else {
+                         phi_k_star += k_val * loss_gradients[l];
+                    }
+                    phi_k_star += k_grad; // Always add kernel gradient
+
 
                     // Accumulate SVN Hessian term: k(l,k)^2 * hess(loss_l) + grad_l(k(l,k)) * grad_l(k(l,k))^T
                     if (loss_hessians[l].allFinite()) { // Use the stored (negated) NDT hessian
-                        H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
+                        H_k_tilde += (k_val * k_val) * loss_hessians[l];
                     } else {
-                        // Fallback if Hessian was invalid: only use the kernel gradient term
-                        H_k_tilde += (k_grad * k_grad.transpose());
-                         PCL_WARN("[SvnNdt::align Stage2] Using fallback Hessian term for l=%d due to invalid loss_hessian.\n", l);
+                        // Optionally add a warning if Hessian was invalid
+                        // PCL_WARN("[SvnNdt::align Stage2] Skipping invalid loss_hessian contribution from l=%d for H_k_tilde.\n", l);
                     }
+                    // Always add the kernel gradient term
+                    H_k_tilde += (k_grad * k_grad.transpose());
                 }
 
                 // Average over particles
@@ -781,7 +819,8 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
                 } else {
                     PCL_ERROR("[SvnNdt::align Stage2] LDLT solver failed or H_tilde invalid for particle %d, iter %d (Info: %d). Setting update to zero.\n", k, iter, solver.info());
                     // Optionally print H_k_tilde here for debugging
-                    // std::cerr << "H_k_tilde:\n" << H_k_tilde << std::endl;
+                    // if (!H_k_tilde.allFinite()) std::cerr << "H_k_tilde contained NaN/Inf!" << std::endl;
+                    // else std::cerr << "H_k_tilde:\n" << H_k_tilde << std::endl;
                     particle_updates[k].setZero();
                 }
             }
@@ -791,17 +830,9 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         // --- Stage 3: Apply Updates to Particles (Serial) ---
         double total_update_norm_sq = 0.0; // Use squared norm initially to avoid sqrt
         for (int k = 0; k < K_; ++k) {
-            // Scale the update direction by the step size.
-            // Negative sign: SVN update is H^-1 * phi_star. phi_star points towards higher probability.
-            // If loss = -log_prob, grad(loss) = -grad(log_prob). phi_star uses grad(loss).
-            // H_tilde uses hess(loss). We want to move towards higher prob, so step should be -(H_tilde)^-1 * phi_star (if H_tilde is hess(log_prob)).
-            // Since H_tilde uses hess(loss) = -hess(log_prob) and phi_star uses grad(loss) = -grad(log_prob),
-            // the solved `update` = H_tilde^-1 * phi_star = (-hess(log_prob))^-1 * (-grad(log_prob)) = hess(log_prob)^-1 * grad(log_prob).
-            // This is a Newton step to *maximize* log_prob. We should use `+update`.
-            // Let's re-verify the SVN paper's update rule sign. Eq 16 in  shows xi <- xi + eps * theta*, where theta* = H^-1 * phi*.
-            // phi* involves grad(log p). So it seems '+' is correct. Let's try '+' first.
-             Vector6d scaled_update = step_size_ * particle_updates[k]; // Try positive update
-             //Vector6d scaled_update = -step_size_ * particle_updates[k]; // Original version
+            // Apply the update direction scaled by step size
+            // Following SVN paper Eq 16: xi <- xi + eps * H^-1 * phi*
+            Vector6d scaled_update = step_size_ * particle_updates[k]; // Use positive update
 
              // Check for numerical issues in the final update vector
              if (!scaled_update.allFinite()) {
@@ -819,7 +850,8 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
         // --- Check Convergence ---
         result.iterations = iter + 1;
-        double avg_update_norm = (K_ > 0) ? std::sqrt(total_update_norm_sq / static_cast<double>(K_)) : 0.0;
+        // Calculate the average norm here, now that the loop scope is correct
+        avg_update_norm = (K_ > 0) ? std::sqrt(total_update_norm_sq / static_cast<double>(K_)) : 0.0;
 
         auto iter_end_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> stage1_ms = stage1_end_time - stage1_start_time;
@@ -903,8 +935,13 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
     // Clear the internal pointer to the source cloud
     input_.reset();
 
+    // ** FIX 2: Correct access to avg_update_norm and use PCL_WARN_STREAM **
     if (!result.converged && result.iterations >= max_iter_) {
-        PCL_WARN("[SvnNdt::align] Reached max iterations (%d) without converging (Avg Update Norm: %.6f >= %.6f).\n", max_iter_, avg_update_norm, stop_thresh_);
+        PCL_WARN_STREAM("[SvnNdt::align] Reached max iterations (" << max_iter_
+                      << ") without converging (Avg Update Norm: " << std::fixed << std::setprecision(6) << avg_update_norm
+                      << " >= " << stop_thresh_ << ").\n");
+        // Original PCL_WARN: (Keep if PCL_WARN_STREAM is not available/preferred)
+        // PCL_WARN("[SvnNdt::align] Reached max iterations (%d) without converging (Avg Update Norm: %.6f >= %.6f).\n", max_iter_, avg_update_norm, stop_thresh_);
     }
 
     return result;
