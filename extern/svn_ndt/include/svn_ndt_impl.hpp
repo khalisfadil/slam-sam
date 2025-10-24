@@ -298,13 +298,13 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
     double score_inc = -gauss_d1_ * exp_term;
     double factor = gauss_d1_ * gauss_d2_ * exp_term; // == -gauss_d2_ * score_inc;
 
-    if (!std::isfinite(factor) || factor < 0) {
+    if (!std::isfinite(factor)) { // <-- REMOVE 'factor < 0' CHECK
         // ######### DEBUG
         if (print_debug) {
-             std::cout << "      updateDeriv[pt0]: factor invalid/negative: " << factor << std::endl;
+            std::cout << "      updateDeriv[pt0]: factor NON-FINITE: " << factor << std::endl; // <-- Update message
         }
         // ######### DEBUG
-        return 0.0;
+        return 0.0; // Still return 0 if NaN/Inf
     }
 
     Eigen::Matrix<float, 4, 6> temp_vec = c_inv4 * point_gradient4;
