@@ -14,7 +14,7 @@
         "svn_ndt_number_particle":              20,
         "svn_ndt_max_iterations":               50,
         "svn_ndt_kernel_bandwith":              0.2,
-        "svn_ndt_step_size":                    0.01,
+        "svn_ndt_step_size":                    0.5,
         "svn_ndt_stop_threshold":               1e-4,
         "svn_ndt_set_outlier_ratio":            0.55
     }
