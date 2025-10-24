@@ -246,7 +246,7 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDeri
 
     // --- Jacobian Components (Equation 6.19 [Magnusson 2009]) ---
     j_ang_.setZero(); // Ensure initialization
-    // Derivatives w.r.t Roll (j_ang columns 0-2 for x,y,z components)
+    // Derivatives w.r.t Roll
     j_ang_(0,0)=-sx*sz+cx*sy*cz; j_ang_(1,0)= cx*sz+sx*sy*cz; j_ang_(2,0)=-sy*cz;
     j_ang_(3,0)= sx*cy*cz;       j_ang_(4,0)=-cx*cy*cz;       j_ang_(5,0)=-cy*sz;
     j_ang_(6,0)= cx*cz-sx*sy*sz; j_ang_(7,0)= sx*cz+cx*sy*sz;
@@ -263,22 +263,21 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDeri
     // --- Hessian Components (Equation 6.21 [Magnusson 2009]) ---
     if (compute_hessian) {
         h_ang_.setZero(); // Ensure initialization
-        // Calculate only the unique second derivative components
-        h_ang_(0,0)=-cx*sz-sx*sy*cz; h_ang_(1,0)=-sx*sz+cx*sy*cz; // dR/drdr
-        h_ang_(2,0)= cx*cy*cz;       h_ang_(3,0)= sx*cy*cz;       // dR/drdp
-        h_ang_(4,0)=-sx*cz-cx*sy*sz; h_ang_(5,0)= cx*cz-sx*sy*sz; // dR/drdy
+        // Calculate only the unique second derivative components needed for the mapping
+        // These rows correspond to the components needed later when multiplied by x4
+        h_ang_(0,0)=-cx*sz-sx*sy*cz; h_ang_(1,0)=-sx*sz+cx*sy*cz; // dR/drdr (y,z components)
+        h_ang_(2,0)= cx*cy*cz;       h_ang_(3,0)= sx*cy*cz;       // dR/drdp (y,z components)
+        h_ang_(4,0)=-sx*cz-cx*sy*sz; h_ang_(5,0)= cx*cz-sx*sy*sz; // dR/drdy (y,z components)
 
-        h_ang_(6,1)=-cy*cz;          h_ang_(7,1)=-sx*sy*cz;       // dR/dpdp (Note: Swapped indices from original code for clarity)
-        h_ang_(8,1)= cx*sy*cz;       // dR/dpdp
+        h_ang_(6,1)=-cy*cz;          h_ang_(7,1)=-sx*sy*cz;       // dR/dpdp (x,y components)
+        h_ang_(8,1)= cx*sy*cz;                                    // dR/dpdp (z component)
 
-        h_ang_(9,1)= sy*sz;          h_ang_(10,1)=-sx*cy*sz;      // dR/dpdy
-        h_ang_(11,1)= cx*cy*sz;
+        h_ang_(9,1)= sy*sz;          h_ang_(10,1)=-sx*cy*sz;      // dR/dpdy (x,y components)
+        h_ang_(11,1)= cx*cy*sz;                                    // dR/dpdy (z component)
 
-        h_ang_(12,2)=-cy*cz;         h_ang_(13,2)=-cx*sz-sx*sy*cz;// dR/dydy (Note: Swapped indices from original code for clarity)
-        h_ang_(14,2)=-sx*sz+cx*sy*cz;
-        // h_ang(15,?) seems unused
+        h_ang_(12,2)=-cy*cz;         h_ang_(13,2)=-cx*sz-sx*sy*cz;// dR/dydy (x,y components)
+        h_ang_(14,2)=-sx*sz+cx*sy*cz;                              // dR/dydy (z component)
 
-        // ** REMOVED FAULTY SYMMETRIC BLOCK ASSIGNMENTS **
         // Symmetry is handled in computePointDerivatives when filling point_hessian_
     }
 }
@@ -297,7 +296,6 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDeri
     Eigen::Vector4f x4(static_cast<float>(x[0]), static_cast<float>(x[1]), static_cast<float>(x[2]), 0.0f); // w=0 for vector/point difference
 
     // --- Jacobian Calculation (Equation 6.18, 6.19 [Magnusson 2009]) ---
-    // Jp = [ d(Tp)/dt | d(Tp)/da ] = [ I | d(Rx+t)/da ] = [ I | (dR/da)*x ]
     point_gradient_.setZero();
     point_gradient_.block<3, 3>(0, 0).setIdentity(); // Top-left 3x3 is Identity (derivative w.r.t translation)
 
@@ -305,13 +303,9 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDeri
     Eigen::Matrix<float, 8, 1> x_j_ang = j_ang_ * x4; // (8x4) * (4x1) -> (8x1)
 
     // Map components of x_j_ang to the correct columns (3, 4, 5) of point_gradient_
-    // Column 3: Derivatives w.r.t roll
     point_gradient_(0, 3) = x_j_ang[0]; point_gradient_(1, 3) = x_j_ang[1]; point_gradient_(2, 3) = x_j_ang[2];
-    // Column 4: Derivatives w.r.t pitch
     point_gradient_(0, 4) = x_j_ang[3]; point_gradient_(1, 4) = x_j_ang[4]; point_gradient_(2, 4) = x_j_ang[5];
-    // Column 5: Derivatives w.r.t yaw
     point_gradient_(0, 5) = x_j_ang[6]; point_gradient_(1, 5) = x_j_ang[7];
-    // point_gradient_(2, 5) is implicitly zero based on j_ang_ calculation
 
 
     // --- Hessian Calculation (Equation 6.20, 6.21 [Magnusson 2009]) ---
@@ -320,26 +314,24 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDeri
         // Calculate angular part: (d^2R/dadb)*x by multiplying precomputed components by x
         Eigen::Matrix<float, 16, 1> x_h_ang = h_ang_ * x4; // (16x4) * (4x1) -> (16x1)
 
-        // Map components of x_h_ang to the correct blocks of point_hessian_
-        // The point_hessian_ stores the 18x6 second derivative tensor flattened.
-        // Each 4x1 block point_hessian_.block<4,1>(i*4, j) represents d^2(Tp)/dp_i dp_j * x
+        // ** Corrected mapping using 4x1 blocks and manual Vector4f construction **
         // Indices: p = [t1,t2,t3, r1,r2,r3] -> parameter indices 0..5. NDT uses r1=idx 3, r2=idx 4, r3=idx 5
-        // Re-verify mapping based on h_ang_ assignments and standard NDT Hessian structure
 
-        // Hessian block H_rr (i=3, j=3): d^2(Tp)/dr dr * x uses h_ang rows 0, 1
-        point_hessian_.block<3, 1>(3 * 4 + 1, 3) = x_h_ang.segment<2>(0); // y, z components from rows 0, 1
-        // Hessian block H_rp (i=3, j=4): d^2(Tp)/dr dp * x uses h_ang rows 2, 3
-        point_hessian_.block<3, 1>(3 * 4 + 1, 4) = x_h_ang.segment<2>(2); // y, z components from rows 2, 3
-        // Hessian block H_ry (i=3, j=5): d^2(Tp)/dr dy * x uses h_ang rows 4, 5
-        point_hessian_.block<3, 1>(3 * 4 + 1, 5) = x_h_ang.segment<2>(4); // y, z components from rows 4, 5
+        // Blocks for angular derivatives (indices 3, 4, 5)
+        // Hessian block H_rr (i=3, j=3): d^2(Tp)/dr dr * x
+        point_hessian_.block<4, 1>(3 * 4, 3) = Eigen::Vector4f(0.0f, x_h_ang[0], x_h_ang[1], 0.0f); // Uses h_ang rows 0, 1
+        // Hessian block H_rp (i=3, j=4): d^2(Tp)/dr dp * x
+        point_hessian_.block<4, 1>(3 * 4, 4) = Eigen::Vector4f(0.0f, x_h_ang[2], x_h_ang[3], 0.0f); // Uses h_ang rows 2, 3
+        // Hessian block H_ry (i=3, j=5): d^2(Tp)/dr dy * x
+        point_hessian_.block<4, 1>(3 * 4, 5) = Eigen::Vector4f(0.0f, x_h_ang[4], x_h_ang[5], 0.0f); // Uses h_ang rows 4, 5
 
-        // Hessian block H_pp (i=4, j=4): d^2(Tp)/dp dp * x uses h_ang rows 6, 7, 8
-        point_hessian_.block<3, 1>(4 * 4 + 0, 4) = x_h_ang.segment<3>(6); // x, y, z components from rows 6, 7, 8
-        // Hessian block H_py (i=4, j=5): d^2(Tp)/dp dy * x uses h_ang rows 9, 10, 11
-        point_hessian_.block<3, 1>(4 * 4 + 0, 5) = x_h_ang.segment<3>(9); // x, y, z components from rows 9, 10, 11
+        // Hessian block H_pp (i=4, j=4): d^2(Tp)/dp dp * x
+        point_hessian_.block<4, 1>(4 * 4, 4) = Eigen::Vector4f(x_h_ang[6], x_h_ang[7], x_h_ang[8], 0.0f); // Uses h_ang rows 6, 7, 8
+        // Hessian block H_py (i=4, j=5): d^2(Tp)/dp dy * x
+        point_hessian_.block<4, 1>(4 * 4, 5) = Eigen::Vector4f(x_h_ang[9], x_h_ang[10], x_h_ang[11], 0.0f); // Uses h_ang rows 9, 10, 11
 
-        // Hessian block H_yy (i=5, j=5): d^2(Tp)/dy dy * x uses h_ang rows 12, 13, 14
-        point_hessian_.block<3, 1>(5 * 4 + 0, 5) = x_h_ang.segment<3>(12); // x, y, z components from rows 12, 13, 14
+        // Hessian block H_yy (i=5, j=5): d^2(Tp)/dy dy * x
+        point_hessian_.block<4, 1>(5 * 4, 5) = Eigen::Vector4f(x_h_ang[12], x_h_ang[13], x_h_ang[14], 0.0f); // Uses h_ang rows 12, 13, 14
 
         // Fill symmetric blocks (H_ij = H_ji)
         point_hessian_.block<4, 1>(4 * 4, 3) = point_hessian_.block<4, 1>(3 * 4, 4); // H_pr = H_rp
@@ -452,7 +444,6 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
             for (int j = i; j < 6; ++j) { // Column index of Hessian (use symmetry)
                  // Extract the (i,j) block (4x1 vector) from the flattened point Hessian Hp
                  // This block represents d^2(Tp)/dp_i dp_j * x
-                 // ** Corrected block access based on 4 rows per parameter **
                  Eigen::Matrix<float, 4, 1> H_ij_x = point_hessian_.block<4, 1>(i * 4, j);
                  // Calculate the scalar contribution (x-mu)^T * C^-1 * [d^2(Tp)/dp_i dp_j * x]
                  term3(i, j) = x_trans4_c_inv4 * H_ij_x;
