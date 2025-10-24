@@ -26,6 +26,7 @@
 // PCL for point cloud operations
 #include <pcl/common/transforms.h> // For pcl::transformPointCloud
 #include <pcl/common/point_tests.h> // For pcl::isFinite
+#include <pcl/io/pcd_io.h> // Include for PCL_WARN_STREAM
 
 // GTSAM for pose representation and operations
 #include <gtsam/geometry/Pose3.h>
@@ -244,9 +245,6 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDeri
     if (std::abs(y) < angle_epsilon) { sz = 0.0; cz = 1.0; } else { sz = sin(y); cz = cos(y); }
 
     // --- Jacobian Components (Equation 6.19 [Magnusson 2009]) ---
-    // These matrices represent the partial derivatives of the rotation matrix R w.r.t r, p, y
-    // j_ang_ rows correspond to entries of the derivative matrix blocks, multiplied by the point vector later.
-    // The mapping seems consistent with ndt_omp_impl.hpp structure.
     j_ang_.setZero(); // Ensure initialization
     // Derivatives w.r.t Roll (j_ang columns 0-2 for x,y,z components)
     j_ang_(0,0)=-sx*sz+cx*sy*cz; j_ang_(1,0)= cx*sz+sx*sy*cz; j_ang_(2,0)=-sy*cz;
@@ -265,36 +263,23 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDeri
     // --- Hessian Components (Equation 6.21 [Magnusson 2009]) ---
     if (compute_hessian) {
         h_ang_.setZero(); // Ensure initialization
-        // Second derivatives involving Roll
+        // Calculate only the unique second derivative components
         h_ang_(0,0)=-cx*sz-sx*sy*cz; h_ang_(1,0)=-sx*sz+cx*sy*cz; // dR/drdr
         h_ang_(2,0)= cx*cy*cz;       h_ang_(3,0)= sx*cy*cz;       // dR/drdp
         h_ang_(4,0)=-sx*cz-cx*sy*sz; h_ang_(5,0)= cx*cz-sx*sy*sz; // dR/drdy
-        // Second derivatives involving Pitch
-        h_ang_(0,1)=-cx*cz+sx*sy*sz; h_ang_(1,1)=-cx*sy*sz-sx*cz; // dR/dpdr (=dR/drdp)
-        h_ang_(6,0)=-cy*cz;          h_ang_(7,0)=-sx*sy*cz;       // dR/dpdp
-        h_ang_(8,0)= cx*sy*cz;       h_ang_(9,0)= sy*sz;          // dR/dpdy
-        // Second derivatives involving Yaw
-        h_ang_(0,2)= sx*cy;          h_ang_(1,2)=-cx*cy;          // dR/dydr (=dR/drdy)
-        h_ang_(2,2)= cx*sy;          h_ang_(3,2)= sx*sy;          // dR/dydp (=dR/dpdy)
-        h_ang_(10,0)=-sx*cy*sz;      h_ang_(11,0)= cx*cy*sz;      // dR/dydy
-        h_ang_(12,0)=-cy*cz;         h_ang_(13,0)=-cx*sz-sx*sy*cz;
-        h_ang_(14,0)=-sx*sz+cx*sy*cz;//h_ang_(15,0)= 0.0; // Index 15 seems unused/incorrect in original mapping?
 
-        // Fill in the remaining symmetric/repeated blocks based on the above mapping
-        // (Ensuring consistency with the order expected by computePointDerivatives)
-        // Manual filling based on symmetry and expected block structure
-        h_ang_.block<1,3>(6,1) = h_ang_.block<1,3>(2,0); // dR/dpdr = dR/drdp
-        h_ang_.block<1,3>(7,1) = h_ang_.block<1,3>(3,0);
-        h_ang_.block<1,3>(8,1) = h_ang_.block<1,3>(7,0); // dR/dpdp
-        h_ang_.block<1,3>(9,1) = h_ang_.block<1,3>(8,0);
+        h_ang_(6,1)=-cy*cz;          h_ang_(7,1)=-sx*sy*cz;       // dR/dpdp (Note: Swapped indices from original code for clarity)
+        h_ang_(8,1)= cx*sy*cz;       // dR/dpdp
 
-        h_ang_.block<1,3>(10,2) = h_ang_.block<1,3>(4,0); // dR/dydr = dR/drdy
-        h_ang_.block<1,3>(11,2) = h_ang_.block<1,3>(5,0);
-        h_ang_.block<1,3>(12,2) = h_ang_.block<1,3>(9,1); // dR/dydp = dR/dpdy
-        h_ang_.block<1,3>(13,2) = h_ang_.block<1,3>(10,1); // Should be dR/dydp components, check mapping
-        h_ang_.block<1,3>(14,2) = h_ang_.block<1,3>(11,1); // Should be dR/dydp components, check mapping
-        // Block for dR/dydy already filled at h_ang_(10,0), h_ang_(11,0), etc. via col 0 index?
-        // Re-verify the mapping from original source if Hessian causes issues.
+        h_ang_(9,1)= sy*sz;          h_ang_(10,1)=-sx*cy*sz;      // dR/dpdy
+        h_ang_(11,1)= cx*cy*sz;
+
+        h_ang_(12,2)=-cy*cz;         h_ang_(13,2)=-cx*sz-sx*sy*cz;// dR/dydy (Note: Swapped indices from original code for clarity)
+        h_ang_(14,2)=-sx*sz+cx*sy*cz;
+        // h_ang(15,?) seems unused
+
+        // ** REMOVED FAULTY SYMMETRIC BLOCK ASSIGNMENTS **
+        // Symmetry is handled in computePointDerivatives when filling point_hessian_
     }
 }
 
@@ -339,24 +324,22 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDeri
         // The point_hessian_ stores the 18x6 second derivative tensor flattened.
         // Each 4x1 block point_hessian_.block<4,1>(i*4, j) represents d^2(Tp)/dp_i dp_j * x
         // Indices: p = [t1,t2,t3, r1,r2,r3] -> parameter indices 0..5. NDT uses r1=idx 3, r2=idx 4, r3=idx 5
+        // Re-verify mapping based on h_ang_ assignments and standard NDT Hessian structure
 
-        // Blocks involving translation (indices 0, 1, 2) are zero because d^2(Rx+t)/dt_i dt_j = 0, d^2(Rx+t)/dt_i da_j = 0
+        // Hessian block H_rr (i=3, j=3): d^2(Tp)/dr dr * x uses h_ang rows 0, 1
+        point_hessian_.block<3, 1>(3 * 4 + 1, 3) = x_h_ang.segment<2>(0); // y, z components from rows 0, 1
+        // Hessian block H_rp (i=3, j=4): d^2(Tp)/dr dp * x uses h_ang rows 2, 3
+        point_hessian_.block<3, 1>(3 * 4 + 1, 4) = x_h_ang.segment<2>(2); // y, z components from rows 2, 3
+        // Hessian block H_ry (i=3, j=5): d^2(Tp)/dr dy * x uses h_ang rows 4, 5
+        point_hessian_.block<3, 1>(3 * 4 + 1, 5) = x_h_ang.segment<2>(4); // y, z components from rows 4, 5
 
-        // Blocks for angular derivatives (indices 3, 4, 5)
-        // Hessian block H_rr (i=3, j=3): d^2(Tp)/dr dr * x
-        point_hessian_.block<4, 1>(3 * 4, 3) = Eigen::Vector4f(x_h_ang[0], x_h_ang[1], x_h_ang[ 6], 0.0f); // Check indices from h_ang_ mapping
-        // Hessian block H_rp (i=3, j=4): d^2(Tp)/dr dp * x
-        point_hessian_.block<4, 1>(3 * 4, 4) = Eigen::Vector4f(x_h_ang[2], x_h_ang[3], x_h_ang[ 7], 0.0f);
-        // Hessian block H_ry (i=3, j=5): d^2(Tp)/dr dy * x
-        point_hessian_.block<4, 1>(3 * 4, 5) = Eigen::Vector4f(x_h_ang[4], x_h_ang[5], x_h_ang[10], 0.0f); // Re-check indices
+        // Hessian block H_pp (i=4, j=4): d^2(Tp)/dp dp * x uses h_ang rows 6, 7, 8
+        point_hessian_.block<3, 1>(4 * 4 + 0, 4) = x_h_ang.segment<3>(6); // x, y, z components from rows 6, 7, 8
+        // Hessian block H_py (i=4, j=5): d^2(Tp)/dp dy * x uses h_ang rows 9, 10, 11
+        point_hessian_.block<3, 1>(4 * 4 + 0, 5) = x_h_ang.segment<3>(9); // x, y, z components from rows 9, 10, 11
 
-        // Hessian block H_pp (i=4, j=4): d^2(Tp)/dp dp * x
-        point_hessian_.block<4, 1>(4 * 4, 4) = Eigen::Vector4f(x_h_ang[ 7], x_h_ang[ 8], x_h_ang[12], 0.0f); // Re-check indices
-        // Hessian block H_py (i=4, j=5): d^2(Tp)/dp dy * x
-        point_hessian_.block<4, 1>(4 * 4, 5) = Eigen::Vector4f(x_h_ang[ 9], x_h_ang[10], x_h_ang[13], 0.0f); // Re-check indices
-
-        // Hessian block H_yy (i=5, j=5): d^2(Tp)/dy dy * x
-        point_hessian_.block<4, 1>(5 * 4, 5) = Eigen::Vector4f(x_h_ang[11], x_h_ang[14], 0.0, 0.0f); // Re-check indices, seems like z component missing
+        // Hessian block H_yy (i=5, j=5): d^2(Tp)/dy dy * x uses h_ang rows 12, 13, 14
+        point_hessian_.block<3, 1>(5 * 4 + 0, 5) = x_h_ang.segment<3>(12); // x, y, z components from rows 12, 13, 14
 
         // Fill symmetric blocks (H_ij = H_ji)
         point_hessian_.block<4, 1>(4 * 4, 3) = point_hessian_.block<4, 1>(3 * 4, 4); // H_pr = H_rp
@@ -469,6 +452,7 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
             for (int j = i; j < 6; ++j) { // Column index of Hessian (use symmetry)
                  // Extract the (i,j) block (4x1 vector) from the flattened point Hessian Hp
                  // This block represents d^2(Tp)/dp_i dp_j * x
+                 // ** Corrected block access based on 4 rows per parameter **
                  Eigen::Matrix<float, 4, 1> H_ij_x = point_hessian_.block<4, 1>(i * 4, j);
                  // Calculate the scalar contribution (x-mu)^T * C^-1 * [d^2(Tp)/dp_i dp_j * x]
                  term3(i, j) = x_trans4_c_inv4 * H_ij_x;
@@ -707,6 +691,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
     Matrix6d I6 = Matrix6d::Identity(); // Reusable identity matrix
 
     // --- SVN Iteration Loop ---
+    // ** FIX 2: Declare avg_update_norm outside the loop **
     double avg_update_norm = std::numeric_limits<double>::max(); // Initialize with large value
     for (int iter = 0; iter < max_iter_; ++iter)
     {
@@ -850,7 +835,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
         // --- Check Convergence ---
         result.iterations = iter + 1;
-        // Calculate the average norm here, now that the loop scope is correct
+        // Calculate the average norm here
         avg_update_norm = (K_ > 0) ? std::sqrt(total_update_norm_sq / static_cast<double>(K_)) : 0.0;
 
         auto iter_end_time = std::chrono::high_resolution_clock::now();
@@ -937,11 +922,10 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
     // ** FIX 2: Correct access to avg_update_norm and use PCL_WARN_STREAM **
     if (!result.converged && result.iterations >= max_iter_) {
+        // Use PCL_WARN_STREAM for safer, stream-based output
         PCL_WARN_STREAM("[SvnNdt::align] Reached max iterations (" << max_iter_
                       << ") without converging (Avg Update Norm: " << std::fixed << std::setprecision(6) << avg_update_norm
                       << " >= " << stop_thresh_ << ").\n");
-        // Original PCL_WARN: (Keep if PCL_WARN_STREAM is not available/preferred)
-        // PCL_WARN("[SvnNdt::align] Reached max iterations (%d) without converging (Avg Update Norm: %.6f >= %.6f).\n", max_iter_, avg_update_norm, stop_thresh_);
     }
 
     return result;
