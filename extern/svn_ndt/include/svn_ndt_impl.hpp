@@ -487,6 +487,8 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
 //=================================================================================================
 // Main Alignment Function (SVN-NDT Implementation)
 //=================================================================================================
+// --- Inside svn_ndt_impl.hpp ---
+
 template <typename PointSource, typename PointTarget>
 SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
     const PointCloudSource& source_cloud,
@@ -527,9 +529,9 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
     // Allocate storage
     std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> loss_gradients(K_);
-    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> loss_hessians(K_);
+    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> loss_hessians(K_); // Still allocate, needed for Stage 1 internal use
     std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> particle_updates(K_);
-    std::vector<PointCloudSource> transformed_clouds(K_); // Use aligned allocator if PointSource has Eigen types
+    std::vector<PointCloudSource> transformed_clouds(K_);
 
     Matrix6d I6 = Matrix6d::Identity(); // Reusable identity matrix
 
@@ -545,7 +547,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
             SvnNormalDistributionsTransform<PointSource, PointTarget> local_ndt = *this;
 
             Vector6d grad_k;
-            Matrix6d hess_k;
+            Matrix6d hess_k; // Still needed as output param for computeParticleDerivatives
 
             for (int k = r.begin(); k < r.end(); ++k) {
                 // 1. Transform source cloud
@@ -558,14 +560,15 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
                 p_k_ndt.tail<3>() = rpy;
 
                 // 3. Compute derivatives using the thread-local copy
+                //    Keep compute_hessian = true because it's used internally and regularized now
                 double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, true);
 
                 // 4. Store negatives for loss minimization
                 loss_gradients[k] = -grad_k;
-                loss_hessians[k] = -hess_k; // Make sure hess_k is valid
-                 if (!hess_k.allFinite()) {
-                     PCL_WARN("[SvnNdt::align] NaN/Inf in NDT Hessian for particle %d, iter %d. Using Identity.\n", k, iter);
-                     loss_hessians[k] = I6; // Use identity as fallback? Or zero? Identity might be safer.
+                loss_hessians[k] = -hess_k; // Store the regularized hessian (though we won't use it directly in H_k_tilde)
+                 if (!hess_k.allFinite()) { // Should be less likely due to regularization inside computeParticleDerivatives
+                     PCL_WARN("[SvnNdt::align] NaN/Inf in regularized NDT Hessian for particle %d, iter %d. Using Identity.\n", k, iter);
+                     loss_hessians[k] = I6;
                  }
             }
         }); // End TBB Stage 1
@@ -590,17 +593,14 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
                     phi_k_star += k_val * loss_gradients[l] + k_grad;
 
-                    // if (loss_hessians[l].allFinite()) { // <-- Restore check and use NDT Hessian
-                    //     H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
-                    // } else {
-                    //     H_k_tilde += (k_grad * k_grad.transpose()); // <-- Keep fallback
-                    // }
+                    // --- Use ONLY kernel gradient term for H_k_tilde ---
                     H_k_tilde += (k_grad * k_grad.transpose());
+                    // ---
                 }
 
                 phi_k_star /= static_cast<double>(K_);
                 H_k_tilde /= static_cast<double>(K_);
-                H_k_tilde += 1e-4 * I6; // Regularization
+                H_k_tilde += 1e-4 * I6; // Regularization for H_k_tilde itself
 
                 Eigen::LDLT<Matrix6d> solver(H_k_tilde);
                 if (solver.info() == Eigen::Success && H_k_tilde.allFinite()) {
@@ -635,9 +635,8 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         result.iterations = iter + 1;
         double avg_update_norm = (K_ > 0) ? (total_update_norm / static_cast<double>(K_)) : 0.0;
 
-        // ################'DEBUG
-        std::cout << "[SVN Iter " << iter << "] Avg Update Norm: " << avg_update_norm << std::endl; 
-        // ################'DEBUG
+        // Debug print for average update norm
+        std::cout << "[SVN Iter " << iter << "] Avg Update Norm: " << avg_update_norm << std::endl;
 
         if (avg_update_norm < stop_thresh_) {
             result.converged = true;
@@ -651,35 +650,46 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         Vector6d mean_xi = Vector6d::Zero();
         std::vector<Vector6d> tangent_vectors(K_);
         for(int k=0; k < K_; ++k) {
+            // Calculate tangent vector relative to the *prior_mean* for averaging
             tangent_vectors[k] = gtsam::Pose3::Logmap(prior_mean.between(particles[k]));
             mean_xi += tangent_vectors[k];
         }
         mean_xi /= static_cast<double>(K_);
-        result.final_pose = prior_mean.retract(mean_xi);
+        result.final_pose = prior_mean.retract(mean_xi); // Apply mean tangent update to prior_mean
 
+        // Calculate sample covariance in the tangent space around the final mean pose
         if (K_ > 1) {
             result.final_covariance.setZero();
+             // Recalculate tangent vectors relative to the *new final_pose* for covariance
+             Vector6d final_mean_xi_recalc = Vector6d::Zero(); // Should be near zero
+             std::vector<Vector6d> final_tangent_vectors(K_);
+             for(int k=0; k < K_; ++k) {
+                 final_tangent_vectors[k] = gtsam::Pose3::Logmap(result.final_pose.between(particles[k]));
+                 final_mean_xi_recalc += final_tangent_vectors[k];
+             }
+             final_mean_xi_recalc /= static_cast<double>(K_); // Center for covariance calc
+
             for(int k=0; k < K_; ++k) {
-                Vector6d diff = tangent_vectors[k] - mean_xi;
+                Vector6d diff = final_tangent_vectors[k] - final_mean_xi_recalc; // Use diff from recalculated mean
                 result.final_covariance += diff * diff.transpose();
             }
-            result.final_covariance /= static_cast<double>(K_ - 1);
+            result.final_covariance /= static_cast<double>(K_ - 1); // Sample covariance N-1
         } else {
-            result.final_covariance = prior_noise_model->covariance(); // Use initial noise if K=1
+            // If only one particle, use the prior noise model's covariance
+            result.final_covariance = prior_noise_model->covariance();
         }
 
-        // Final regularization (optional, but recommended)
+        // Final regularization check for the computed covariance
         Eigen::SelfAdjointEigenSolver<Matrix6d> final_eigensolver(result.final_covariance);
         if (final_eigensolver.info() == Eigen::Success) {
             Vector6d final_evals = final_eigensolver.eigenvalues();
             if (final_evals(0) < 1e-7) { // Check smallest eigenvalue
                 //PCL_DEBUG("[SvnNdt::align] Final covariance near singular. Adding regularization.\n");
-                result.final_covariance += 1e-7 * I6;
+                result.final_covariance += 1e-7 * I6; // Add small identity scaling
             }
         } else {
-             PCL_WARN("[SvnNdt::align] Eigendecomposition failed for final covariance. Matrix might be invalid.\n");
-             // Maybe set covariance to identity * large value?
-             result.final_covariance = 1e6 * I6;
+             PCL_WARN("[SvnNdt::align] Eigendecomposition failed for final covariance. Matrix might be invalid. Using large identity.\n");
+             result.final_covariance = 1e6 * I6; // Fallback to large identity
         }
 
     } else { // Handle K_=0 case
@@ -690,7 +700,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
     input_.reset(); // Clear internal pointer
 
-    // Check if result converged based on iterations if not already set
+    // Final convergence status message
     if (!result.converged && result.iterations == max_iter_) {
         // Did not converge within max iterations
         PCL_DEBUG("[SvnNdt::align] Reached max iterations (%d) without converging.\n", max_iter_);
@@ -699,9 +709,9 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
          // std::cout << "[SvnNdt::align] Converged in " << result.iterations << " iterations." << std::endl;
     }
 
-
     return result;
 }
+
 
 
 } // namespace svn_ndt
