@@ -574,7 +574,8 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
             double score_inc = updateDerivatives(point_gradient_contribution, point_hessian_contribution,
                                                  point_gradient4, point_hessian24,
                                                  x_rel, c_inv, compute_hessian,
-                                                 is_first_point_for_debug && (cell == neighborhood[0]) ); // Print debug only for the first point & first neighbor
+                                                 false);
+                                                //  is_first_point_for_debug && (cell == neighborhood[0]) ); // Print debug only for the first point & first neighbor
             point_score_contribution += score_inc;
 
         } // End loop over neighbors
