@@ -148,7 +148,7 @@ int main() {
                 continue;
             }
             *lidar_latest_frame_id = frame_ptr->frame_id;
-            std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
+            // std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
             frameLidarQueue.push(std::move(frame_ptr));
         }
         std::cout << "Lidar processing thread stopped.\n";
@@ -450,11 +450,11 @@ int main() {
                 // --- 5. Print SVN-NDT Specifics ---
                 std::cout << "\n--- SVN-NDT Result Details ---" << std::endl;
                 std::cout << "Converged: " << (result.converged ? "Yes" : "No") << " in " << result.iterations << " iterations." << std::endl;
-                Eigen::Matrix<double, 6, 1> variances = result.final_covariance.diagonal();
-                Eigen::Matrix<double, 6, 1> stddevs = variances.array().sqrt(); // Standard deviations
-                std::cout << "Std Deviations (r,p,y,x,y,z):" << std::endl;
-                std::cout << "  Rotation (deg): [" << stddevs(0) * 180.0 / M_PI << ", " << stddevs(1) * 180.0 / M_PI << ", " << stddevs(2) * 180.0 / M_PI << "]" << std::endl;
-                std::cout << "  Translation (m): [" << stddevs(3) << ", " << stddevs(4) << ", " << std::setprecision(8) << stddevs(5) << "]" << std::endl;
+                // Eigen::Matrix<double, 6, 1> variances = result.final_covariance.diagonal();
+                // Eigen::Matrix<double, 6, 1> stddevs = variances.array().sqrt(); // Standard deviations
+                // std::cout << "Std Deviations (r,p,y,x,y,z):" << std::endl;
+                // std::cout << "  Rotation (deg): [" << stddevs(0) * 180.0 / M_PI << ", " << stddevs(1) * 180.0 / M_PI << ", " << stddevs(2) * 180.0 / M_PI << "]" << std::endl;
+                // std::cout << "  Translation (m): [" << stddevs(3) << ", " << stddevs(4) << ", " << std::setprecision(8) << stddevs(5) << "]" << std::endl;
                 // =========================================================================
                 // --- END: POSE COMPARISON & RESULTS ---
                 // =========================================================================
