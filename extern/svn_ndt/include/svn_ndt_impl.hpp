@@ -288,9 +288,9 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
     // Protect against exp(-inf) or exp(large positive) if mahal_sq is NaN or huge neg
     if (!std::isfinite(mahal_sq) || (gauss_d2_ * mahal_sq > 50.0)) { // exp(-25) is already tiny
         // ######### DEBUG
-        if (print_debug) {
-             std::cout << "      updateDeriv[pt0]: mahal_sq invalid/large: " << mahal_sq << std::endl;
-        }
+        // if (print_debug) {
+        //      std::cout << "      updateDeriv[pt0]: mahal_sq invalid/large: " << mahal_sq << std::endl;
+        // }
         // ######### DEBUG
         return 0.0;
     }
@@ -300,9 +300,9 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
 
     if (!std::isfinite(factor)) { // <-- REMOVE 'factor < 0' CHECK
         // ######### DEBUG
-        if (print_debug) {
-            std::cout << "      updateDeriv[pt0]: factor NON-FINITE: " << factor << std::endl; // <-- Update message
-        }
+        // if (print_debug) {
+        //     std::cout << "      updateDeriv[pt0]: factor NON-FINITE: " << factor << std::endl; // <-- Update message
+        // }
         // ######### DEBUG
         return 0.0; // Still return 0 if NaN/Inf
     }
@@ -314,13 +314,13 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
     // score_gradient += factor * grad_contrib_float.transpose().cast<double>();
 
     // ######### DEBUG
-    if (print_debug) {
-         std::cout << "      updateDeriv[pt0]: mahal_sq=" << mahal_sq 
-                   << ", exp_term=" << exp_term 
-                   << ", factor=" << factor 
-                   << ", grad_contrib_norm=" << grad_contrib_float.norm()
-                   << ", grad_inc_norm=" << grad_inc.norm() << std::endl;
-    }
+    // if (print_debug) {
+    //      std::cout << "      updateDeriv[pt0]: mahal_sq=" << mahal_sq 
+    //                << ", exp_term=" << exp_term 
+    //                << ", factor=" << factor 
+    //                << ", grad_contrib_norm=" << grad_contrib_float.norm()
+    //                << ", grad_inc_norm=" << grad_inc.norm() << std::endl;
+    // }
     // ######### DEBUG
 
     if (compute_hessian) {
@@ -592,7 +592,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
                 phi_k_star /= static_cast<double>(K_);
                 H_k_tilde /= static_cast<double>(K_);
-                H_k_tilde += 1e-6 * I6; // Regularization
+                H_k_tilde += 1e-4 * I6; // Regularization
 
                 Eigen::LDLT<Matrix6d> solver(H_k_tilde);
                 if (solver.info() == Eigen::Success && H_k_tilde.allFinite()) {
