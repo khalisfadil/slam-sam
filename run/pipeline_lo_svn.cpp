@@ -372,21 +372,22 @@ int main() {
                 const gtsam::Point3 ins_tb2m{registerCallback.lla2ned(ins_lla.x(), ins_lla.y(), ins_lla.z(), ins_rlla.x(), ins_rlla.y(), ins_rlla.z())};
                 current_ins_state = gtsam::NavState{ins_Cb2m, ins_tb2m, ins_vNED};
                 pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTarget(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTargetDS(new pcl::PointCloud<pcl::PointXYZI>());
-                //  const auto& currlidarFactorPointsArchive = pointsArchive.at(targetID.back());
-                // *lidarFactorPointsTarget = *currlidarFactorPointsArchive.points;
-                for (const int& currID : targetID) {
-                    const auto& currlidarFactorPointsArchive = pointsArchive.at(currID);
-                    *lidarFactorPointsTarget += *currlidarFactorPointsArchive.points;
-                }
-                pcl::VoxelGrid<pcl::PointXYZI> vg;
-                auto vs = registerCallback.mapvoxelsize_;
-                vg.setLeafSize(vs, vs, vs);
-                vg.setInputCloud(std::move(lidarFactorPointsTarget));
-                vg.filter(*lidarFactorPointsTargetDS);
-                svn_ndt_ptr->setInputTarget(lidarFactorPointsTargetDS);
-                svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
+                // pcl::PointCloud<pcl::PointXYZI>::Ptr lidarFactorPointsTargetDS(new pcl::PointCloud<pcl::PointXYZI>());
+                 const auto& currlidarFactorPointsArchive = pointsArchive.at(targetID.back());
+                *lidarFactorPointsTarget = *currlidarFactorPointsArchive.points;
+                // for (const int& currID : targetID) {
+                //     const auto& currlidarFactorPointsArchive = pointsArchive.at(currID);
+                //     *lidarFactorPointsTarget += *currlidarFactorPointsArchive.points;
+                // }
+                // pcl::VoxelGrid<pcl::PointXYZI> vg;
+                // auto vs = registerCallback.mapvoxelsize_;
+                // vg.setLeafSize(vs, vs, vs);
+                // vg.setInputCloud(std::move(lidarFactorPointsTarget));
+                // vg.filter(*lidarFactorPointsTargetDS);
+                svn_ndt_ptr->setInputTarget(lidarFactorPointsTarget);
+                svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, current_ins_state.pose());
                 predTb2m = result.final_pose;
+                // predTb2m = current_ins_state.pose();
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, predTb2m.matrix());
                 pointsArchive[id] = {pointsMap, timestamp};
