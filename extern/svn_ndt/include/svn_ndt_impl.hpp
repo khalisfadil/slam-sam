@@ -278,7 +278,7 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
     const Eigen::Matrix<float, 4, 6>& point_gradient4,
     const Eigen::Matrix<float, 24, 6>& point_hessian_,
     const Eigen::Vector3d& x_trans, const Eigen::Matrix3d& c_inv,
-    bool compute_hessian)
+    bool compute_hessian, bool print_debug)
 {
     Eigen::Matrix<float, 1, 4> x_trans4(static_cast<float>(x_trans[0]), static_cast<float>(x_trans[1]), static_cast<float>(x_trans[2]), 0.0f);
     Eigen::Matrix4f c_inv4 = Eigen::Matrix4f::Zero();
@@ -287,6 +287,11 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
     double mahal_sq = x_trans.dot(c_inv * x_trans);
     // Protect against exp(-inf) or exp(large positive) if mahal_sq is NaN or huge neg
     if (!std::isfinite(mahal_sq) || (gauss_d2_ * mahal_sq > 50.0)) { // exp(-25) is already tiny
+        // ######### DEBUG
+        if (print_debug) {
+             std::cout << "      updateDeriv[pt0]: mahal_sq invalid/large: " << mahal_sq << std::endl;
+        }
+        // ######### DEBUG
         return 0.0;
     }
     double exp_term = std::exp(-gauss_d2_ * mahal_sq * 0.5);
@@ -294,12 +299,29 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
     double factor = gauss_d1_ * gauss_d2_ * exp_term; // == -gauss_d2_ * score_inc;
 
     if (!std::isfinite(factor) || factor < 0) {
+        // ######### DEBUG
+        if (print_debug) {
+             std::cout << "      updateDeriv[pt0]: factor invalid/negative: " << factor << std::endl;
+        }
+        // ######### DEBUG
         return 0.0;
     }
 
     Eigen::Matrix<float, 4, 6> temp_vec = c_inv4 * point_gradient4;
     Eigen::Matrix<float, 1, 6> grad_contrib_float = x_trans4 * temp_vec;
-    score_gradient += factor * grad_contrib_float.transpose().cast<double>();
+    Vector6d grad_inc = factor * grad_contrib_float.transpose().cast<double>();
+    score_gradient += grad_inc;
+    // score_gradient += factor * grad_contrib_float.transpose().cast<double>();
+
+    // ######### DEBUG
+    if (print_debug) {
+         std::cout << "      updateDeriv[pt0]: mahal_sq=" << mahal_sq 
+                   << ", exp_term=" << exp_term 
+                   << ", factor=" << factor 
+                   << ", grad_contrib_norm=" << grad_contrib_float.norm()
+                   << ", grad_inc_norm=" << grad_inc.norm() << std::endl;
+    }
+    // ######### DEBUG
 
     if (compute_hessian) {
         Eigen::Matrix<double, 6, 6> hess_contrib = Matrix6d::Zero(); // Accumulate contribution here
@@ -342,6 +364,7 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
     score_gradient.setZero();
     hessian.setZero();
     double total_score = 0.0;
+    bool first_point_processed = false;
 
     // Precompute Angle Derivatives for this particle's pose 'p'
     // This is the main part potentially requiring thread-safety IF this function
@@ -404,6 +427,10 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
         Vector6d point_gradient_contribution = Vector6d::Zero();
         Matrix6d point_hessian_contribution = Matrix6d::Zero();
 
+        // ######### DEBUG
+        bool is_first_point = !first_point_processed;
+        // ######### DEBUG
+
         // Accumulate contribution from each neighbor voxel
         for (const LeafConstPtr& cell : neighborhood)
         {
@@ -413,12 +440,22 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
             const Eigen::Matrix3d& c_inv = cell->getInverseCov();
 
             // Use temporary variables to accumulate contribution from this neighbor
-             double score_inc = updateDerivatives(point_gradient_contribution, point_hessian_contribution,
+            // double score_inc = updateDerivatives(point_gradient_contribution, point_hessian_contribution,
+            //                                 point_gradient4, point_hessian24,
+            //                                 x_rel, c_inv, compute_hessian);
+            double score_inc = updateDerivatives(point_gradient_contribution, point_hessian_contribution,
                                             point_gradient4, point_hessian24,
-                                            x_rel, c_inv, compute_hessian);
+                                            x_rel, c_inv, compute_hessian, is_first_point);
+
              point_score_contribution += score_inc;
 
         } // End loop over neighbors
+
+        // ######### DEBUG
+        if (is_first_point) {
+             first_point_processed = true; 
+        }
+        // ######### DEBUG
 
         // Add accumulated contributions for this point to totals
         // NOTE: NDT originally sums contributions. Is averaging per point needed?

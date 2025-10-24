@@ -143,7 +143,8 @@ protected: // --- Internal Methods and Data ---
         const Eigen::Matrix<float, 24, 6>& point_hessian_,
         const Eigen::Vector3d& x_trans,
         const Eigen::Matrix3d& c_inv,
-        bool compute_hessian = true);
+        bool compute_hessian = true,
+        bool print_debug = true);
 
     void computeAngleDerivatives(const Vector6d& p, bool compute_hessian = true);
 
