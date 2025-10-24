@@ -845,7 +845,9 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         // Check if average update norm is below the threshold
         if (avg_update_norm < stop_thresh_) {
             result.converged = true;
-             std::cout << "[SvnNdt::align] Converged in " << result.iterations << " iterations (Avg Update Norm: " << avg_update_norm << " < " << stop_thresh_ << ")." << std::endl;
+            PCL_INFO_STREAM("[SvnNdt::align] Converged in " << result.iterations
+                             << " iterations (Avg Update Norm: " << std::fixed << std::setprecision(6) << avg_update_norm
+                             << " < " << stop_thresh_ << ").\n");
             break; // Exit loop
         }
 
