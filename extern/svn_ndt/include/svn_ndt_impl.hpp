@@ -182,7 +182,6 @@ SvnNormalDistributionsTransform<PointSource, PointTarget>::rbf_kernel_gradient(
 //=================================================================================================
 
 // --- computeAngleDerivatives ---
-// [Copied Verbatim from Previous Response - Assumed Correct]
 template <typename PointSource, typename PointTarget>
 void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDerivatives(
     const Vector6d& p, bool compute_hessian)
@@ -225,7 +224,6 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDeri
 }
 
 // --- computePointDerivatives ---
-// [Copied Verbatim from Previous Response - Assumed Correct]
 template <typename PointSource, typename PointTarget>
 void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDerivatives(
     const Eigen::Vector3d& x,
@@ -271,7 +269,6 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDeri
 
 
 // --- updateDerivatives ---
-// [Copied Verbatim from Previous Response - Assumed Correct, added finite check]
 template <typename PointSource, typename PointTarget>
 double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivatives(
     Vector6d& score_gradient, Matrix6d& hessian,
@@ -287,23 +284,21 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
     double mahal_sq = x_trans.dot(c_inv * x_trans);
     // Protect against exp(-inf) or exp(large positive) if mahal_sq is NaN or huge neg
     if (!std::isfinite(mahal_sq) || (gauss_d2_ * mahal_sq > 50.0)) { // exp(-25) is already tiny
-        // ######### DEBUG
+        // Debug print (optional)
         // if (print_debug) {
         //      std::cout << "      updateDeriv[pt0]: mahal_sq invalid/large: " << mahal_sq << std::endl;
         // }
-        // ######### DEBUG
         return 0.0;
     }
     double exp_term = std::exp(-gauss_d2_ * mahal_sq * 0.5);
     double score_inc = -gauss_d1_ * exp_term;
     double factor = gauss_d1_ * gauss_d2_ * exp_term; // == -gauss_d2_ * score_inc;
 
-    if (!std::isfinite(factor)) { // <-- REMOVE 'factor < 0' CHECK
-        // ######### DEBUG
+    if (!std::isfinite(factor)) { // Only check for non-finite
+        // Debug print (optional)
         // if (print_debug) {
-        //     std::cout << "      updateDeriv[pt0]: factor NON-FINITE: " << factor << std::endl; // <-- Update message
+        //     std::cout << "      updateDeriv[pt0]: factor NON-FINITE: " << factor << std::endl;
         // }
-        // ######### DEBUG
         return 0.0; // Still return 0 if NaN/Inf
     }
 
@@ -311,17 +306,15 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
     Eigen::Matrix<float, 1, 6> grad_contrib_float = x_trans4 * temp_vec;
     Vector6d grad_inc = factor * grad_contrib_float.transpose().cast<double>();
     score_gradient += grad_inc;
-    // score_gradient += factor * grad_contrib_float.transpose().cast<double>();
 
-    // ######### DEBUG
+    // Debug print (optional)
     // if (print_debug) {
-    //      std::cout << "      updateDeriv[pt0]: mahal_sq=" << mahal_sq 
-    //                << ", exp_term=" << exp_term 
-    //                << ", factor=" << factor 
+    //      std::cout << "      updateDeriv[pt0]: mahal_sq=" << mahal_sq
+    //                << ", exp_term=" << exp_term
+    //                << ", factor=" << factor
     //                << ", grad_contrib_norm=" << grad_contrib_float.norm()
     //                << ", grad_inc_norm=" << grad_inc.norm() << std::endl;
     // }
-    // ######### DEBUG
 
     if (compute_hessian) {
         Eigen::Matrix<double, 6, 6> hess_contrib = Matrix6d::Zero(); // Accumulate contribution here
@@ -339,7 +332,6 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
         for (int i = 0; i < 6; ++i) {
             for (int j = i; j < 6; ++j) { // Use symmetry
                  // Extract H_ij block (4x1) - Use mapping from computePointDerivatives
-                 // Block for H_ij is expected at (i*4, j) ? Let's try direct access based on original
                  Eigen::Matrix<float, 4, 1> H_ij_x = point_hessian_.block<4, 1>(i * 4, j);
                  term3(i, j) = x_trans4_c_inv4 * H_ij_x;
             }
@@ -354,7 +346,6 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
 
 
 // --- computeParticleDerivatives ---
-// [Updated to include neighbor search switch]
 template <typename PointSource, typename PointTarget>
 double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticleDerivatives(
     Vector6d& score_gradient, Matrix6d& hessian,
@@ -368,7 +359,6 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
     bool first_point_processed = false; // For debug prints in updateDerivatives
 
     // --- Precompute Angle Derivatives ---
-    // (This modifies member variables j_ang_ and h_ang_ of the 'local_ndt' copy)
     computeAngleDerivatives(p, compute_hessian);
 
     // --- Reusable Structures ---
@@ -413,7 +403,6 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
         Eigen::Vector3d x_orig(x_pt.x, x_pt.y, x_pt.z);
 
         // --- Compute Point Derivatives (Jacobian/Hessian w.r.t. pose) ---
-        // (This uses the precomputed j_ang_ / h_ang_)
         computePointDerivatives(x_orig, point_gradient4, point_hessian24, compute_hessian);
 
         // --- Accumulate Contributions from Neighbors ---
@@ -443,7 +432,6 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
         }
 
         // --- Add Point's Total Contribution to Overall Gradient/Hessian ---
-        // (Check finiteness just in case updateDerivatives had issues despite internal checks)
         if (std::isfinite(point_score_contribution) &&
             point_gradient_contribution.allFinite() &&
             (!compute_hessian || point_hessian_contribution.allFinite()))
@@ -487,8 +475,6 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
 //=================================================================================================
 // Main Alignment Function (SVN-NDT Implementation)
 //=================================================================================================
-// --- Inside svn_ndt_impl.hpp ---
-
 template <typename PointSource, typename PointTarget>
 SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
     const PointCloudSource& source_cloud,
@@ -518,7 +504,6 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
     std::vector<gtsam::Pose3> particles(K_);
     // Use a Gaussian sampler for initialization noise
-    // Define initial noise sigma values (tune these!) r,p,y,x,y,z
     Vector6d initial_sigmas; initial_sigmas << 0.02, 0.02, 0.05, 0.1, 0.1, 0.1; // Example values
     auto prior_noise_model = gtsam::noiseModel::Diagonal::Sigmas(initial_sigmas);
     gtsam::Sampler sampler(prior_noise_model); // Create sampler
@@ -529,7 +514,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
     // Allocate storage
     std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> loss_gradients(K_);
-    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> loss_hessians(K_); // Still allocate, needed for Stage 1 internal use
+    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> loss_hessians(K_);
     std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> particle_updates(K_);
     std::vector<PointCloudSource> transformed_clouds(K_);
 
@@ -542,31 +527,23 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         tbb::parallel_for(tbb::blocked_range<int>(0, K_),
             [&](const tbb::blocked_range<int>& r) {
 
-            // IMPORTANT: Create a thread-local copy of the NDT state needed for derivatives
-            // This prevents race conditions on j_ang_, h_ang_ etc.
             SvnNormalDistributionsTransform<PointSource, PointTarget> local_ndt = *this;
-
             Vector6d grad_k;
-            Matrix6d hess_k; // Still needed as output param for computeParticleDerivatives
+            Matrix6d hess_k;
 
             for (int k = r.begin(); k < r.end(); ++k) {
-                // 1. Transform source cloud
                 pcl::transformPointCloud(source_cloud, transformed_clouds[k], particles[k].matrix().cast<float>());
-
-                // 2. Get NDT pose vector [x,y,z,r,p,y]
                 Vector6d p_k_ndt;
                 gtsam::Vector3 rpy = particles[k].rotation().rpy();
                 p_k_ndt.head<3>() = particles[k].translation();
                 p_k_ndt.tail<3>() = rpy;
 
-                // 3. Compute derivatives using the thread-local copy
-                //    Keep compute_hessian = true because it's used internally and regularized now
+                // Keep compute_hessian = true
                 double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, true);
 
-                // 4. Store negatives for loss minimization
                 loss_gradients[k] = -grad_k;
-                loss_hessians[k] = -hess_k; // Store the regularized hessian (though we won't use it directly in H_k_tilde)
-                 if (!hess_k.allFinite()) { // Should be less likely due to regularization inside computeParticleDerivatives
+                loss_hessians[k] = -hess_k; // Store regularized hessian
+                 if (!hess_k.allFinite()) {
                      PCL_WARN("[SvnNdt::align] NaN/Inf in regularized NDT Hessian for particle %d, iter %d. Using Identity.\n", k, iter);
                      loss_hessians[k] = I6;
                  }
@@ -585,19 +562,20 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
                     double k_val = rbf_kernel(particles[l], particles[k]);
                     Vector6d k_grad = rbf_kernel_gradient(particles[l], particles[k]);
 
-                    // Check for NaN/Inf in kernel/gradient
-                     if (!std::isfinite(k_val) || !k_grad.allFinite()) {
+                    if (!std::isfinite(k_val) || !k_grad.allFinite()) {
                          PCL_WARN("[SvnNdt::align] NaN/Inf in kernel computation between %d and %d.\n", l, k);
-                         continue; // Skip contribution from this pair
+                         continue;
                      }
 
                     phi_k_star += k_val * loss_gradients[l] + k_grad;
 
+                    // --- Restore NDT Hessian contribution ---
                     if (loss_hessians[l].allFinite()) {
                         H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
                     } else {
                         H_k_tilde += (k_grad * k_grad.transpose()); // Fallback
                     }
+                    // ---
                 }
 
                 phi_k_star /= static_cast<double>(K_);
@@ -627,7 +605,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
             Vector6d scaled_update = -step_size_ * particle_updates[k];
              if (!scaled_update.allFinite()) {
                  PCL_WARN("[SvnNdt::align] NaN/Inf in scaled update for particle %d, iter %d. Skipping update.\n", k, iter);
-                 continue; // Skip update for this particle if invalid
+                 continue;
              }
             total_update_norm += particle_updates[k].norm(); // Use unscaled norm for check
             particles[k] = particles[k].retract(scaled_update);
@@ -652,69 +630,55 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         Vector6d mean_xi = Vector6d::Zero();
         std::vector<Vector6d> tangent_vectors(K_);
         for(int k=0; k < K_; ++k) {
-            // Calculate tangent vector relative to the *prior_mean* for averaging
             tangent_vectors[k] = gtsam::Pose3::Logmap(prior_mean.between(particles[k]));
             mean_xi += tangent_vectors[k];
         }
         mean_xi /= static_cast<double>(K_);
-        result.final_pose = prior_mean.retract(mean_xi); // Apply mean tangent update to prior_mean
+        result.final_pose = prior_mean.retract(mean_xi);
 
-        // Calculate sample covariance in the tangent space around the final mean pose
         if (K_ > 1) {
             result.final_covariance.setZero();
-             // Recalculate tangent vectors relative to the *new final_pose* for covariance
-             Vector6d final_mean_xi_recalc = Vector6d::Zero(); // Should be near zero
+             Vector6d final_mean_xi_recalc = Vector6d::Zero();
              std::vector<Vector6d> final_tangent_vectors(K_);
              for(int k=0; k < K_; ++k) {
                  final_tangent_vectors[k] = gtsam::Pose3::Logmap(result.final_pose.between(particles[k]));
                  final_mean_xi_recalc += final_tangent_vectors[k];
              }
-             final_mean_xi_recalc /= static_cast<double>(K_); // Center for covariance calc
+             final_mean_xi_recalc /= static_cast<double>(K_);
 
             for(int k=0; k < K_; ++k) {
-                Vector6d diff = final_tangent_vectors[k] - final_mean_xi_recalc; // Use diff from recalculated mean
+                Vector6d diff = final_tangent_vectors[k] - final_mean_xi_recalc;
                 result.final_covariance += diff * diff.transpose();
             }
-            result.final_covariance /= static_cast<double>(K_ - 1); // Sample covariance N-1
+            result.final_covariance /= static_cast<double>(K_ - 1);
         } else {
-            // If only one particle, use the prior noise model's covariance
             result.final_covariance = prior_noise_model->covariance();
         }
 
-        // Final regularization check for the computed covariance
         Eigen::SelfAdjointEigenSolver<Matrix6d> final_eigensolver(result.final_covariance);
         if (final_eigensolver.info() == Eigen::Success) {
             Vector6d final_evals = final_eigensolver.eigenvalues();
-            if (final_evals(0) < 1e-7) { // Check smallest eigenvalue
-                //PCL_DEBUG("[SvnNdt::align] Final covariance near singular. Adding regularization.\n");
-                result.final_covariance += 1e-7 * I6; // Add small identity scaling
+            if (final_evals(0) < 1e-7) {
+                result.final_covariance += 1e-7 * I6;
             }
         } else {
              PCL_WARN("[SvnNdt::align] Eigendecomposition failed for final covariance. Matrix might be invalid. Using large identity.\n");
-             result.final_covariance = 1e6 * I6; // Fallback to large identity
+             result.final_covariance = 1e6 * I6;
         }
 
-    } else { // Handle K_=0 case
+    } else {
         result.final_pose = prior_mean;
-        result.final_covariance.setIdentity(); // Return identity if no particles
+        result.final_covariance.setIdentity();
     }
 
+    input_.reset();
 
-    input_.reset(); // Clear internal pointer
-
-    // Final convergence status message
     if (!result.converged && result.iterations == max_iter_) {
-        // Did not converge within max iterations
         PCL_DEBUG("[SvnNdt::align] Reached max iterations (%d) without converging.\n", max_iter_);
-    } else if (result.converged) {
-         // Converged successfully
-         // std::cout << "[SvnNdt::align] Converged in " << result.iterations << " iterations." << std::endl;
     }
 
     return result;
 }
-
-
 
 } // namespace svn_ndt
 
