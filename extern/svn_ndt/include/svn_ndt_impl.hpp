@@ -361,42 +361,37 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
     const PointCloudSource& trans_cloud, const Vector6d& p,
     bool compute_hessian)
 {
+    // --- Initializations ---
     score_gradient.setZero();
     hessian.setZero();
     double total_score = 0.0;
-    bool first_point_processed = false;
+    bool first_point_processed = false; // For debug prints in updateDerivatives
 
-    // Precompute Angle Derivatives for this particle's pose 'p'
-    // This is the main part potentially requiring thread-safety IF this function
-    // were called in parallel without external locks/copies. In our TBB design,
-    // this runs serially within each task, modifying the object's j_ang_, h_ang_.
+    // --- Precompute Angle Derivatives ---
+    // (This modifies member variables j_ang_ and h_ang_ of the 'local_ndt' copy)
     computeAngleDerivatives(p, compute_hessian);
 
-    // Reusable structures for point derivatives
+    // --- Reusable Structures ---
     Eigen::Matrix<float, 4, 6> point_gradient4; point_gradient4.setZero();
     Eigen::Matrix<float, 24, 6> point_hessian24; point_hessian24.setZero();
-
-    // Reusable structures for neighbor search
     std::vector<LeafConstPtr> neighborhood;
-    neighborhood.reserve(27); // Max neighbors for DIRECT7/KDTREE potentially
+    neighborhood.reserve(27); // Max expected neighbors
     std::vector<float> distances;
     distances.reserve(27);
 
-    // Iterate through each point in the *transformed* source cloud
+    // --- Loop Over Transformed Source Points ---
     for (size_t idx = 0; idx < trans_cloud.points.size(); ++idx)
     {
         const PointSource& x_trans_pt = trans_cloud.points[idx];
-        if (!pcl::isFinite(x_trans_pt)) continue;
+        if (!pcl::isFinite(x_trans_pt)) continue; // Skip invalid points
 
         // --- Neighbor Search ---
         neighborhood.clear();
         distances.clear();
         int neighbors_found = 0;
-
         switch (search_method_)
         {
             case NeighborSearchMethod::KDTREE:
-                // Ensure target_cells_ was built with searchability!
                 neighbors_found = target_cells_.radiusSearch(x_trans_pt, resolution_, neighborhood, distances);
                 break;
             case NeighborSearchMethod::DIRECT7:
@@ -407,74 +402,87 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
                 neighbors_found = target_cells_.getNeighborhoodAtPoint1(x_trans_pt, neighborhood);
                 break;
         }
+        if (neighbors_found == 0) continue; // Skip if no valid neighbors
 
-        if (neighbors_found == 0) continue; // Skip point if no valid neighbors found
-
-        // --- Process Neighbors ---
-        // Get original point (assuming index correspondence)
-        // Note: input_ is now a member ConstPtr set in align()
+        // --- Get Original Point Coordinates ---
         if (!input_ || idx >= input_->size()) {
-             PCL_ERROR("[SvnNdt] Internal error: input_ cloud invalid or index out of bounds.\n");
-             continue;
+             PCL_ERROR("[SvnNdt] Internal error: input_ cloud invalid or index out of bounds during derivative calculation.\n");
+             continue; // Skip this point
         }
         const PointSource& x_pt = (*input_)[idx];
         Eigen::Vector3d x_orig(x_pt.x, x_pt.y, x_pt.z);
 
-        // Compute point derivatives (only once per source point)
+        // --- Compute Point Derivatives (Jacobian/Hessian w.r.t. pose) ---
+        // (This uses the precomputed j_ang_ / h_ang_)
         computePointDerivatives(x_orig, point_gradient4, point_hessian24, compute_hessian);
 
+        // --- Accumulate Contributions from Neighbors ---
         double point_score_contribution = 0.0;
         Vector6d point_gradient_contribution = Vector6d::Zero();
         Matrix6d point_hessian_contribution = Matrix6d::Zero();
+        bool is_first_point = !first_point_processed; // Flag for debug print
 
-        // ######### DEBUG
-        bool is_first_point = !first_point_processed;
-        // ######### DEBUG
-
-        // Accumulate contribution from each neighbor voxel
         for (const LeafConstPtr& cell : neighborhood)
         {
-            if (!cell) continue; // Should already be filtered by VoxelGridCovariance getters
+            if (!cell) continue; // Safety check
 
             Eigen::Vector3d x_rel = Eigen::Vector3d(x_trans_pt.x, x_trans_pt.y, x_trans_pt.z) - cell->getMean();
             const Eigen::Matrix3d& c_inv = cell->getInverseCov();
 
-            // Use temporary variables to accumulate contribution from this neighbor
-            // double score_inc = updateDerivatives(point_gradient_contribution, point_hessian_contribution,
-            //                                 point_gradient4, point_hessian24,
-            //                                 x_rel, c_inv, compute_hessian);
+            // --- Core NDT derivative update ---
             double score_inc = updateDerivatives(point_gradient_contribution, point_hessian_contribution,
                                             point_gradient4, point_hessian24,
-                                            x_rel, c_inv, compute_hessian, is_first_point);
-
-             point_score_contribution += score_inc;
+                                            x_rel, c_inv, compute_hessian, is_first_point); // Pass debug flag
+            point_score_contribution += score_inc;
 
         } // End loop over neighbors
 
-        // ######### DEBUG
+        // --- Update Debug Flag ---
         if (is_first_point) {
-             first_point_processed = true; 
+             first_point_processed = true;
         }
-        // ######### DEBUG
 
-        // Add accumulated contributions for this point to totals
-        // NOTE: NDT originally sums contributions. Is averaging per point needed?
-        // Standard NDT sums. Let's stick to that.
-        total_score += point_score_contribution;
-        score_gradient += point_gradient_contribution;
-        hessian += point_hessian_contribution;
+        // --- Add Point's Total Contribution to Overall Gradient/Hessian ---
+        // (Check finiteness just in case updateDerivatives had issues despite internal checks)
+        if (std::isfinite(point_score_contribution) &&
+            point_gradient_contribution.allFinite() &&
+            (!compute_hessian || point_hessian_contribution.allFinite()))
+        {
+            total_score += point_score_contribution;
+            score_gradient += point_gradient_contribution;
+            if (compute_hessian) {
+                hessian += point_hessian_contribution;
+            }
+        } else {
+            // PCL_WARN("[SvnNdt] NaN/Inf detected in point contribution (idx %zu). Skipping.\n", idx);
+        }
 
     } // End loop over points
 
-    // Optional: Add regularization term if needed (as in ndt_omp)
-    // Not included here for simplicity, focus is on SVN part
-    // ######### DEBUG
+    // --- >>> ADD HESSIAN REGULARIZATION (Levenberg-Marquardt style) <<< ---
+    if (compute_hessian) {
+        double lambda = 1e-3; // Regularization strength (tune if needed)
+        hessian += lambda * Matrix6d::Identity();
+    }
+    // --- >>> END REGULARIZATION <<< ---
+
+    // --- Final Sanity Checks & Debug Print ---
+    if (!score_gradient.allFinite()) {
+        // std::cerr << "computeParticleDerivatives: Final score_gradient has NaN/Inf!" << std::endl;
+        score_gradient.setZero(); // Avoid propagating errors
+    }
+    if (compute_hessian && !hessian.allFinite()) {
+        // std::cerr << "computeParticleDerivatives: Final hessian has NaN/Inf!" << std::endl;
+        hessian = Matrix6d::Identity(); // Use identity if invalid
+    }
+
+    // --- Debug Print for Final Gradient Norm ---
     std::cout << "    computeParticleDeriv Final Grad Norm: " << score_gradient.norm() << std::endl;
-    // ######### DEBUG
+    // ---
 
     return total_score;
-}
 
+} // End computeParticleDerivatives
 
 //=================================================================================================
 // Main Alignment Function (SVN-NDT Implementation)
@@ -550,7 +558,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
                 p_k_ndt.tail<3>() = rpy;
 
                 // 3. Compute derivatives using the thread-local copy
-                double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, false);
+                double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, true);
 
                 // 4. Store negatives for loss minimization
                 loss_gradients[k] = -grad_k;
@@ -582,14 +590,11 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
                     phi_k_star += k_val * loss_gradients[l] + k_grad;
 
-                    // if (loss_hessians[l].allFinite()) {
-                    //      H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
-                    // } else {
-                    //      // Hessian was already flagged and potentially replaced in Stage 1
-                    //      H_k_tilde += (k_grad * k_grad.transpose());
-                    // }
-
-                    H_k_tilde += (k_grad * k_grad.transpose());
+                    if (loss_hessians[l].allFinite()) { // <-- Restore check and use NDT Hessian
+                        H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
+                    } else {
+                        H_k_tilde += (k_grad * k_grad.transpose()); // <-- Keep fallback
+                    }
                 }
 
                 phi_k_star /= static_cast<double>(K_);
