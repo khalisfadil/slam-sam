@@ -550,7 +550,7 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
                 p_k_ndt.tail<3>() = rpy;
 
                 // 3. Compute derivatives using the thread-local copy
-                double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, true);
+                double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, false);
 
                 // 4. Store negatives for loss minimization
                 loss_gradients[k] = -grad_k;
@@ -582,12 +582,14 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
                     phi_k_star += k_val * loss_gradients[l] + k_grad;
 
-                    if (loss_hessians[l].allFinite()) {
-                         H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
-                    } else {
-                         // Hessian was already flagged and potentially replaced in Stage 1
-                         H_k_tilde += (k_grad * k_grad.transpose());
-                    }
+                    // if (loss_hessians[l].allFinite()) {
+                    //      H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
+                    // } else {
+                    //      // Hessian was already flagged and potentially replaced in Stage 1
+                    //      H_k_tilde += (k_grad * k_grad.transpose());
+                    // }
+
+                    H_k_tilde += (k_grad * k_grad.transpose());
                 }
 
                 phi_k_star /= static_cast<double>(K_);
