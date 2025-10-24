@@ -11,7 +11,7 @@
                 "/usr/include/flann",
                 "/usr/include/vtk-9.1",
                 "${workspaceFolder}/include",
-                "${workspaceFolder}/extern/robin-map/include/tsl",
+                "${workspaceFolder}/extern/robin-map/include",
                 "${workspaceFolder}/extern/ndt_omp/include",
                 "${workspaceFolder}/extern/svn_ndt/include"
 

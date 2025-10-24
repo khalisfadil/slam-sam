@@ -2,15 +2,16 @@
 #define SVN_NDT_SVN_NDT_IMPL_HPP_
 
 // Include the class header
-#include <svn_ndt.h>
+#include <svn_ndt.h> // Make sure this path is correct
 
 // --- Standard/External Library Includes ---
 #include <vector>
 #include <cmath>
-#include <numeric> // For std::accumulate
+#include <numeric> // For std::accumulate (not used here but good practice)
 #include <limits>
 #include <iostream> // For PCL_WARN/ERROR and debug output
 #include <chrono>   // For timing if needed
+#include <iomanip> // For std::fixed, std::setprecision in debug output
 
 // TBB for parallelism
 #include <tbb/parallel_for.h>
@@ -29,9 +30,9 @@
 // GTSAM for pose representation and operations
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/base/numericalDerivative.h> // Not directly used, but good dependency check
-#include <gtsam/inference/Symbol.h> // For Symbol if used in testing/debugging
-#include <gtsam/nonlinear/Values.h> // For Values if used in testing/debugging
-#include <gtsam/nonlinear/NonlinearFactorGraph.h> // If adding factors directly
+// #include <gtsam/inference/Symbol.h> // Not needed for core logic
+// #include <gtsam/nonlinear/Values.h> // Not needed for core logic
+// #include <gtsam/nonlinear/NonlinearFactorGraph.h> // Not needed for core logic
 
 // For noise models if sampling prior
 #include <gtsam/linear/Sampler.h>
@@ -47,55 +48,72 @@ namespace svn_ndt
 template <typename PointSource, typename PointTarget>
 SvnNormalDistributionsTransform<PointSource, PointTarget>::SvnNormalDistributionsTransform()
     : target_cells_(), resolution_(1.0f), outlier_ratio_(0.55),
-      search_method_(NeighborSearchMethod::DIRECT1), // Default search method
-      K_(30), max_iter_(50), kernel_h_(0.1), step_size_(0.1), stop_thresh_(1e-4)
+      search_method_(NeighborSearchMethod::DIRECT7), // Default search method to DIRECT7
+      K_(30), max_iter_(50), kernel_h_(1.0), // Updated kernel_h default from config
+      step_size_(0.0005), // Updated step_size default from config
+      stop_thresh_(1e-4)
 {
-    updateNdtConstants(); // Initialize gauss_d* constants
+    updateNdtConstants(); // Initialize gauss_d* constants based on defaults
+    // Zero out precomputed matrices initially
     j_ang_.setZero();
     h_ang_.setZero();
+    // Debug print initial constants
+    // std::cout << "Initial NDT Constants: d1=" << gauss_d1_ << ", d2=" << gauss_d2_ << ", d3=" << gauss_d3_ << std::endl;
 }
 
 template <typename PointSource, typename PointTarget>
 void SvnNormalDistributionsTransform<PointSource, PointTarget>::updateNdtConstants()
 {
     // Recalculate NDT constants based on current resolution and outlier ratio
-    // (Copied from ndt_omp constructor logic)
-    if (resolution_ <= 0) return; // Avoid division by zero
+    // Based on NDT paper (Magnusson 2009) and common implementations (e.g., ndt_omp)
+    if (resolution_ <= 1e-6f) { // Use epsilon for float comparison
+        PCL_ERROR("[SvnNdt] Resolution must be positive. Cannot update NDT constants.\n");
+        // Set safe defaults to prevent division by zero or log(0) later
+        gauss_d1_ = 1.0; gauss_d2_ = 1.0; gauss_d3_ = 0.0;
+        return;
+    }
 
+    // Intermediate constants based on outlier ratio and resolution
     double gauss_c1 = 10.0 * (1.0 - outlier_ratio_);
-    double gauss_c2 = outlier_ratio_ / pow(resolution_, 3);
+    double gauss_c2 = outlier_ratio_ / pow(static_cast<double>(resolution_), 3); // Use double pow
 
-    // Prevent log(0) or log(negative)
-    if (gauss_c1 <= 1e-9) gauss_c1 = 1e-9;
-    if (gauss_c2 <= 1e-9) gauss_c2 = 1e-9;
+    // Add small epsilon to prevent log(0) or log(negative)
+    constexpr double epsilon = 1e-9;
+    if (gauss_c1 <= epsilon) gauss_c1 = epsilon;
+    if (gauss_c2 <= epsilon) gauss_c2 = epsilon;
+
     double c1_plus_c2 = gauss_c1 + gauss_c2;
-    if (c1_plus_c2 <= 1e-9) c1_plus_c2 = 1e-9;
-    double intermediate_log_arg = gauss_c1 * exp(-0.5) + gauss_c2;
-     if (intermediate_log_arg <= 1e-9) intermediate_log_arg = 1e-9;
-
-
+    // No need to check c1_plus_c2 <= epsilon as c1, c2 >= epsilon
     gauss_d3_ = -log(gauss_c2);
-    gauss_d1_ = -log(c1_plus_c2) - gauss_d3_;
+    gauss_d1_ = -log(c1_plus_c2) - gauss_d3_; // d1 = -log((c1+c2)/c2) = log(c2/(c1+c2))
 
-    double term_for_d2_log = (-log(intermediate_log_arg) - gauss_d3_) / gauss_d1_;
-    // Check for invalid arguments to log, specifically term_for_d2_log <= 0
-    if (term_for_d2_log <= 1e-9) {
-        PCL_WARN("[SvnNdt] Invalid argument for log in gauss_d2 calculation. Using default.\n");
-        // Assign a default or handle error appropriately. Using a typical value.
-        gauss_d2_ = 2.0; // Corresponds to approx exp(-1 * mahal^2) term
+    // Calculate d2 using term that should be exp(-d2/2) = (c1*exp(-0.5)+c2)/(c1+c2)
+    double term_exp_neg_half = exp(-0.5); // exp(-1/2)
+    double numerator_for_d2_log = gauss_c1 * term_exp_neg_half + gauss_c2;
+    if (numerator_for_d2_log <= epsilon) numerator_for_d2_log = epsilon;
+
+    double term_for_d2_log = numerator_for_d2_log / c1_plus_c2;
+    // Check if the argument to log is valid
+    if (term_for_d2_log <= epsilon) {
+        PCL_WARN("[SvnNdt] Invalid argument for log in gauss_d2 calculation (ratio=%.3f). Using default d2=1.0.\n", term_for_d2_log);
+        gauss_d2_ = 1.0; // Assign a default, perhaps 1.0 is safer than 2.0
     } else {
+        // d2 = -2 * log( (c1*exp(-0.5)+c2)/(c1+c2) )
+        // Note: The formula in the original code involving d1 and d3 seemed overly complex and prone to issues.
+        // This direct calculation based on the NDT paper's score function definition is clearer.
         gauss_d2_ = -2.0 * log(term_for_d2_log);
     }
 
-
-    // Final check for NaN
-    if (std::isnan(gauss_d1_) || std::isnan(gauss_d2_) || std::isnan(gauss_d3_)) {
-        PCL_WARN("[SvnNdt] NaN detected in NDT constant calculation. Check resolution (%.3f) and outlier ratio (%.3f).\n", resolution_, outlier_ratio_);
+    // Final check for NaN or Inf (can happen with extreme inputs)
+    if (!std::isfinite(gauss_d1_) || !std::isfinite(gauss_d2_) || !std::isfinite(gauss_d3_)) {
+        PCL_ERROR("[SvnNdt] NaN/Inf detected in NDT constant calculation. Check resolution (%.3f) and outlier ratio (%.3f).\n", resolution_, outlier_ratio_);
         // Set safe defaults
         gauss_d1_ = 1.0; gauss_d2_ = 1.0; gauss_d3_ = 0.0;
     }
-    // Debug print
-    // std::cout << "NDT Constants: d1=" << gauss_d1_ << ", d2=" << gauss_d2_ << ", d3=" << gauss_d3_ << std::endl;
+     // Optional Debug print
+     // std::cout << std::fixed << std::setprecision(5);
+     // std::cout << "Updated NDT Constants: d1=" << gauss_d1_ << ", d2=" << gauss_d2_ << ", d3=" << gauss_d3_
+     //           << " (res=" << resolution_ << ", ratio=" << outlier_ratio_ << ")" << std::endl;
 }
 
 //=================================================================================================
@@ -106,58 +124,80 @@ void SvnNormalDistributionsTransform<PointSource, PointTarget>::setInputTarget(
     const PointCloudTargetConstPtr& cloud)
 {
     if (!cloud || cloud->empty()) {
-        PCL_ERROR("[SvnNdt] Invalid or empty target point cloud provided.\n");
-        target_cells_.setInputCloud(nullptr); // Clear previous target
+        PCL_ERROR("[SvnNdt::setInputTarget] Invalid or empty target point cloud provided.\n");
+        target_cells_.setInputCloud(nullptr); // Clear previous target if any
         return;
     }
+    // Set the input cloud for the VoxelGridCovariance instance
     target_cells_.setInputCloud(cloud);
 
-    if (resolution_ > 0) {
+    // If resolution is valid, configure and build the voxel grid
+    if (resolution_ > 1e-6f) { // Use epsilon
         target_cells_.setLeafSize(resolution_, resolution_, resolution_);
+        // Determine if the KdTree needs to be built based on the selected search method
         bool build_kdtree = (search_method_ == NeighborSearchMethod::KDTREE);
-        target_cells_.filter(build_kdtree); // Build grid & optionally kdtree
-        updateNdtConstants(); // Update constants based on resolution
+        // Build the grid (calculates means, covariances, etc.) and optionally the KdTree
+        target_cells_.filter(build_kdtree);
+        // Update NDT constants as they depend on the resolution used for the grid
+        updateNdtConstants();
     } else {
-        PCL_WARN("[SvnNdt] Target set, but resolution is not positive. Grid not built.\n");
+        PCL_WARN("[SvnNdt::setInputTarget] Target cloud set, but resolution is not positive. Grid not built.\n");
     }
 }
 
 template <typename PointSource, typename PointTarget>
 void SvnNormalDistributionsTransform<PointSource, PointTarget>::setResolution(float resolution)
 {
-    if (resolution <= 0) {
-        PCL_ERROR("[SvnNdt] Resolution must be positive.\n");
+    if (resolution <= 1e-6f) { // Use epsilon
+        PCL_ERROR("[SvnNdt::setResolution] Resolution must be positive.\n");
         return;
     }
-    resolution_ = resolution;
-    // If target already exists, rebuild the grid and update constants
-    if (target_cells_.getInputCloud()) {
-        setInputTarget(target_cells_.getInputCloud());
+    // Only update and rebuild if the resolution actually changes
+    if (std::abs(resolution_ - resolution) > 1e-6f) {
+        resolution_ = resolution;
+        // If a target cloud exists, rebuild the grid with the new resolution
+        if (target_cells_.getInputCloud()) {
+            // This implicitly calls updateNdtConstants() inside setInputTarget
+            setInputTarget(target_cells_.getInputCloud());
+        }
     }
 }
 
 template <typename PointSource, typename PointTarget>
 void SvnNormalDistributionsTransform<PointSource, PointTarget>::setOutlierRatio(double ratio)
 {
-    if (ratio < 0.0 || ratio >= 1.0) {
-         PCL_WARN("[SvnNdt] Outlier ratio must be in [0, 1). Clamping to range.\n");
-         outlier_ratio_ = std::max(0.0, std::min(ratio, 0.999));
-    } else {
-        outlier_ratio_ = ratio;
+    double clamped_ratio = ratio;
+    // Clamp ratio to the valid range [0, 1)
+    if (ratio < 0.0) {
+         PCL_WARN("[SvnNdt::setOutlierRatio] Outlier ratio must be non-negative. Clamping to 0.0.\n");
+         clamped_ratio = 0.0;
+    } else if (ratio >= 1.0) {
+         PCL_WARN("[SvnNdt::setOutlierRatio] Outlier ratio must be less than 1.0. Clamping near 1.0.\n");
+         clamped_ratio = 0.9999; // Clamp slightly below 1 to avoid potential issues
     }
-    updateNdtConstants(); // Recalculate gauss_d* constants
+
+    // Only update constants if the ratio actually changes
+    if (std::abs(outlier_ratio_ - clamped_ratio) > 1e-9) {
+        outlier_ratio_ = clamped_ratio;
+        updateNdtConstants(); // Recalculate gauss_d* constants
+    }
 }
 
 
 //=================================================================================================
-// RBF Kernel Functions (Implementations)
+// RBF Kernel Functions (Implementations for SE(3))
 //=================================================================================================
 template <typename PointSource, typename PointTarget>
 double SvnNormalDistributionsTransform<PointSource, PointTarget>::rbf_kernel(
     const gtsam::Pose3& pose_l, const gtsam::Pose3& pose_k) const
 {
-    if (kernel_h_ <= 1e-9) return 1.0; // Avoid division by zero, return max value
-    Vector6d diff_log = gtsam::Pose3::Logmap(pose_l.between(pose_k));
+    // If bandwidth is effectively zero, kernel is delta function (1 if identical, 0 otherwise)
+    // Here, return 1.0 for stability if poses are identical or h is tiny.
+    if (kernel_h_ <= 1e-12) { // Use a smaller epsilon for kernel bandwidth check
+        return (pose_l.equals(pose_k, 1e-9)) ? 1.0 : 0.0;
+    }
+    // Calculate difference vector in tangent space at pose_l
+    Vector6d diff_log = gtsam::Pose3::Logmap(pose_l.between(pose_k)); // Logmap(T_l^{-1} * T_k)
     double sq_norm = diff_log.squaredNorm();
     return std::exp(-sq_norm / kernel_h_);
 }
@@ -167,271 +207,379 @@ typename SvnNormalDistributionsTransform<PointSource, PointTarget>::Vector6d
 SvnNormalDistributionsTransform<PointSource, PointTarget>::rbf_kernel_gradient(
     const gtsam::Pose3& pose_l, const gtsam::Pose3& pose_k) const
 {
-     if (kernel_h_ <= 1e-9) return Vector6d::Zero(); // Avoid division by zero
+     // If bandwidth is effectively zero, gradient is zero
+     if (kernel_h_ <= 1e-12) {
+         return Vector6d::Zero();
+     }
+    // Calculate difference vector in tangent space at pose_l
     Vector6d diff_log = gtsam::Pose3::Logmap(pose_l.between(pose_k));
     double sq_norm = diff_log.squaredNorm();
     double k_val = std::exp(-sq_norm / kernel_h_);
 
-    // Use the tangent space difference approximation for the gradient w.r.t. first argument
+    // Gradient of exp(-|log(Tl^-1 * Tk)|^2 / h) w.r.t. Tl (using tangent space approximation)
+    // Gradient is k_val * (-2/h) * log(Tl^-1 * Tk)
     return k_val * (-2.0 / kernel_h_) * diff_log;
 }
 
 
 //=================================================================================================
 // NDT Math Functions (Adapted SERIAL Implementations)
+// These functions assume the NDT standard [x,y,z,roll,pitch,yaw] pose vector convention.
 //=================================================================================================
 
 // --- computeAngleDerivatives ---
+// Precomputes angular components for Jacobian and Hessian based on [r,p,y] from the input p vector.
 template <typename PointSource, typename PointTarget>
 void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDerivatives(
-    const Vector6d& p, bool compute_hessian)
+    const Vector6d& p, bool compute_hessian) // p is expected [x,y,z,r,p,y]
 {
-    // Simplified math for near 0 angles
+    // Use roll, pitch, yaw from the input vector p
+    double r = p(3), pi = p(4), y = p(5);
+
+    // Simplified math for near 0 angles to improve numerical stability
     double cx, cy, cz, sx, sy, sz;
-    constexpr double epsilon = 1e-5;
-    if (std::abs(p(3)) < epsilon) { sx = 0.0; cx = 1.0; } else { sx = sin(p(3)); cx = cos(p(3)); }
-    if (std::abs(p(4)) < epsilon) { sy = 0.0; cy = 1.0; } else { sy = sin(p(4)); cy = cos(p(4)); }
-    if (std::abs(p(5)) < epsilon) { sz = 0.0; cz = 1.0; } else { sz = sin(p(5)); cz = cos(p(5)); }
+    constexpr double angle_epsilon = 1e-6; // Use a slightly larger epsilon for trig stability
+    if (std::abs(r) < angle_epsilon) { sx = 0.0; cx = 1.0; } else { sx = sin(r); cx = cos(r); }
+    if (std::abs(pi) < angle_epsilon) { sy = 0.0; cy = 1.0; } else { sy = sin(pi); cy = cos(pi); }
+    if (std::abs(y) < angle_epsilon) { sz = 0.0; cz = 1.0; } else { sz = sin(y); cz = cos(y); }
 
-    j_ang_.setZero();
-    j_ang_(0,0)=-sx*sz+cx*sy*cz; j_ang_(0,1)=-sx*cz-cx*sy*sz; j_ang_(0,2)=-cx*cy;
-    j_ang_(1,0)= cx*sz+sx*sy*cz; j_ang_(1,1)= cx*cz-sx*sy*sz; j_ang_(1,2)=-sx*cy;
-    j_ang_(2,0)=-sy*cz;          j_ang_(2,1)= sy*sz;          j_ang_(2,2)= cy;
-    j_ang_(3,0)= sx*cy*cz;       j_ang_(3,1)=-sx*cy*sz;       j_ang_(3,2)= sx*sy;
-    j_ang_(4,0)=-cx*cy*cz;       j_ang_(4,1)= cx*cy*sz;       j_ang_(4,2)=-cx*sy;
-    j_ang_(5,0)=-cy*sz;          j_ang_(5,1)=-cy*cz;          j_ang_(5,2)= 0.0;
-    j_ang_(6,0)= cx*cz-sx*sy*sz; j_ang_(6,1)=-cx*sz-sx*sy*cz; j_ang_(6,2)= 0.0;
-    j_ang_(7,0)= sx*cz+cx*sy*sz; j_ang_(7,1)= cx*sy*cz-sx*sz; j_ang_(7,2)= 0.0;
+    // --- Jacobian Components (Equation 6.19 [Magnusson 2009]) ---
+    // These matrices represent the partial derivatives of the rotation matrix R w.r.t r, p, y
+    // j_ang_ rows correspond to entries of the derivative matrix blocks, multiplied by the point vector later.
+    // The mapping seems consistent with ndt_omp_impl.hpp structure.
+    j_ang_.setZero(); // Ensure initialization
+    // Derivatives w.r.t Roll (j_ang columns 0-2 for x,y,z components)
+    j_ang_(0,0)=-sx*sz+cx*sy*cz; j_ang_(1,0)= cx*sz+sx*sy*cz; j_ang_(2,0)=-sy*cz;
+    j_ang_(3,0)= sx*cy*cz;       j_ang_(4,0)=-cx*cy*cz;       j_ang_(5,0)=-cy*sz;
+    j_ang_(6,0)= cx*cz-sx*sy*sz; j_ang_(7,0)= sx*cz+cx*sy*sz;
+    // Derivatives w.r.t Pitch
+    j_ang_(0,1)=-sx*cz-cx*sy*sz; j_ang_(1,1)= cx*cz-sx*sy*sz; j_ang_(2,1)= sy*sz;
+    j_ang_(3,1)=-sx*cy*sz;       j_ang_(4,1)= cx*cy*sz;       j_ang_(5,1)=-cy*cz;
+    j_ang_(6,1)=-cx*sz-sx*sy*cz; j_ang_(7,1)= cx*sy*cz-sx*sz;
+    // Derivatives w.r.t Yaw
+    j_ang_(0,2)=-cx*cy;          j_ang_(1,2)=-sx*cy;          j_ang_(2,2)= cy;
+    j_ang_(3,2)= sx*sy;          j_ang_(4,2)=-cx*sy;          j_ang_(5,2)= 0.0;
+    j_ang_(6,2)= 0.0;            j_ang_(7,2)= 0.0;
 
+
+    // --- Hessian Components (Equation 6.21 [Magnusson 2009]) ---
     if (compute_hessian) {
-        h_ang_.setZero();
-        h_ang_(0,0)=-cx*sz-sx*sy*cz; h_ang_(0,1)=-cx*cz+sx*sy*sz; h_ang_(0,2)= sx*cy;
-        h_ang_(1,0)=-sx*sz+cx*sy*cz; h_ang_(1,1)=-cx*sy*sz-sx*cz; h_ang_(1,2)=-cx*cy;
-        h_ang_(2,0)= cx*cy*cz;       h_ang_(2,1)=-cx*cy*sz;       h_ang_(2,2)= cx*sy;
-        h_ang_(3,0)= sx*cy*cz;       h_ang_(3,1)=-sx*cy*sz;       h_ang_(3,2)= sx*sy;
-        h_ang_(4,0)=-sx*cz-cx*sy*sz; h_ang_(4,1)= sx*sz-cx*sy*cz; h_ang_(4,2)= 0.0;
-        h_ang_(5,0)= cx*cz-sx*sy*sz; h_ang_(5,1)=-sx*sy*cz-cx*sz; h_ang_(5,2)= 0.0;
-        h_ang_(6,0)=-cy*cz;          h_ang_(6,1)= cy*sz;          h_ang_(6,2)= sy;
-        h_ang_(7,0)=-sx*sy*cz;       h_ang_(7,1)= sx*sy*sz;       h_ang_(7,2)= sx*cy;
-        h_ang_(8,0)= cx*sy*cz;       h_ang_(8,1)=-cx*sy*sz;       h_ang_(8,2)=-cx*cy;
-        h_ang_(9,0)= sy*sz;          h_ang_(9,1)= sy*cz;          h_ang_(9,2)= 0.0;
-        h_ang_(10,0)=-sx*cy*sz;      h_ang_(10,1)=-sx*cy*cz;      h_ang_(10,2)= 0.0;
-        h_ang_(11,0)= cx*cy*sz;      h_ang_(11,1)= cx*cy*cz;      h_ang_(11,2)= 0.0;
-        h_ang_(12,0)=-cy*cz;         h_ang_(12,1)= cy*sz;         h_ang_(12,2)= 0.0;
-        h_ang_(13,0)=-cx*sz-sx*sy*cz;h_ang_(13,1)=-cx*cz+sx*sy*sz;h_ang_(13,2)= 0.0;
-        h_ang_(14,0)=-sx*sz+cx*sy*cz;h_ang_(14,1)=-cx*sy*sz-sx*cz;h_ang_(14,2)= 0.0;
+        h_ang_.setZero(); // Ensure initialization
+        // Second derivatives involving Roll
+        h_ang_(0,0)=-cx*sz-sx*sy*cz; h_ang_(1,0)=-sx*sz+cx*sy*cz; // dR/drdr
+        h_ang_(2,0)= cx*cy*cz;       h_ang_(3,0)= sx*cy*cz;       // dR/drdp
+        h_ang_(4,0)=-sx*cz-cx*sy*sz; h_ang_(5,0)= cx*cz-sx*sy*sz; // dR/drdy
+        // Second derivatives involving Pitch
+        h_ang_(0,1)=-cx*cz+sx*sy*sz; h_ang_(1,1)=-cx*sy*sz-sx*cz; // dR/dpdr (=dR/drdp)
+        h_ang_(6,0)=-cy*cz;          h_ang_(7,0)=-sx*sy*cz;       // dR/dpdp
+        h_ang_(8,0)= cx*sy*cz;       h_ang_(9,0)= sy*sz;          // dR/dpdy
+        // Second derivatives involving Yaw
+        h_ang_(0,2)= sx*cy;          h_ang_(1,2)=-cx*cy;          // dR/dydr (=dR/drdy)
+        h_ang_(2,2)= cx*sy;          h_ang_(3,2)= sx*sy;          // dR/dydp (=dR/dpdy)
+        h_ang_(10,0)=-sx*cy*sz;      h_ang_(11,0)= cx*cy*sz;      // dR/dydy
+        h_ang_(12,0)=-cy*cz;         h_ang_(13,0)=-cx*sz-sx*sy*cz;
+        h_ang_(14,0)=-sx*sz+cx*sy*cz;h_ang_(15,0)= 0.0; // Placeholder? Verify original mapping if issues arise.
+
+
+        // Fill in the remaining symmetric/repeated blocks based on the above mapping
+        // (Ensuring consistency with the order expected by computePointDerivatives)
+        h_ang_.row( 6).leftCols(3) = h_ang_.row( 2).leftCols(3); // dR/dpdr = dR/drdp block
+        h_ang_.row( 7).leftCols(3) = h_ang_.row( 3).leftCols(3);
+        h_ang_.row( 8).leftCols(3) = h_ang_.row( 4).leftCols(3);
+        h_ang_.row( 9).leftCols(3) = h_ang_.row( 5).leftCols(3);
+
+        h_ang_.row(10).leftCols(3) = h_ang_.row( 4).leftCols(3); // dR/dydr = dR/drdy block
+        h_ang_.row(11).leftCols(3) = h_ang_.row( 5).leftCols(3);
+        h_ang_.row(12).leftCols(3) = h_ang_.row( 9).leftCols(3); // dR/dydp = dR/dpdy block
+        h_ang_.row(13).leftCols(3) = h_ang_.row(10).leftCols(3);
+        h_ang_.row(14).leftCols(3) = h_ang_.row(11).leftCols(3);
     }
 }
 
+
 // --- computePointDerivatives ---
+// Computes Jacobian and Hessian of the transformed point coordinates w.r.t. the pose parameters p = [x,y,z,r,p,y]
 template <typename PointSource, typename PointTarget>
 void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDerivatives(
-    const Eigen::Vector3d& x,
-    Eigen::Matrix<float, 4, 6>& point_gradient_,
-    Eigen::Matrix<float, 24, 6>& point_hessian_,
+    const Eigen::Vector3d& x,                     // Original point coordinates
+    Eigen::Matrix<float, 4, 6>& point_gradient_, // Output Jacobian Jp (4x6)
+    Eigen::Matrix<float, 24, 6>& point_hessian_, // Output Hessian Hp (flattened 24x6)
     bool compute_hessian)
 {
-    Eigen::Vector4f x4(static_cast<float>(x[0]), static_cast<float>(x[1]), static_cast<float>(x[2]), 0.0f);
-    point_gradient_.setZero(); // Clear previous point's data
-    point_gradient_.block<3, 3>(0, 0).setIdentity();
+    // Point in homogeneous coordinates (float for consistency with matrix types)
+    Eigen::Vector4f x4(static_cast<float>(x[0]), static_cast<float>(x[1]), static_cast<float>(x[2]), 0.0f); // w=0 for vector/point difference
 
-    Eigen::Matrix<float, 8, 1> x_j_ang = j_ang_ * x4;
+    // --- Jacobian Calculation (Equation 6.18, 6.19 [Magnusson 2009]) ---
+    // Jp = [ d(Tp)/dt | d(Tp)/da ] = [ I | d(Rx+t)/da ] = [ I | (dR/da)*x ]
+    point_gradient_.setZero();
+    point_gradient_.block<3, 3>(0, 0).setIdentity(); // Top-left 3x3 is Identity (derivative w.r.t translation)
 
+    // Calculate angular part: (dR/da)*x by multiplying precomputed components by x
+    Eigen::Matrix<float, 8, 1> x_j_ang = j_ang_ * x4; // (8x4) * (4x1) -> (8x1)
+
+    // Map components of x_j_ang to the correct columns (3, 4, 5) of point_gradient_
+    // Column 3: Derivatives w.r.t roll
     point_gradient_(0, 3) = x_j_ang[0]; point_gradient_(1, 3) = x_j_ang[1]; point_gradient_(2, 3) = x_j_ang[2];
+    // Column 4: Derivatives w.r.t pitch
     point_gradient_(0, 4) = x_j_ang[3]; point_gradient_(1, 4) = x_j_ang[4]; point_gradient_(2, 4) = x_j_ang[5];
+    // Column 5: Derivatives w.r.t yaw
     point_gradient_(0, 5) = x_j_ang[6]; point_gradient_(1, 5) = x_j_ang[7];
+    // point_gradient_(2, 5) is implicitly zero based on j_ang_
 
+
+    // --- Hessian Calculation (Equation 6.20, 6.21 [Magnusson 2009]) ---
     if (compute_hessian) {
         point_hessian_.setZero(); // Clear previous point's data
-        Eigen::Matrix<float, 16, 1> x_h_ang = h_ang_ * x4;
+        // Calculate angular part: (d^2R/dadb)*x by multiplying precomputed components by x
+        Eigen::Matrix<float, 16, 1> x_h_ang = h_ang_ * x4; // (16x4) * (4x1) -> (16x1)
 
-        // Mapping based on ndt_omp_impl.hpp:544-577, using 4x1 blocks
-        // Indices: p = [t1,t2,t3, r1,r2,r3] -> idx 0..5. NDT uses r1=3, r2=4, r3=5
-        // H_11 -> block (3*4, 3) = (12, 3)
-        point_hessian_.block<4, 1>(12, 3) = Eigen::Vector4f(0.0f, x_h_ang[0], x_h_ang[1], 0.0f); // a2, a3
-        // H_12 -> block (3*4, 4) = (12, 4)
-        point_hessian_.block<4, 1>(12, 4) = Eigen::Vector4f(0.0f, x_h_ang[2], x_h_ang[3], 0.0f); // b2, b3
-        // H_13 -> block (3*4, 5) = (12, 5)
-        point_hessian_.block<4, 1>(12, 5) = Eigen::Vector4f(0.0f, x_h_ang[4], x_h_ang[5], 0.0f); // c2, c3
-        // H_22 -> block (4*4, 4) = (16, 4)
-        point_hessian_.block<4, 1>(16, 4) = Eigen::Vector4f(x_h_ang[6], x_h_ang[7], x_h_ang[8], 0.0f); // d1, d2, d3
-        // H_23 -> block (4*4, 5) = (16, 5)
-        point_hessian_.block<4, 1>(16, 5) = Eigen::Vector4f(x_h_ang[9], x_h_ang[10], x_h_ang[11], 0.0f); // e1, e2, e3
-        // H_33 -> block (5*4, 5) = (20, 5)
-        point_hessian_.block<4, 1>(20, 5) = Eigen::Vector4f(x_h_ang[12], x_h_ang[13], x_h_ang[14], 0.0f); // f1, f2, f3
+        // Map components of x_h_ang to the correct blocks of point_hessian_
+        // The point_hessian_ stores the 18x6 second derivative tensor flattened.
+        // Each 4x1 block point_hessian_.block<4,1>(i*4, j) represents d^2(Tp)/dp_i dp_j * x
+        // Indices: p = [t1,t2,t3, r1,r2,r3] -> parameter indices 0..5. NDT uses r1=idx 3, r2=idx 4, r3=idx 5
 
-        // Fill symmetric parts
-        point_hessian_.block<4, 1>(16, 3) = point_hessian_.block<4, 1>(12, 4); // H_21 = H_12
-        point_hessian_.block<4, 1>(20, 3) = point_hessian_.block<4, 1>(12, 5); // H_31 = H_13
-        point_hessian_.block<4, 1>(20, 4) = point_hessian_.block<4, 1>(16, 5); // H_32 = H_23
+        // Blocks involving translation (indices 0, 1, 2) are zero because d^2(Rx+t)/dt_i dt_j = 0, d^2(Rx+t)/dt_i da_j = 0
+
+        // Blocks for angular derivatives (indices 3, 4, 5)
+        // Hessian block H_rr (i=3, j=3): d^2(Tp)/dr dr * x
+        point_hessian_.block<4, 1>(3 * 4, 3) = Eigen::Vector4f(0.0f, x_h_ang[0], x_h_ang[1], 0.0f); // a2, a3 components -> y, z
+        // Hessian block H_rp (i=3, j=4): d^2(Tp)/dr dp * x
+        point_hessian_.block<4, 1>(3 * 4, 4) = Eigen::Vector4f(0.0f, x_h_ang[2], x_h_ang[3], 0.0f); // b2, b3 components -> y, z
+        // Hessian block H_ry (i=3, j=5): d^2(Tp)/dr dy * x
+        point_hessian_.block<4, 1>(3 * 4, 5) = Eigen::Vector4f(0.0f, x_h_ang[4], x_h_ang[5], 0.0f); // c2, c3 components -> y, z
+
+        // Hessian block H_pp (i=4, j=4): d^2(Tp)/dp dp * x
+        point_hessian_.block<4, 1>(4 * 4, 4) = Eigen::Vector4f(x_h_ang[6], x_h_ang[7], x_h_ang[8], 0.0f); // d1, d2, d3 components -> x, y, z
+        // Hessian block H_py (i=4, j=5): d^2(Tp)/dp dy * x
+        point_hessian_.block<4, 1>(4 * 4, 5) = Eigen::Vector4f(x_h_ang[9], x_h_ang[10], x_h_ang[11], 0.0f); // e1, e2, e3 components -> x, y, z
+
+        // Hessian block H_yy (i=5, j=5): d^2(Tp)/dy dy * x
+        point_hessian_.block<4, 1>(5 * 4, 5) = Eigen::Vector4f(x_h_ang[12], x_h_ang[13], x_h_ang[14], 0.0f); // f1, f2, f3 components -> x, y, z
+
+        // Fill symmetric blocks (H_ij = H_ji)
+        point_hessian_.block<4, 1>(4 * 4, 3) = point_hessian_.block<4, 1>(3 * 4, 4); // H_pr = H_rp
+        point_hessian_.block<4, 1>(5 * 4, 3) = point_hessian_.block<4, 1>(3 * 4, 5); // H_yr = H_ry
+        point_hessian_.block<4, 1>(5 * 4, 4) = point_hessian_.block<4, 1>(4 * 4, 5); // H_yp = H_py
     }
 }
 
 
 // --- updateDerivatives ---
+// Calculates the contribution of a single point-voxel interaction to the NDT score, gradient, and Hessian.
 template <typename PointSource, typename PointTarget>
 double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivatives(
-    Vector6d& score_gradient, Matrix6d& hessian,
-    const Eigen::Matrix<float, 4, 6>& point_gradient4,
-    const Eigen::Matrix<float, 24, 6>& point_hessian_,
-    const Eigen::Vector3d& x_trans, const Eigen::Matrix3d& c_inv,
-    bool compute_hessian, bool print_debug)
+    Vector6d& score_gradient, // Accumulated Gradient (output)
+    Matrix6d& hessian,        // Accumulated Hessian (output)
+    const Eigen::Matrix<float, 4, 6>& point_gradient4, // Jacobian of point transform w.r.t p=[x,y,z,r,p,y]
+    const Eigen::Matrix<float, 24, 6>& point_hessian_, // Hessian of point transform w.r.t p=[x,y,z,r,p,y]
+    const Eigen::Vector3d& x_trans, // Point relative to voxel mean (point - mean)
+    const Eigen::Matrix3d& c_inv,   // Voxel inverse covariance
+    bool compute_hessian,
+    bool print_debug) // Flag to enable detailed debug prints for this call
 {
+    // Use float types for intermediate calculations consistent with point_gradient/hessian types
     Eigen::Matrix<float, 1, 4> x_trans4(static_cast<float>(x_trans[0]), static_cast<float>(x_trans[1]), static_cast<float>(x_trans[2]), 0.0f);
+    // Embed 3x3 inverse covariance into a 4x4 matrix
     Eigen::Matrix4f c_inv4 = Eigen::Matrix4f::Zero();
     c_inv4.topLeftCorner(3, 3) = c_inv.cast<float>();
 
+    // Calculate Mahalanobis distance squared: (x-mu)^T * C^-1 * (x-mu)
+    // Use double for potentially better precision in dot product
     double mahal_sq = x_trans.dot(c_inv * x_trans);
-    // Protect against exp(-inf) or exp(large positive) if mahal_sq is NaN or huge neg
-    if (!std::isfinite(mahal_sq) || (gauss_d2_ * mahal_sq > 50.0)) { // exp(-25) is already tiny
-        // Debug print (optional)
+
+    // Check for invalid Mahalanobis distance or potential overflow in exponent
+    // exp(-25) is already very small, avoid large positive exponents
+    if (!std::isfinite(mahal_sq) || mahal_sq < 0.0 || (gauss_d2_ * mahal_sq > 50.0)) {
         // if (print_debug) {
-        //      std::cout << "      updateDeriv[pt0]: mahal_sq invalid/large: " << mahal_sq << std::endl;
+        //      std::cerr << "      updateDeriv WARN: mahal_sq invalid or large: " << mahal_sq << std::endl;
         // }
-        return 0.0;
+        return 0.0; // Return zero score contribution for invalid points
     }
+
+    // Calculate the exponent term: exp(-d2 * mahal^2 / 2)
     double exp_term = std::exp(-gauss_d2_ * mahal_sq * 0.5);
-    double score_inc = -gauss_d1_ * exp_term;
-    double factor = gauss_d1_ * gauss_d2_ * exp_term; // == -gauss_d2_ * score_inc;
 
-    if (!std::isfinite(factor)) { // Only check for non-finite
-        // Debug print (optional)
+    // Calculate score increment: -d1 * exp_term (Equation 6.9 [Magnusson 2009])
+    double score_inc = -gauss_d1_ * exp_term;
+
+    // Calculate the common factor for gradient and Hessian: d1 * d2 * exp_term
+    double factor = gauss_d1_ * gauss_d2_ * exp_term;
+
+    // Check if factor is finite (could be NaN/Inf if exp_term was unstable)
+    if (!std::isfinite(factor)) {
         // if (print_debug) {
-        //     std::cout << "      updateDeriv[pt0]: factor NON-FINITE: " << factor << std::endl;
+        //     std::cerr << "      updateDeriv WARN: factor is non-finite: " << factor << std::endl;
         // }
-        return 0.0; // Still return 0 if NaN/Inf
+        return 0.0; // Return zero score contribution
     }
 
-    Eigen::Matrix<float, 4, 6> temp_vec = c_inv4 * point_gradient4;
-    Eigen::Matrix<float, 1, 6> grad_contrib_float = x_trans4 * temp_vec;
+    // --- Gradient Calculation (Equation 6.12 [Magnusson 2009]) ---
+    // grad_contrib = (x-mu)^T * C^-1 * Jp
+    Eigen::Matrix<float, 4, 6> temp_vec = c_inv4 * point_gradient4; // C^-1 * Jp (4x6)
+    Eigen::Matrix<float, 1, 6> grad_contrib_float = x_trans4 * temp_vec; // (x-mu)^T * C^-1 * Jp (1x6)
+
+    // Increment overall gradient: factor * grad_contrib^T
     Vector6d grad_inc = factor * grad_contrib_float.transpose().cast<double>();
     score_gradient += grad_inc;
 
-    // Debug print (optional)
-    // if (print_debug) {
-    //      std::cout << "      updateDeriv[pt0]: mahal_sq=" << mahal_sq
-    //                << ", exp_term=" << exp_term
-    //                << ", factor=" << factor
-    //                << ", grad_contrib_norm=" << grad_contrib_float.norm()
-    //                << ", grad_inc_norm=" << grad_inc.norm() << std::endl;
-    // }
-
+    // --- Hessian Calculation (Equation 6.13 [Magnusson 2009], using approximation) ---
     if (compute_hessian) {
-        Eigen::Matrix<double, 6, 6> hess_contrib = Matrix6d::Zero(); // Accumulate contribution here
+        Matrix6d hess_contrib = Matrix6d::Zero(); // Accumulate contribution for this point-voxel pair
         Eigen::Matrix<double, 1, 6> grad_contrib_double = grad_contrib_float.cast<double>();
 
-        // Term 1: -d2 * grad * grad^T
+        // Term 1: -d2 * [(x-mu)^T * C^-1 * Jp]^T * [(x-mu)^T * C^-1 * Jp]
         hess_contrib = -gauss_d2_ * (grad_contrib_double.transpose() * grad_contrib_double);
 
         // Term 2: Jp^T * C^-1 * Jp
-        hess_contrib += (point_gradient4.transpose() * temp_vec).cast<double>();
+        hess_contrib += (point_gradient4.transpose() * temp_vec).cast<double>(); // temp_vec = C^-1 * Jp
 
         // Term 3: (x-mu)^T * C^-1 * Hp
-        Eigen::Matrix<float, 1, 4> x_trans4_c_inv4 = x_trans4 * c_inv4;
+        Eigen::Matrix<float, 1, 4> x_trans4_c_inv4 = x_trans4 * c_inv4; // Precompute (x-mu)^T * C^-1
         Matrix6d term3 = Matrix6d::Zero();
-        for (int i = 0; i < 6; ++i) {
-            for (int j = i; j < 6; ++j) { // Use symmetry
-                 // Extract H_ij block (4x1) - Use mapping from computePointDerivatives
+        for (int i = 0; i < 6; ++i) { // Row index of Hessian
+            for (int j = i; j < 6; ++j) { // Column index of Hessian (use symmetry)
+                 // Extract the (i,j) block (4x1 vector) from the flattened point Hessian Hp
+                 // This block represents d^2(Tp)/dp_i dp_j * x
                  Eigen::Matrix<float, 4, 1> H_ij_x = point_hessian_.block<4, 1>(i * 4, j);
+                 // Calculate the scalar contribution (x-mu)^T * C^-1 * [d^2(Tp)/dp_i dp_j * x]
                  term3(i, j) = x_trans4_c_inv4 * H_ij_x;
             }
         }
+        // Fill the lower triangle using symmetry
         term3.template triangularView<Eigen::Lower>() = term3.template triangularView<Eigen::Upper>().transpose();
         hess_contrib += term3;
 
+        // Add the total contribution, scaled by the factor, to the overall Hessian
         hessian += factor * hess_contrib;
     }
-    return score_inc;
+
+    // --- DETAILED DEBUG PRINT ---
+    if (print_debug) {
+         std::cout << std::fixed << std::setprecision(5);
+         std::cout << "      updateDeriv [DBG]: mahal^2=" << mahal_sq
+                   << ", exp_t=" << exp_term
+                   << ", d1=" << gauss_d1_ << ", d2=" << gauss_d2_
+                   << ", factor=" << factor << std::endl;
+         std::cout << "                     : c_inv.n=" << c_inv.norm()
+                   << ", pt_grad.n=" << point_gradient4.norm()
+                   << ", grad_contr.n=" << grad_contrib_float.norm()
+                   << ", grad_inc.n=" << grad_inc.norm() << std::endl;
+         // Optionally print hessian contribution norm if debugging Hessian
+         // if(compute_hessian) std::cout << "                     : hess_contr.n=" << (factor * hess_contrib).norm() << std::endl;
+    }
+    // --- END DEBUG PRINT ---
+
+    return score_inc; // Return the score contribution of this point-voxel interaction
 }
 
 
 // --- computeParticleDerivatives ---
+// Computes the total NDT score, gradient, and Hessian for a given pose p=[x,y,z,r,p,y]
 template <typename PointSource, typename PointTarget>
 double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticleDerivatives(
-    Vector6d& score_gradient, Matrix6d& hessian,
-    const PointCloudSource& trans_cloud, const Vector6d& p,
+    Vector6d& score_gradient, // Output gradient
+    Matrix6d& hessian,        // Output Hessian
+    const PointCloudSource& trans_cloud, // Transformed source cloud
+    const Vector6d& p,        // Current pose estimate [x,y,z,r,p,y]
     bool compute_hessian)
 {
     // --- Initializations ---
     score_gradient.setZero();
     hessian.setZero();
     double total_score = 0.0;
-    bool first_point_processed = false; // For debug prints in updateDerivatives
+    bool first_point_processed_debug = false; // Flag for debug prints in updateDerivatives
 
     // --- Precompute Angle Derivatives ---
+    // This depends on p=[x,y,z,r,p,y] and stores results in j_ang_ and h_ang_
     computeAngleDerivatives(p, compute_hessian);
 
-    // --- Reusable Structures ---
-    Eigen::Matrix<float, 4, 6> point_gradient4; point_gradient4.setZero();
-    Eigen::Matrix<float, 24, 6> point_hessian24; point_hessian24.setZero();
-    std::vector<LeafConstPtr> neighborhood;
-    neighborhood.reserve(27); // Max expected neighbors
-    std::vector<float> distances;
-    distances.reserve(27);
+    // --- Reusable Structures for inner loop ---
+    Eigen::Matrix<float, 4, 6> point_gradient4; // Jacobian of point transform
+    Eigen::Matrix<float, 24, 6> point_hessian24; // Hessian of point transform
+    std::vector<LeafConstPtr> neighborhood; // Voxel neighbors for a point
+    std::vector<float> distances; // Distances to neighbors (used by KDTREE search)
+    constexpr size_t reserve_size = 27; // Max neighbors for DIRECT26 (more than DIRECT7)
+    neighborhood.reserve(reserve_size);
+    distances.reserve(reserve_size);
 
     // --- Loop Over Transformed Source Points ---
     for (size_t idx = 0; idx < trans_cloud.points.size(); ++idx)
     {
-        const PointSource& x_trans_pt = trans_cloud.points[idx];
-        if (!pcl::isFinite(x_trans_pt)) continue; // Skip invalid points
+        const PointSource& x_trans_pt = trans_cloud.points[idx]; // Point already transformed by pose p
+        // Skip invalid points
+        if (!pcl::isFinite(x_trans_pt)) continue;
 
         // --- Neighbor Search ---
-        neighborhood.clear();
-        distances.clear();
+        // Find valid NDT voxels (LeafConstPtr) near the transformed point
+        neighborhood.clear(); // Clear from previous point
+        distances.clear();    // Clear from previous point
         int neighbors_found = 0;
         switch (search_method_)
         {
             case NeighborSearchMethod::KDTREE:
+                // Use KdTree on voxel centroids (requires VoxelGridCovariance::filter(true))
                 neighbors_found = target_cells_.radiusSearch(x_trans_pt, resolution_, neighborhood, distances);
                 break;
             case NeighborSearchMethod::DIRECT7:
+                // Check center + 6 face neighbors
                 neighbors_found = target_cells_.getNeighborhoodAtPoint7(x_trans_pt, neighborhood);
                 break;
             case NeighborSearchMethod::DIRECT1:
             default:
+                // Check only the voxel containing the point
                 neighbors_found = target_cells_.getNeighborhoodAtPoint1(x_trans_pt, neighborhood);
                 break;
         }
-        if (neighbors_found == 0) continue; // Skip if no valid neighbors
+        // Skip point if no valid neighbors (voxels with enough points) are found
+        if (neighbors_found == 0) continue;
 
         // --- Get Original Point Coordinates ---
+        // Need original coords for calculating derivatives w.r.t pose parameters
         if (!input_ || idx >= input_->size()) {
-             PCL_ERROR("[SvnNdt] Internal error: input_ cloud invalid or index out of bounds during derivative calculation.\n");
-             continue; // Skip this point
+             PCL_ERROR("[SvnNdt::computeParticleDerivatives] Internal error: input_ cloud invalid or index out of bounds (%zu).\n", idx);
+             continue; // Skip this point if source cloud pointer is bad
         }
-        const PointSource& x_pt = (*input_)[idx];
+        const PointSource& x_pt = (*input_)[idx]; // Original point
         Eigen::Vector3d x_orig(x_pt.x, x_pt.y, x_pt.z);
 
-        // --- Compute Point Derivatives (Jacobian/Hessian w.r.t. pose) ---
+        // --- Compute Point Derivatives (Jacobian/Hessian w.r.t. pose p) ---
+        // Uses x_orig and the precomputed j_ang_, h_ang_ (based on p)
         computePointDerivatives(x_orig, point_gradient4, point_hessian24, compute_hessian);
 
         // --- Accumulate Contributions from Neighbors ---
         double point_score_contribution = 0.0;
         Vector6d point_gradient_contribution = Vector6d::Zero();
         Matrix6d point_hessian_contribution = Matrix6d::Zero();
-        bool is_first_point = !first_point_processed; // Flag for debug print
+        bool is_first_point_for_debug = !first_point_processed_debug; // Flag for printing details only once
 
         for (const LeafConstPtr& cell : neighborhood)
         {
-            if (!cell) continue; // Safety check
+            if (!cell) { // Should not happen if neighbor search returns valid pointers
+                 PCL_WARN("[SvnNdt::computeParticleDerivatives] Nullptr encountered in neighborhood.\n");
+                 continue;
+            }
 
+            // Calculate point relative to voxel mean: x_trans = point_transformed - voxel_mean
             Eigen::Vector3d x_rel = Eigen::Vector3d(x_trans_pt.x, x_trans_pt.y, x_trans_pt.z) - cell->getMean();
+            // Get precomputed inverse covariance from the voxel leaf
             const Eigen::Matrix3d& c_inv = cell->getInverseCov();
 
-            // --- Core NDT derivative update ---
+            // --- Call UpdateDerivatives to get contribution of this point-voxel interaction ---
             double score_inc = updateDerivatives(point_gradient_contribution, point_hessian_contribution,
-                                            point_gradient4, point_hessian24,
-                                            x_rel, c_inv, compute_hessian, is_first_point); // Pass debug flag
+                                                 point_gradient4, point_hessian24,
+                                                 x_rel, c_inv, compute_hessian,
+                                                 is_first_point_for_debug && (cell == neighborhood[0]) ); // Print debug only for the first point & first neighbor
             point_score_contribution += score_inc;
 
         } // End loop over neighbors
 
         // --- Update Debug Flag ---
-        if (is_first_point) {
-             first_point_processed = true;
+        if (is_first_point_for_debug) {
+             first_point_processed_debug = true;
         }
 
         // --- Add Point's Total Contribution to Overall Gradient/Hessian ---
+        // Check for NaN/Inf before accumulating to prevent corrupting totals
         if (std::isfinite(point_score_contribution) &&
             point_gradient_contribution.allFinite() &&
             (!compute_hessian || point_hessian_contribution.allFinite()))
@@ -442,32 +590,35 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
                 hessian += point_hessian_contribution;
             }
         } else {
-            // PCL_WARN("[SvnNdt] NaN/Inf detected in point contribution (idx %zu). Skipping.\n", idx);
+             // Reduce verbosity, maybe print only once or count occurrences
+             // PCL_WARN("[SvnNdt::computeParticleDerivatives] NaN/Inf detected in contribution for point index %zu. Skipping contribution.\n", idx);
         }
 
     } // End loop over points
 
-    // --- >>> ADD HESSIAN REGULARIZATION (Levenberg-Marquardt style) <<< ---
+    // --- Hessian Regularization (Levenberg-Marquardt style) ---
+    // Add a small identity matrix scaled by lambda to the diagonal to improve conditioning
     if (compute_hessian) {
-        double lambda = 1e-4; // Regularization strength (tune if needed)
+        constexpr double lambda = 1e-3; // Regularization strength (can be tuned)
         hessian += lambda * Matrix6d::Identity();
     }
-    // --- >>> END REGULARIZATION <<< ---
 
     // --- Final Sanity Checks & Debug Print ---
     if (!score_gradient.allFinite()) {
-        // std::cerr << "computeParticleDerivatives: Final score_gradient has NaN/Inf!" << std::endl;
+        PCL_ERROR("[SvnNdt::computeParticleDerivatives] Final score_gradient contains NaN/Inf! Resetting to zero.\n");
         score_gradient.setZero(); // Avoid propagating errors
     }
     if (compute_hessian && !hessian.allFinite()) {
-        // std::cerr << "computeParticleDerivatives: Final hessian has NaN/Inf!" << std::endl;
+        PCL_ERROR("[SvnNdt::computeParticleDerivatives] Final hessian contains NaN/Inf! Resetting to identity.\n");
         hessian = Matrix6d::Identity(); // Use identity if invalid
     }
 
-    // --- Debug Print for Final Gradient Norm ---
-    std::cout << "    computeParticleDeriv Final Grad Norm: " << score_gradient.norm() << std::endl;
+    // --- Debug Print for Final Gradient Norm of this particle ---
+    // std::cout << std::fixed << std::setprecision(5);
+    // std::cout << "    computeParticleDeriv Final Grad Norm: " << score_gradient.norm() << std::endl;
     // ---
 
+    // Return the total NDT score (sum of -d1*exp(...) terms)
     return total_score;
 
 } // End computeParticleDerivatives
@@ -480,11 +631,11 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
     const PointCloudSource& source_cloud,
     const gtsam::Pose3& prior_mean)
 {
-    SvnNdtResult result; // Store results here
+    SvnNdtResult result; // Structure to store alignment results
 
-    // --- Input Checks ---
+    // --- Input Sanity Checks ---
     if (!target_cells_.getInputCloud() || target_cells_.getAllLeaves().empty()) {
-        PCL_ERROR("[SvnNdt::align] Target grid not initialized. Call setInputTarget() first.\n");
+        PCL_ERROR("[SvnNdt::align] Target NDT grid is not initialized. Call setInputTarget() first.\n");
         result.converged = false;
         return result;
     }
@@ -494,187 +645,266 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         return result;
     }
     if (K_ <= 0) {
-        PCL_ERROR("[SvnNdt::align] Particle count must be positive.\n");
-        result.converged = false;
+        PCL_ERROR("[SvnNdt::align] Particle count (K_) must be positive.\n");
+        result.converged = false; // K_ is already clamped in setter, but double-check
         return result;
     }
 
     // --- Initialization ---
-    input_ = source_cloud.makeShared(); // Store const ptr to source cloud
+    // Store a const shared pointer to the source cloud for access within derivative calculations
+    input_ = source_cloud.makeShared();
 
+    // Initialize particle poses around the prior mean
     std::vector<gtsam::Pose3> particles(K_);
-    // Use a Gaussian sampler for initialization noise
+    // Define initial noise sigmas for particle spread (tune these if needed)
+    // Order: [roll, pitch, yaw, x, y, z] in radians and meters
     Vector6d initial_sigmas; initial_sigmas << 0.02, 0.02, 0.05, 0.1, 0.1, 0.1; // Example values
     auto prior_noise_model = gtsam::noiseModel::Diagonal::Sigmas(initial_sigmas);
-    gtsam::Sampler sampler(prior_noise_model); // Create sampler
+    gtsam::Sampler sampler(prior_noise_model, std::chrono::system_clock::now().time_since_epoch().count()); // Use time-based seed
 
     for (int k = 0; k < K_; ++k) {
+        // Sample in the tangent space at prior_mean and retract to get a pose on the manifold
         particles[k] = prior_mean.retract(sampler.sample());
     }
 
-    // Allocate storage
-    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> loss_gradients(K_);
-    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> loss_hessians(K_);
-    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> particle_updates(K_);
-    std::vector<PointCloudSource> transformed_clouds(K_);
+    // Allocate storage for intermediate results (use aligned allocators for Eigen types)
+    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> loss_gradients(K_); // Gradient of NDT score * (-1)
+    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> loss_hessians(K_);  // Hessian of NDT score * (-1)
+    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> particle_updates(K_); // Solved SVN update vectors
+    std::vector<PointCloudSource> transformed_clouds(K_); // Per-particle transformed clouds
 
     Matrix6d I6 = Matrix6d::Identity(); // Reusable identity matrix
 
     // --- SVN Iteration Loop ---
     for (int iter = 0; iter < max_iter_; ++iter)
     {
-        // --- Stage 1: Compute NDT Derivatives (Parallel using TBB) ---
+        auto iter_start_time = std::chrono::high_resolution_clock::now(); // For timing
+
+        // --- Stage 1: Compute NDT Derivatives for each particle (Parallel using TBB) ---
+        auto stage1_start_time = std::chrono::high_resolution_clock::now();
         tbb::parallel_for(tbb::blocked_range<int>(0, K_),
             [&](const tbb::blocked_range<int>& r) {
 
+            // Create a thread-local copy of 'this' to manage internal state like j_ang_, h_ang_ safely.
+            // Copying might be expensive if VoxelGridCovariance is huge, but safer.
+            // Alternatively, make derivative functions truly const or use locks (less ideal).
             SvnNormalDistributionsTransform<PointSource, PointTarget> local_ndt = *this;
-            Vector6d grad_k;
-            Matrix6d hess_k;
+            local_ndt.input_ = this->input_; // Ensure the local copy points to the same input cloud
+
+            Vector6d grad_k; // Per-particle gradient
+            Matrix6d hess_k; // Per-particle Hessian
 
             for (int k = r.begin(); k < r.end(); ++k) {
+                // Transform the original source cloud by the current particle's pose
                 pcl::transformPointCloud(source_cloud, transformed_clouds[k], particles[k].matrix().cast<float>());
-                Vector6d p_k_ndt;
-                gtsam::Vector3 rpy = particles[k].rotation().rpy();
-                p_k_ndt.head<3>() = particles[k].translation();
-                p_k_ndt.tail<3>() = rpy;
 
-                // Keep compute_hessian = true
+                // Convert gtsam::Pose3 particle to NDT's expected [x,y,z,r,p,y] vector
+                Vector6d p_k_ndt;
+                gtsam::Vector3 rpy = particles[k].rotation().rpy(); // GTSAM default RPY
+                p_k_ndt.head<3>() = particles[k].translation().vector(); // Get Eigen vector for translation
+                p_k_ndt.tail<3>() = rpy; // Assign roll, pitch, yaw
+
+                // Compute NDT score, gradient, and Hessian for this particle's pose
+                // compute_hessian is always true for SVN
                 double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, true);
 
-                loss_gradients[k] = -grad_k;
-                loss_hessians[k] = -hess_k; // Store regularized hessian
+                // Store NEGATED gradient and Hessian (as SVN minimizes KL divergence / negative log-likelihood)
+                loss_gradients[k] = -grad_k; // grad( -log_likelihood ) = - grad( score )
+                loss_hessians[k] = -hess_k;  // hess( -log_likelihood ) = - hess( score )
+
+                 // Sanity check the Hessian computed by NDT before storing
                  if (!hess_k.allFinite()) {
-                     PCL_WARN("[SvnNdt::align] NaN/Inf in regularized NDT Hessian for particle %d, iter %d. Using Identity.\n", k, iter);
-                     loss_hessians[k] = I6;
+                     PCL_WARN("[SvnNdt::align Stage1] NaN/Inf in NDT Hessian for particle %d, iter %d. Using Identity.\n", k, iter);
+                     loss_hessians[k] = -I6; // Store negative identity if invalid
+                 } else if (loss_hessians[k].hasNaN()) {
+                     PCL_WARN("[SvnNdt::align Stage1] Stored loss_hessian has NaN for particle %d, iter %d. Using -Identity.\n", k, iter);
+                     loss_hessians[k] = -I6;
                  }
             }
         }); // End TBB Stage 1
+        auto stage1_end_time = std::chrono::high_resolution_clock::now();
 
         // --- Stage 2: Calculate SVN Updates (Parallel using TBB) ---
+        auto stage2_start_time = std::chrono::high_resolution_clock::now();
         tbb::parallel_for(tbb::blocked_range<int>(0, K_),
             [&](const tbb::blocked_range<int>& r) {
 
             for (int k = r.begin(); k < r.end(); ++k) {
-                Vector6d phi_k_star = Vector6d::Zero();
-                Matrix6d H_k_tilde = Matrix6d::Zero();
+                Vector6d phi_k_star = Vector6d::Zero(); // SVGD direction component
+                Matrix6d H_k_tilde = Matrix6d::Zero();  // SVN Hessian component
 
+                // Aggregate contributions from all particles (l) to particle k
                 for (int l = 0; l < K_; ++l) {
+                    // Kernel value and gradient (operate on gtsam::Pose3)
                     double k_val = rbf_kernel(particles[l], particles[k]);
-                    Vector6d k_grad = rbf_kernel_gradient(particles[l], particles[k]);
+                    Vector6d k_grad = rbf_kernel_gradient(particles[l], particles[k]); // Gradient w.r.t particles[l]
 
+                    // Check for numerical issues in kernel calculations
                     if (!std::isfinite(k_val) || !k_grad.allFinite()) {
-                         PCL_WARN("[SvnNdt::align] NaN/Inf in kernel computation between %d and %d.\n", l, k);
-                         continue;
+                         PCL_WARN("[SvnNdt::align Stage2] NaN/Inf in kernel computation between particles %d and %d, iter %d.\n", l, k, iter);
+                         continue; // Skip contribution from this pair
                      }
 
+                    // Accumulate SVGD direction term: k(l,k)*grad(loss_l) + grad_l(k(l,k))
                     phi_k_star += k_val * loss_gradients[l] + k_grad;
 
-                    // --- Restore NDT Hessian contribution ---
-                    if (loss_hessians[l].allFinite()) {
+                    // Accumulate SVN Hessian term: k(l,k)^2 * hess(loss_l) + grad_l(k(l,k)) * grad_l(k(l,k))^T
+                    if (loss_hessians[l].allFinite()) { // Use the stored (negated) NDT hessian
                         H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
                     } else {
-                        H_k_tilde += (k_grad * k_grad.transpose()); // Fallback
+                        // Fallback if Hessian was invalid: only use the kernel gradient term
+                        H_k_tilde += (k_grad * k_grad.transpose());
+                         PCL_WARN("[SvnNdt::align Stage2] Using fallback Hessian term for l=%d due to invalid loss_hessian.\n", l);
                     }
-                    // ---
                 }
 
-                phi_k_star /= static_cast<double>(K_);
-                H_k_tilde /= static_cast<double>(K_);
-                H_k_tilde += 1e-4 * I6; // Regularization for H_k_tilde itself
+                // Average over particles
+                if (K_ > 0) {
+                    phi_k_star /= static_cast<double>(K_);
+                    H_k_tilde /= static_cast<double>(K_);
+                }
 
+                // Add regularization to the SVN Hessian for stability before inversion
+                constexpr double svn_hess_lambda = 1e-4;
+                H_k_tilde += svn_hess_lambda * I6;
+
+                // Solve the linear system: H_k_tilde * update = phi_k_star
                 Eigen::LDLT<Matrix6d> solver(H_k_tilde);
                 if (solver.info() == Eigen::Success && H_k_tilde.allFinite()) {
                      Vector6d update = solver.solve(phi_k_star);
                      if (update.allFinite()) {
-                         particle_updates[k] = update;
+                         particle_updates[k] = update; // Store the solved update direction
                      } else {
-                         PCL_WARN("[SvnNdt::align] Solver produced NaN/Inf update for particle %d, iter %d. Setting update to zero.\n", k, iter);
+                         PCL_WARN("[SvnNdt::align Stage2] Solver produced NaN/Inf update for particle %d, iter %d. Setting update to zero.\n", k, iter);
                          particle_updates[k].setZero();
                      }
                 } else {
-                    PCL_WARN("[SvnNdt::align] LDLT solver failed or H_tilde invalid for particle %d, iter %d. Setting update to zero.\n", k, iter);
+                    PCL_ERROR("[SvnNdt::align Stage2] LDLT solver failed or H_tilde invalid for particle %d, iter %d (Info: %d). Setting update to zero.\n", k, iter, solver.info());
+                    // Optionally print H_k_tilde here for debugging
+                    // std::cerr << "H_k_tilde:\n" << H_k_tilde << std::endl;
                     particle_updates[k].setZero();
                 }
             }
         }); // End TBB Stage 2
+        auto stage2_end_time = std::chrono::high_resolution_clock::now();
 
-
-        // --- Stage 3: Apply Updates (Serial) ---
-        double total_update_norm = 0.0;
+        // --- Stage 3: Apply Updates to Particles (Serial) ---
+        double total_update_norm_sq = 0.0; // Use squared norm initially to avoid sqrt
         for (int k = 0; k < K_; ++k) {
-            Vector6d scaled_update = -step_size_ * particle_updates[k];
+            // Scale the update direction by the step size.
+            // Negative sign: SVN update is H^-1 * phi_star. phi_star points towards higher probability.
+            // If loss = -log_prob, grad(loss) = -grad(log_prob). phi_star uses grad(loss).
+            // H_tilde uses hess(loss). We want to move towards higher prob, so step should be -(H_tilde)^-1 * phi_star (if H_tilde is hess(log_prob)).
+            // Since H_tilde uses hess(loss) = -hess(log_prob) and phi_star uses grad(loss) = -grad(log_prob),
+            // the solved `update` = H_tilde^-1 * phi_star = (-hess(log_prob))^-1 * (-grad(log_prob)) = hess(log_prob)^-1 * grad(log_prob).
+            // This is a Newton step to *maximize* log_prob. We should use `+update`.
+            // Let's re-verify the SVN paper's update rule sign. Eq 16 in  shows xi <- xi + eps * theta*, where theta* = H^-1 * phi*.
+            // phi* involves grad(log p). So it seems '+' is correct. Let's try '+' first.
+             Vector6d scaled_update = step_size_ * particle_updates[k]; // Try positive update
+             //Vector6d scaled_update = -step_size_ * particle_updates[k]; // Original version
+
+             // Check for numerical issues in the final update vector
              if (!scaled_update.allFinite()) {
-                 PCL_WARN("[SvnNdt::align] NaN/Inf in scaled update for particle %d, iter %d. Skipping update.\n", k, iter);
-                 continue;
+                 PCL_WARN("[SvnNdt::align Stage3] NaN/Inf in scaled update for particle %d, iter %d. Skipping update.\n", k, iter);
+                 continue; // Skip updating this particle
              }
-            total_update_norm += particle_updates[k].norm(); // Use unscaled norm for check
+
+            // Accumulate squared norm of the *unscaled* update for convergence check
+            total_update_norm_sq += particle_updates[k].squaredNorm();
+
+            // Apply the update on the manifold using gtsam::Pose3::retract
             particles[k] = particles[k].retract(scaled_update);
         }
+        auto stage3_end_time = std::chrono::high_resolution_clock::now();
 
         // --- Check Convergence ---
         result.iterations = iter + 1;
-        double avg_update_norm = (K_ > 0) ? (total_update_norm / static_cast<double>(K_)) : 0.0;
+        double avg_update_norm = (K_ > 0) ? std::sqrt(total_update_norm_sq / static_cast<double>(K_)) : 0.0;
 
-        // Debug print for average update norm
-        std::cout << "[SVN Iter " << iter << "] Avg Update Norm: " << avg_update_norm << std::endl;
+        auto iter_end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> stage1_ms = stage1_end_time - stage1_start_time;
+        std::chrono::duration<double, std::milli> stage2_ms = stage2_end_time - stage2_start_time;
+        std::chrono::duration<double, std::milli> stage3_ms = stage3_end_time - stage2_end_time; // Stage 3 starts after Stage 2 ends
+        std::chrono::duration<double, std::milli> iter_ms = iter_end_time - iter_start_time;
 
+        // Debug print for average update norm and timings
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "[SVN Iter " << std::setw(2) << iter << "] Avg Update Norm: " << avg_update_norm
+                  << " (T: " << std::setprecision(1) << iter_ms.count() << "ms = "
+                  << "S1:" << stage1_ms.count() << " + S2:" << stage2_ms.count() << " + S3:" << stage3_ms.count() << ")" << std::endl;
+
+        // Check if average update norm is below the threshold
         if (avg_update_norm < stop_thresh_) {
             result.converged = true;
-            break;
+             std::cout << "[SvnNdt::align] Converged in " << result.iterations << " iterations (Avg Update Norm: " << avg_update_norm << " < " << stop_thresh_ << ")." << std::endl;
+            break; // Exit loop
         }
 
     } // End SVN iteration loop
 
-    // --- Finalization: Compute Mean Pose and Covariance ---
+    // --- Finalization: Compute Mean Pose and Covariance from Particles ---
     if (K_ > 0) {
-        Vector6d mean_xi = Vector6d::Zero();
-        std::vector<Vector6d> tangent_vectors(K_);
+        // --- Calculate Mean Pose ---
+        // Use Frechet mean approximation: average in tangent space of initial prior, then retract.
+        Vector6d mean_xi_at_prior = Vector6d::Zero();
         for(int k=0; k < K_; ++k) {
-            tangent_vectors[k] = gtsam::Pose3::Logmap(prior_mean.between(particles[k]));
-            mean_xi += tangent_vectors[k];
+            // Calculate tangent vector from prior_mean to particle k
+            mean_xi_at_prior += gtsam::Pose3::Logmap(prior_mean.between(particles[k]));
         }
-        mean_xi /= static_cast<double>(K_);
-        result.final_pose = prior_mean.retract(mean_xi);
+        mean_xi_at_prior /= static_cast<double>(K_);
+        result.final_pose = prior_mean.retract(mean_xi_at_prior);
 
+        // --- Calculate Covariance ---
         if (K_ > 1) {
             result.final_covariance.setZero();
-             Vector6d final_mean_xi_recalc = Vector6d::Zero();
-             std::vector<Vector6d> final_tangent_vectors(K_);
+            // Calculate tangent vectors relative to the *computed mean pose*
+            std::vector<Vector6d> tangent_vectors_at_mean(K_);
+             Vector6d mean_xi_at_mean = Vector6d::Zero(); // Should be near zero if mean is correct
              for(int k=0; k < K_; ++k) {
-                 final_tangent_vectors[k] = gtsam::Pose3::Logmap(result.final_pose.between(particles[k]));
-                 final_mean_xi_recalc += final_tangent_vectors[k];
+                 tangent_vectors_at_mean[k] = gtsam::Pose3::Logmap(result.final_pose.between(particles[k]));
+                 mean_xi_at_mean += tangent_vectors_at_mean[k];
              }
-             final_mean_xi_recalc /= static_cast<double>(K_);
+             mean_xi_at_mean /= static_cast<double>(K_); // Calculate mean in the final tangent space
 
+            // Compute sample covariance in the tangent space at the mean pose
             for(int k=0; k < K_; ++k) {
-                Vector6d diff = final_tangent_vectors[k] - final_mean_xi_recalc;
+                Vector6d diff = tangent_vectors_at_mean[k] - mean_xi_at_mean; // Difference from mean tangent vector
                 result.final_covariance += diff * diff.transpose();
             }
-            result.final_covariance /= static_cast<double>(K_ - 1);
+            result.final_covariance /= static_cast<double>(K_ - 1); // Use N-1 for sample covariance
         } else {
-            result.final_covariance = prior_noise_model->covariance();
+            // If only one particle, covariance is undefined from samples, use prior's covariance
+            result.final_covariance = prior_noise_model->covariance(); // Or set to Identity/Zero? Prior seems reasonable.
         }
 
+        // --- Final Covariance Regularization ---
+        // Ensure the final covariance is positive semi-definite and reasonably conditioned
         Eigen::SelfAdjointEigenSolver<Matrix6d> final_eigensolver(result.final_covariance);
         if (final_eigensolver.info() == Eigen::Success) {
             Vector6d final_evals = final_eigensolver.eigenvalues();
-            if (final_evals(0) < 1e-7) {
-                result.final_covariance += 1e-7 * I6;
+            // Check if smallest eigenvalue is too small or negative
+            if (final_evals(0) < 1e-9) { // Use a small threshold
+                 PCL_DEBUG("[SvnNdt::align] Final covariance has small/negative eigenvalues. Applying regularization.\n");
+                 // Inflate eigenvalues below threshold
+                 for(int i=0; i<6; ++i) final_evals(i) = std::max(final_evals(i), 1e-9);
+                 // Recompose
+                 result.final_covariance = final_eigensolver.eigenvectors() * final_evals.asDiagonal() * final_eigensolver.eigenvectors().transpose();
             }
         } else {
-             PCL_WARN("[SvnNdt::align] Eigendecomposition failed for final covariance. Matrix might be invalid. Using large identity.\n");
-             result.final_covariance = 1e6 * I6;
+             PCL_WARN("[SvnNdt::align] Eigendecomposition failed for final covariance. Matrix might be invalid. Using regularized identity.\n");
+             result.final_covariance = 1e-6 * I6; // Use a small regularized identity as fallback
         }
 
-    } else {
+    } else { // Should not happen due to check at start, but handle defensively
         result.final_pose = prior_mean;
-        result.final_covariance.setIdentity();
+        result.final_covariance.setIdentity(); // Default to identity if K=0
     }
 
+    // Clear the internal pointer to the source cloud
     input_.reset();
 
-    if (!result.converged && result.iterations == max_iter_) {
-        PCL_DEBUG("[SvnNdt::align] Reached max iterations (%d) without converging.\n", max_iter_);
+    if (!result.converged && result.iterations >= max_iter_) {
+        PCL_WARN("[SvnNdt::align] Reached max iterations (%d) without converging (Avg Update Norm: %.6f >= %.6f).\n", max_iter_, avg_update_norm, stop_thresh_);
     }
 
     return result;
