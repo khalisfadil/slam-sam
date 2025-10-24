@@ -468,6 +468,9 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
 
     // Optional: Add regularization term if needed (as in ndt_omp)
     // Not included here for simplicity, focus is on SVN part
+    // ######### DEBUG
+    std::cout << "    computeParticleDeriv Final Grad Norm: " << score_gradient.norm() << std::endl;
+    // ######### DEBUG
 
     return total_score;
 }
@@ -556,11 +559,6 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
                      PCL_WARN("[SvnNdt::align] NaN/Inf in NDT Hessian for particle %d, iter %d. Using Identity.\n", k, iter);
                      loss_hessians[k] = I6; // Use identity as fallback? Or zero? Identity might be safer.
                  }
-                // ################'DEBUG
-                 if (k == 0) {
-                     std::cout << "    [k=0] Initial NDT Grad Norm: " << loss_gradients[k].norm() << std::endl;
-                 }
-                 // ################'DEBUG
             }
         }); // End TBB Stage 1
 
