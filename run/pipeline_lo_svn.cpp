@@ -318,6 +318,13 @@ int main() {
                 svn_ndt_ptr->setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
             }
         }
+        if (!svn_ndt_ptr) {
+            std::cerr << "\n[LO_THREAD] CRITICAL ERROR:\n"
+                      << "  'registration_method_' is not 'SVNNDT' in your config file.\n"
+                      << "  This executable (pipeline_lo_svn) requires SVNNDT.\n"
+                      << "  Aborting LO thread.\n" << std::endl;
+            return; // Exit this thread
+        }
         const int targetWinSize = 5;            // how many frame from the previous lidar odometry to use 
         std::deque<uint64_t> targetID;          // the ID
 
@@ -378,8 +385,8 @@ int main() {
                 // vg.setInputCloud(std::move(lidarFactorPointsTarget));
                 // vg.filter(*lidarFactorPointsTargetDS);
                 svn_ndt_ptr->setInputTarget(lidarFactorPointsTarget);
-                // svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
-                // predTb2m = result.final_pose;
+                svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
+                predTb2m = result.final_pose;
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
                 pcl::transformPointCloud(*pointsBody, *pointsMap, current_ins_state.pose().matrix());
                 pointsArchive[id] = {pointsMap, timestamp};
@@ -389,6 +396,27 @@ int main() {
                 if (targetID.size() > targetWinSize) {
                     targetID.pop_front();
                 }
+
+                std::cout << "\nStarting SVN-NDT alignment..." << std::endl;
+                std::cout << "\n--- SVN-NDT Results ---" << std::endl;
+                std::cout << "Converged: " << (result.converged ? "Yes" : "No") << std::endl;
+                std::cout << "Iterations: " << result.iterations << std::endl;
+                std::cout << "Final Mean Pose (GTSAM format):" << std::endl;
+                result.final_pose.print("  "); // GTSAM's print function
+                gtsam::Vector3 rpy = result.final_pose.rotation().rpy(); // Roll, Pitch, Yaw
+                gtsam::Point3 xyz = result.final_pose.translation();
+                std::cout << "Final Mean Pose (RPY deg / XYZ m):" << std::endl;
+                std::cout << "  RPY(deg): [" << rpy.x() * 180.0 / M_PI << ", "
+                        << rpy.y() * 180.0 / M_PI << ", " << rpy.z() * 180.0 / M_PI << "]" << std::endl;
+                std::cout << "  XYZ(m):   [" << xyz.x() << ", " << xyz.y() << ", " << xyz.z() << "]" << std::endl;
+                std::cout << "Final Covariance Matrix (r,p,y,x,y,z):" << std::endl;
+                std::cout << result.final_covariance << std::endl;
+                Eigen::Matrix<double, 6, 1> variances = result.final_covariance.diagonal();
+                Eigen::Matrix<double, 6, 1> stddevs = variances.array().sqrt(); // Standard deviations
+                std::cout << "Standard Deviations (r,p,y,x,y,z):" << std::endl;
+                std::cout << "  Rotation (rad): [" << stddevs(0) << ", " << stddevs(1) << ", " << stddevs(2) << "]" << std::endl;
+                std::cout << "  Translation (m): [" << stddevs(3) << ", " << stddevs(4) << ", " << stddevs(5) << "]" << std::endl;
+                std::cout << "\nFinished SVN-NDT alignment..." << std::endl;
             }
             // if(!pointsArchive.empty() || !insPoseArchive.empty() || !loPoseArchive.empty()) {
             //     auto vis_data_ptr = vis_data_pool.Get();
