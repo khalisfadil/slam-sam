@@ -1,632 +1,927 @@
-/*
- * Software License Agreement (BSD License)
- * Based on PCL VoxelGridCovariance and adapted for svn_ndt.
- *
- * Point Cloud Library (PCL) - www.pointclouds.org
- * Copyright (c) 2010-2011, Willow Garage, Inc.
- * Copyright (c) 2012-, Open Perception, Inc.
- *
- * All rights reserved.
- * (License text omitted for brevity - refer to original PCL license)
- *
- * Modifications for SVN-NDT: Adapted for svn_ndt namespace, tsl::robin_map, added helpers.
- */
+#ifndef SVN_NDT_SVN_NDT_IMPL_HPP_
+#define SVN_NDT_SVN_NDT_IMPL_HPP_
 
-#ifndef SVN_NDT_VOXEL_GRID_COVARIANCE_IMPL_HPP_
-#define SVN_NDT_VOXEL_GRID_COVARIANCE_IMPL_HPP_
+// Include the class header
+#include <svn_ndt.h> // Make sure this path is correct
 
-// Include the header declaring the class
-#include <voxel_grid_covariance.h> // Must include the header first
-
-// Include necessary headers used in the implementation
-#include <Eigen/Cholesky>     // For LLT decomposition if needed (not directly used here, but related)
-#include <Eigen/Eigenvalues>  // For SelfAdjointEigenSolver
-#include <Eigen/Dense>        // For matrix operations like inverse()
-
-#include <pcl/common/common.h>         // For getMinMax3D
-#include <pcl/common/point_tests.h>    // For pcl::isFinite
-#include <pcl/filters/impl/voxel_grid.hpp> // For NdCopyPointEigenFunctor, NdCopyEigenPointFunctor
-
-#include <boost/mpl/size.hpp> // For FieldList iteration if downsample_all_data_ is true
-
-#include <cmath>   // For std::floor, std::isfinite
-#include <limits>  // For std::numeric_limits
+// --- Standard/External Library Includes ---
 #include <vector>
-#include <map>     // Only if needed, tsl::robin_map is used internally
-#include <numeric> // Potentially for std::accumulate if needed elsewhere
-#include <algorithm> // Potentially for std::sort/unique if needed elsewhere
+#include <cmath>
+#include <numeric> // For std::accumulate (not used here but good practice)
+#include <limits>
+#include <iostream> // For PCL_WARN/ERROR and debug output
+#include <chrono>   // For timing if needed
+#include <iomanip> // For std::fixed, std::setprecision in debug output
+
+// TBB for parallelism
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+// #include <tbb/spin_mutex.h> // Avoid if possible, design for lock-free
+
+// Eigen for linear algebra
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+#include <Eigen/Cholesky> // For LDLT solver
+
+// PCL for point cloud operations
+#include <pcl/common/transforms.h> // For pcl::transformPointCloud
+#include <pcl/common/point_tests.h> // For pcl::isFinite
+#include <pcl/io/pcd_io.h> // Include for PCL_WARN_STREAM
+
+// GTSAM for pose representation and operations
+#include <gtsam/geometry/Pose3.h>
+#include <gtsam/base/numericalDerivative.h> // Not directly used, but good dependency check
+// #include <gtsam/inference/Symbol.h> // Not needed for core logic
+// #include <gtsam/nonlinear/Values.h> // Not needed for core logic
+// #include <gtsam/nonlinear/NonlinearFactorGraph.h> // Not needed for core logic
+
+// For noise models if sampling prior
+#include <gtsam/linear/Sampler.h>
+#include <gtsam/linear/NoiseModel.h>
+
 
 namespace svn_ndt
 {
 
-//////////////////////////////////////////////////////////////////////////////////////////
-// Helper function to check if a point is within the calculated grid bounds.
-template <typename PointT>
-bool VoxelGridCovariance<PointT>::isPointWithinBounds(const Eigen::Vector4f& p) const
+//=================================================================================================
+// Constructor & Helper
+//=================================================================================================
+template <typename PointSource, typename PointTarget>
+SvnNormalDistributionsTransform<PointSource, PointTarget>::SvnNormalDistributionsTransform()
+    : target_cells_(), resolution_(1.0f), outlier_ratio_(0.55),
+      search_method_(NeighborSearchMethod::DIRECT7), // Default search method to DIRECT7
+      K_(30), max_iter_(50), kernel_h_(1.0), // Updated kernel_h default from config
+      step_size_(0.0005), // Updated step_size default from config
+      stop_thresh_(1e-4)
 {
-    // Check if the grid parameters (min_b_, max_b_, leaf_size_, inverse_leaf_size_)
-    // have been computed. inverse_leaf_size_ is non-zero only after applyFilter runs successfully.
-    if (this->inverse_leaf_size_[0] == 0.0f || this->inverse_leaf_size_[1] == 0.0f || this->inverse_leaf_size_[2] == 0.0f) {
-        PCL_WARN("[%s::isPointWithinBounds] Grid bounds not computed yet. Call applyFilter first.\n", getClassName().c_str());
-        return false; // Cannot check bounds if grid isn't set up
+    updateNdtConstants(); // Initialize gauss_d* constants based on defaults
+    // Zero out precomputed matrices initially
+    j_ang_.setZero();
+    h_ang_.setZero();
+    // Debug print initial constants
+    // std::cout << "Initial NDT Constants: d1=" << gauss_d1_ << ", d2=" << gauss_d2_ << ", d3=" << gauss_d3_ << std::endl;
+}
+
+template <typename PointSource, typename PointTarget>
+void SvnNormalDistributionsTransform<PointSource, PointTarget>::updateNdtConstants()
+{
+    // Recalculate NDT constants based on current resolution and outlier ratio
+    // Based on NDT paper (Magnusson 2009) and common implementations (e.g., ndt_omp)
+    if (resolution_ <= 1e-6f) { // Use epsilon for float comparison
+        PCL_ERROR("[SvnNdt] Resolution must be positive. Cannot update NDT constants.\n");
+        // Set safe defaults to prevent division by zero or log(0) later
+        gauss_d1_ = 1.0; gauss_d2_ = 1.0; gauss_d3_ = 0.0;
+        return;
     }
 
-    // Calculate the floating-point bounds derived from the integer indices min_b_ and max_b_.
-    // This is generally more robust than directly comparing integer indices derived from p.
-    // We add 1 to max_b_ because the index represents the *inclusive* upper bound index,
-    // so the actual upper bound coordinate is (max_b_ + 1) * leaf_size_.
-    float min_x_bound = static_cast<float>(this->min_b_[0]) * this->leaf_size_[0];
-    float max_x_bound = static_cast<float>(this->max_b_[0] + 1) * this->leaf_size_[0];
-    float min_y_bound = static_cast<float>(this->min_b_[1]) * this->leaf_size_[1];
-    float max_y_bound = static_cast<float>(this->max_b_[1] + 1) * this->leaf_size_[1];
-    float min_z_bound = static_cast<float>(this->min_b_[2]) * this->leaf_size_[2];
-    float max_z_bound = static_cast<float>(this->max_b_[2] + 1) * this->leaf_size_[2];
+    // Intermediate constants based on outlier ratio and resolution
+    double gauss_c1 = 10.0 * (1.0 - outlier_ratio_);
+    double gauss_c2 = outlier_ratio_ / pow(static_cast<double>(resolution_), 3); // Use double pow
 
-    // Check if the point's coordinates fall within the [min_bound, max_bound) interval.
-    // Using '<' for the upper bound is consistent with floor-based index calculation.
-    return (p[0] >= min_x_bound && p[0] < max_x_bound &&
-            p[1] >= min_y_bound && p[1] < max_y_bound &&
-            p[2] >= min_z_bound && p[2] < max_z_bound);
+    // Add small epsilon to prevent log(0) or log(negative)
+    constexpr double epsilon = 1e-9;
+    if (gauss_c1 <= epsilon) gauss_c1 = epsilon;
+    if (gauss_c2 <= epsilon) gauss_c2 = epsilon;
+
+    double c1_plus_c2 = gauss_c1 + gauss_c2;
+    // No need to check c1_plus_c2 <= epsilon as c1, c2 >= epsilon
+    gauss_d3_ = -log(gauss_c2);
+    gauss_d1_ = -log(c1_plus_c2) - gauss_d3_; // d1 = -log((c1+c2)/c2) = log(c2/(c1+c2))
+
+    // Calculate d2 using term that should be exp(-d2/2) = (c1*exp(-0.5)+c2)/(c1+c2)
+    double term_exp_neg_half = exp(-0.5); // exp(-1/2)
+    double numerator_for_d2_log = gauss_c1 * term_exp_neg_half + gauss_c2;
+    if (numerator_for_d2_log <= epsilon) numerator_for_d2_log = epsilon;
+
+    double term_for_d2_log = numerator_for_d2_log / c1_plus_c2;
+    // Check if the argument to log is valid
+    if (term_for_d2_log <= epsilon) {
+        PCL_WARN("[SvnNdt] Invalid argument for log in gauss_d2 calculation (ratio=%.3f). Using default d2=1.0.\n", term_for_d2_log);
+        gauss_d2_ = 1.0; // Assign a default, perhaps 1.0 is safer than 2.0
+    } else {
+        // d2 = -2 * log( (c1*exp(-0.5)+c2)/(c1+c2) )
+        // Note: The formula in the original code involving d1 and d3 seemed overly complex and prone to issues.
+        // This direct calculation based on the NDT paper's score function definition is clearer.
+        gauss_d2_ = -2.0 * log(term_for_d2_log);
+    }
+
+    // Final check for NaN or Inf (can happen with extreme inputs)
+    if (!std::isfinite(gauss_d1_) || !std::isfinite(gauss_d2_) || !std::isfinite(gauss_d3_)) {
+        PCL_ERROR("[SvnNdt] NaN/Inf detected in NDT constant calculation. Check resolution (%.3f) and outlier ratio (%.3f).\n", resolution_, outlier_ratio_);
+        // Set safe defaults
+        gauss_d1_ = 1.0; gauss_d2_ = 1.0; gauss_d3_ = 0.0;
+    }
+     // Optional Debug print
+     // std::cout << std::fixed << std::setprecision(5);
+     // std::cout << "Updated NDT Constants: d1=" << gauss_d1_ << ", d2=" << gauss_d2_ << ", d3=" << gauss_d3_
+     //           << " (res=" << resolution_ << ", ratio=" << outlier_ratio_ << ")" << std::endl;
+}
+
+//=================================================================================================
+// Configuration
+//=================================================================================================
+template <typename PointSource, typename PointTarget>
+void SvnNormalDistributionsTransform<PointSource, PointTarget>::setInputTarget(
+    const PointCloudTargetConstPtr& cloud)
+{
+    if (!cloud || cloud->empty()) {
+        PCL_ERROR("[SvnNdt::setInputTarget] Invalid or empty target point cloud provided.\n");
+        target_cells_.setInputCloud(nullptr); // Clear previous target if any
+        return;
+    }
+    // Set the input cloud for the VoxelGridCovariance instance
+    target_cells_.setInputCloud(cloud);
+
+    // If resolution is valid, configure and build the voxel grid
+    if (resolution_ > 1e-6f) { // Use epsilon
+        target_cells_.setLeafSize(resolution_, resolution_, resolution_);
+        // Determine if the KdTree needs to be built based on the selected search method
+        bool build_kdtree = (search_method_ == NeighborSearchMethod::KDTREE);
+        // Build the grid (calculates means, covariances, etc.) and optionally the KdTree
+        target_cells_.filter(build_kdtree);
+        // Update NDT constants as they depend on the resolution used for the grid
+        updateNdtConstants();
+    } else {
+        PCL_WARN("[SvnNdt::setInputTarget] Target cloud set, but resolution is not positive. Grid not built.\n");
+    }
+}
+
+template <typename PointSource, typename PointTarget>
+void SvnNormalDistributionsTransform<PointSource, PointTarget>::setResolution(float resolution)
+{
+    if (resolution <= 1e-6f) { // Use epsilon
+        PCL_ERROR("[SvnNdt::setResolution] Resolution must be positive.\n");
+        return;
+    }
+    // Only update and rebuild if the resolution actually changes
+    if (std::abs(resolution_ - resolution) > 1e-6f) {
+        resolution_ = resolution;
+        // If a target cloud exists, rebuild the grid with the new resolution
+        if (target_cells_.getInputCloud()) {
+            // This implicitly calls updateNdtConstants() inside setInputTarget
+            setInputTarget(target_cells_.getInputCloud());
+        }
+    }
+}
+
+template <typename PointSource, typename PointTarget>
+void SvnNormalDistributionsTransform<PointSource, PointTarget>::setOutlierRatio(double ratio)
+{
+    double clamped_ratio = ratio;
+    // Clamp ratio to the valid range [0, 1)
+    if (ratio < 0.0) {
+         PCL_WARN("[SvnNdt::setOutlierRatio] Outlier ratio must be non-negative. Clamping to 0.0.\n");
+         clamped_ratio = 0.0;
+    } else if (ratio >= 1.0) {
+         PCL_WARN("[SvnNdt::setOutlierRatio] Outlier ratio must be less than 1.0. Clamping near 1.0.\n");
+         clamped_ratio = 0.9999; // Clamp slightly below 1 to avoid potential issues
+    }
+
+    // Only update constants if the ratio actually changes
+    if (std::abs(outlier_ratio_ - clamped_ratio) > 1e-9) {
+        outlier_ratio_ = clamped_ratio;
+        updateNdtConstants(); // Recalculate gauss_d* constants
+    }
 }
 
 
-//////////////////////////////////////////////////////////////////////////////////////////
-// Main filter implementation: Calculates mean, covariance, etc. for each voxel.
-template <typename PointT>
-void VoxelGridCovariance<PointT>::applyFilter(PointCloud& output)
+//=================================================================================================
+// RBF Kernel Functions (Implementations for SE(3))
+//=================================================================================================
+template <typename PointSource, typename PointTarget>
+double SvnNormalDistributionsTransform<PointSource, PointTarget>::rbf_kernel(
+    const gtsam::Pose3& pose_l, const gtsam::Pose3& pose_k) const
 {
-    // --- Standard VoxelGrid Initialization ---
-    if (!this->input_) {
-        PCL_WARN("[%s::applyFilter] No input dataset given!\n", getClassName().c_str());
-        output.width = output.height = 0;
-        output.points.clear();
-        return;
+    // If bandwidth is effectively zero, kernel is delta function (1 if identical, 0 otherwise)
+    // Here, return 1.0 for stability if poses are identical or h is tiny.
+    if (kernel_h_ <= 1e-12) { // Use a smaller epsilon for kernel bandwidth check
+        return (pose_l.equals(pose_k, 1e-9)) ? 1.0 : 0.0;
+    }
+    // Calculate difference vector in tangent space at pose_l
+    Vector6d diff_log = gtsam::Pose3::Logmap(pose_l.between(pose_k)); // Logmap(T_l^{-1} * T_k)
+    double sq_norm = diff_log.squaredNorm();
+    return std::exp(-sq_norm / kernel_h_);
+}
+
+template <typename PointSource, typename PointTarget>
+typename SvnNormalDistributionsTransform<PointSource, PointTarget>::Vector6d
+SvnNormalDistributionsTransform<PointSource, PointTarget>::rbf_kernel_gradient(
+    const gtsam::Pose3& pose_l, const gtsam::Pose3& pose_k) const
+{
+     // If bandwidth is effectively zero, gradient is zero
+     if (kernel_h_ <= 1e-12) {
+         return Vector6d::Zero();
+     }
+    // Calculate difference vector in tangent space at pose_l
+    Vector6d diff_log = gtsam::Pose3::Logmap(pose_l.between(pose_k));
+    double sq_norm = diff_log.squaredNorm();
+    double k_val = std::exp(-sq_norm / kernel_h_);
+
+    // Gradient of exp(-|log(Tl^-1 * Tk)|^2 / h) w.r.t. Tl (using tangent space approximation)
+    // Gradient is k_val * (-2/h) * log(Tl^-1 * Tk)
+    return k_val * (-2.0 / kernel_h_) * diff_log;
+}
+
+
+//=================================================================================================
+// NDT Math Functions (Adapted SERIAL Implementations)
+// These functions assume the NDT standard [x,y,z,roll,pitch,yaw] pose vector convention.
+//=================================================================================================
+
+// --- computeAngleDerivatives ---
+// Precomputes angular components for Jacobian and Hessian based on [r,p,y] from the input p vector.
+template <typename PointSource, typename PointTarget>
+void SvnNormalDistributionsTransform<PointSource, PointTarget>::computeAngleDerivatives(
+    const Vector6d& p, bool compute_hessian) // p is expected [x,y,z,r,p,y]
+{
+    // Use roll, pitch, yaw from the input vector p
+    double r = p(3), pi = p(4), y = p(5);
+
+    // Simplified math for near 0 angles to improve numerical stability
+    double cx, cy, cz, sx, sy, sz;
+    constexpr double angle_epsilon = 1e-6; // Use a slightly larger epsilon for trig stability
+    if (std::abs(r) < angle_epsilon) { sx = 0.0; cx = 1.0; } else { sx = sin(r); cx = cos(r); }
+    if (std::abs(pi) < angle_epsilon) { sy = 0.0; cy = 1.0; } else { sy = sin(pi); cy = cos(pi); }
+    if (std::abs(y) < angle_epsilon) { sz = 0.0; cz = 1.0; } else { sz = sin(y); cz = cos(y); }
+
+    // --- Jacobian Components (Equation 6.19 [Magnusson 2009]) ---
+    j_ang_.setZero(); // Ensure initialization
+    // Derivatives w.r.t Roll
+    j_ang_(0,0)=-sx*sz+cx*sy*cz; j_ang_(1,0)= cx*sz+sx*sy*cz; j_ang_(2,0)=-sy*cz;
+    j_ang_(3,0)= sx*cy*cz;       j_ang_(4,0)=-cx*cy*cz;       j_ang_(5,0)=-cy*sz;
+    j_ang_(6,0)= cx*cz-sx*sy*sz; j_ang_(7,0)= sx*cz+cx*sy*sz;
+    // Derivatives w.r.t Pitch
+    j_ang_(0,1)=-sx*cz-cx*sy*sz; j_ang_(1,1)= cx*cz-sx*sy*sz; j_ang_(2,1)= sy*sz;
+    j_ang_(3,1)=-sx*cy*sz;       j_ang_(4,1)= cx*cy*sz;       j_ang_(5,1)=-cy*cz;
+    j_ang_(6,1)=-cx*sz-sx*sy*cz; j_ang_(7,1)= cx*sy*cz-sx*sz;
+    // Derivatives w.r.t Yaw
+    j_ang_(0,2)=-cx*cy;          j_ang_(1,2)=-sx*cy;          j_ang_(2,2)= cy;
+    j_ang_(3,2)= sx*sy;          j_ang_(4,2)=-cx*sy;          j_ang_(5,2)= 0.0;
+    j_ang_(6,2)= 0.0;            j_ang_(7,2)= 0.0;
+
+
+    // --- Hessian Components (Equation 6.21 [Magnusson 2009]) ---
+    if (compute_hessian) {
+        h_ang_.setZero(); // Ensure initialization
+        // Calculate only the unique second derivative components needed for the mapping
+        // These rows correspond to the components needed later when multiplied by x4
+        h_ang_(0,0)=-cx*sz-sx*sy*cz; h_ang_(1,0)=-sx*sz+cx*sy*cz; // dR/drdr (y,z components)
+        h_ang_(2,0)= cx*cy*cz;       h_ang_(3,0)= sx*cy*cz;       // dR/drdp (y,z components)
+        h_ang_(4,0)=-sx*cz-cx*sy*sz; h_ang_(5,0)= cx*cz-sx*sy*sz; // dR/drdy (y,z components)
+
+        h_ang_(6,1)=-cy*cz;          h_ang_(7,1)=-sx*sy*cz;       // dR/dpdp (x,y components)
+        h_ang_(8,1)= cx*sy*cz;                                    // dR/dpdp (z component)
+
+        h_ang_(9,1)= sy*sz;          h_ang_(10,1)=-sx*cy*sz;      // dR/dpdy (x,y components)
+        h_ang_(11,1)= cx*cy*sz;                                    // dR/dpdy (z component)
+
+        h_ang_(12,2)=-cy*cz;         h_ang_(13,2)=-cx*sz-sx*sy*cz;// dR/dydy (x,y components)
+        h_ang_(14,2)=-sx*sz+cx*sy*cz;                              // dR/dydy (z component)
+
+        // Symmetry is handled in computePointDerivatives when filling point_hessian_
+    }
+}
+
+
+// --- computePointDerivatives ---
+// Computes Jacobian and Hessian of the transformed point coordinates w.r.t. the pose parameters p = [x,y,z,r,p,y]
+template <typename PointSource, typename PointTarget>
+void SvnNormalDistributionsTransform<PointSource, PointTarget>::computePointDerivatives(
+    const Eigen::Vector3d& x,                     // Original point coordinates
+    Eigen::Matrix<float, 4, 6>& point_gradient_, // Output Jacobian Jp (4x6)
+    Eigen::Matrix<float, 24, 6>& point_hessian_, // Output Hessian Hp (flattened 24x6)
+    bool compute_hessian)
+{
+    // Point in homogeneous coordinates (float for consistency with matrix types)
+    Eigen::Vector4f x4(static_cast<float>(x[0]), static_cast<float>(x[1]), static_cast<float>(x[2]), 0.0f); // w=0 for vector/point difference
+
+    // --- Jacobian Calculation (Equation 6.18, 6.19 [Magnusson 2009]) ---
+    point_gradient_.setZero();
+    point_gradient_.block<3, 3>(0, 0).setIdentity(); // Top-left 3x3 is Identity (derivative w.r.t translation)
+
+    // Calculate angular part: (dR/da)*x by multiplying precomputed components by x
+    Eigen::Matrix<float, 8, 1> x_j_ang = j_ang_ * x4; // (8x4) * (4x1) -> (8x1)
+
+    // Map components of x_j_ang to the correct columns (3, 4, 5) of point_gradient_
+    point_gradient_(0, 3) = x_j_ang[0]; point_gradient_(1, 3) = x_j_ang[1]; point_gradient_(2, 3) = x_j_ang[2];
+    point_gradient_(0, 4) = x_j_ang[3]; point_gradient_(1, 4) = x_j_ang[4]; point_gradient_(2, 4) = x_j_ang[5];
+    point_gradient_(0, 5) = x_j_ang[6]; point_gradient_(1, 5) = x_j_ang[7];
+
+
+    // --- Hessian Calculation (Equation 6.20, 6.21 [Magnusson 2009]) ---
+    if (compute_hessian) {
+        point_hessian_.setZero(); // Clear previous point's data
+        // Calculate angular part: (d^2R/dadb)*x by multiplying precomputed components by x
+        Eigen::Matrix<float, 16, 1> x_h_ang = h_ang_ * x4; // (16x4) * (4x1) -> (16x1)
+
+        // ** Corrected mapping using 4x1 blocks and manual Vector4f construction **
+        // Indices: p = [t1,t2,t3, r1,r2,r3] -> parameter indices 0..5. NDT uses r1=idx 3, r2=idx 4, r3=idx 5
+
+        // Blocks for angular derivatives (indices 3, 4, 5)
+        // Hessian block H_rr (i=3, j=3): d^2(Tp)/dr dr * x
+        point_hessian_.block<4, 1>(3 * 4, 3) = Eigen::Vector4f(0.0f, x_h_ang[0], x_h_ang[1], 0.0f); // Uses h_ang rows 0, 1
+        // Hessian block H_rp (i=3, j=4): d^2(Tp)/dr dp * x
+        point_hessian_.block<4, 1>(3 * 4, 4) = Eigen::Vector4f(0.0f, x_h_ang[2], x_h_ang[3], 0.0f); // Uses h_ang rows 2, 3
+        // Hessian block H_ry (i=3, j=5): d^2(Tp)/dr dy * x
+        point_hessian_.block<4, 1>(3 * 4, 5) = Eigen::Vector4f(0.0f, x_h_ang[4], x_h_ang[5], 0.0f); // Uses h_ang rows 4, 5
+
+        // Hessian block H_pp (i=4, j=4): d^2(Tp)/dp dp * x
+        point_hessian_.block<4, 1>(4 * 4, 4) = Eigen::Vector4f(x_h_ang[6], x_h_ang[7], x_h_ang[8], 0.0f); // Uses h_ang rows 6, 7, 8
+        // Hessian block H_py (i=4, j=5): d^2(Tp)/dp dy * x
+        point_hessian_.block<4, 1>(4 * 4, 5) = Eigen::Vector4f(x_h_ang[9], x_h_ang[10], x_h_ang[11], 0.0f); // Uses h_ang rows 9, 10, 11
+
+        // Hessian block H_yy (i=5, j=5): d^2(Tp)/dy dy * x
+        point_hessian_.block<4, 1>(5 * 4, 5) = Eigen::Vector4f(x_h_ang[12], x_h_ang[13], x_h_ang[14], 0.0f); // Uses h_ang rows 12, 13, 14
+
+        // Fill symmetric blocks (H_ij = H_ji)
+        point_hessian_.block<4, 1>(4 * 4, 3) = point_hessian_.block<4, 1>(3 * 4, 4); // H_pr = H_rp
+        point_hessian_.block<4, 1>(5 * 4, 3) = point_hessian_.block<4, 1>(3 * 4, 5); // H_yr = H_ry
+        point_hessian_.block<4, 1>(5 * 4, 4) = point_hessian_.block<4, 1>(4 * 4, 5); // H_yp = H_py
+    }
+}
+
+
+// --- updateDerivatives ---
+// Calculates the contribution of a single point-voxel interaction to the NDT score, gradient, and Hessian.
+template <typename PointSource, typename PointTarget>
+double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivatives(
+    Vector6d& score_gradient, // Accumulated Gradient (output)
+    Matrix6d& hessian,        // Accumulated Hessian (output)
+    const Eigen::Matrix<float, 4, 6>& point_gradient4, // Jacobian of point transform w.r.t p=[x,y,z,r,p,y]
+    const Eigen::Matrix<float, 24, 6>& point_hessian_, // Hessian of point transform w.r.t p=[x,y,z,r,p,y]
+    const Eigen::Vector3d& x_trans, // Point relative to voxel mean (point - mean)
+    const Eigen::Matrix3d& c_inv,   // Voxel inverse covariance
+    bool compute_hessian,
+    bool print_debug) // Flag to enable detailed debug prints for this call
+{
+    // Use float types for intermediate calculations consistent with point_gradient/hessian types
+    Eigen::Matrix<float, 1, 4> x_trans4(static_cast<float>(x_trans[0]), static_cast<float>(x_trans[1]), static_cast<float>(x_trans[2]), 0.0f);
+    // Embed 3x3 inverse covariance into a 4x4 matrix
+    Eigen::Matrix4f c_inv4 = Eigen::Matrix4f::Zero();
+    c_inv4.topLeftCorner(3, 3) = c_inv.cast<float>();
+
+    // Calculate Mahalanobis distance squared: (x-mu)^T * C^-1 * (x-mu)
+    // Use double for potentially better precision in dot product
+    double mahal_sq = x_trans.dot(c_inv * x_trans);
+
+    // Check for invalid Mahalanobis distance or potential overflow in exponent
+    // exp(-25) is already very small, avoid large positive exponents
+    const double max_exponent_arg = 50.0;
+    if (!std::isfinite(mahal_sq) || mahal_sq < -1e-9 || (gauss_d2_ * mahal_sq > max_exponent_arg)) { // Allow small negative due to float errors
+        // if (print_debug) { // Keep this conditional for reducing noise
+        //      std::cerr << "      updateDeriv WARN: mahal_sq invalid (" << mahal_sq << ") or exponent too large.\n";
+        // }
+        return 0.0; // Return zero score contribution for invalid points
+    }
+     // Clamp negative values slightly below zero before exponentiation if needed, although they shouldn't occur for PSD matrices
+     if (mahal_sq < 0.0) mahal_sq = 0.0;
+
+
+    // Calculate the exponent term: exp(-d2 * mahal^2 / 2)
+    double exp_term = std::exp(-gauss_d2_ * mahal_sq * 0.5);
+
+    // Calculate score increment: -d1 * exp_term (Equation 6.9 [Magnusson 2009])
+    double score_inc = -gauss_d1_ * exp_term;
+
+    // Calculate the common factor for gradient and Hessian: d1 * d2 * exp_term
+    double factor = gauss_d1_ * gauss_d2_ * exp_term;
+
+    // Check if factor is finite (could be NaN/Inf if exp_term was unstable)
+    if (!std::isfinite(factor)) {
+        // if (print_debug) { // Keep conditional
+        //     std::cerr << "      updateDeriv WARN: factor is non-finite: " << factor << std::endl;
+        // }
+        return 0.0; // Return zero score contribution
     }
 
-    // Initialize output cloud (clear points but keep header)
-    output.header = this->input_->header;
-    output.height = 1;
-    output.is_dense = true; // Assume dense initially; might be set to false later if errors occur
-    output.points.clear();
+    // --- Gradient Calculation (Equation 6.12 [Magnusson 2009]) ---
+    // grad_contrib = (x-mu)^T * C^-1 * Jp
+    Eigen::Matrix<float, 4, 6> temp_vec = c_inv4 * point_gradient4; // C^-1 * Jp (4x6)
+    Eigen::Matrix<float, 1, 6> grad_contrib_float = x_trans4 * temp_vec; // (x-mu)^T * C^-1 * Jp (1x6)
 
-    // Determine point cloud bounds
-    Eigen::Vector4f min_p, max_p;
-    if (!this->filter_field_name_.empty()) {
-        // Use filtered points to determine bounds
-        pcl::getMinMax3D<PointT>(
-            this->input_, this->filter_field_name_,
-            static_cast<float>(this->filter_limit_min_), static_cast<float>(this->filter_limit_max_),
-            min_p, max_p, this->filter_limit_negative_);
-    } else {
-        // Use all points to determine bounds
-        pcl::getMinMax3D<PointT>(*this->input_, min_p, max_p);
+    // Increment overall gradient: factor * grad_contrib^T
+    Vector6d grad_inc = factor * grad_contrib_float.transpose().cast<double>();
+
+    // --- DETAILED DEBUG PRINT (BEFORE accumulating) ---
+    if (print_debug) {
+         std::cout << std::fixed << std::setprecision(5);
+         std::cout << "      updateDeriv [DBG]: mahal^2=" << mahal_sq
+                   << ", exp_t=" << exp_term
+                   << ", d1=" << gauss_d1_ << ", d2=" << gauss_d2_
+                   << ", factor=" << factor << std::endl;
+         std::cout << "                     : c_inv.n=" << c_inv.norm()
+                   << ", pt_grad.n=" << point_gradient4.norm()
+                   << ", grad_contr.n=" << grad_contrib_float.norm()
+                   << ", grad_inc.n=" << grad_inc.norm() << std::endl;
     }
+    // --- END DEBUG PRINT ---
 
-    // Check leaf size validity and prevent integer overflow
-    // Calculate grid dimensions in terms of voxels
-    int64_t dx = static_cast<int64_t>((max_p[0] - min_p[0]) * this->inverse_leaf_size_[0]) + 1;
-    int64_t dy = static_cast<int64_t>((max_p[1] - min_p[1]) * this->inverse_leaf_size_[1]) + 1;
-    int64_t dz = static_cast<int64_t>((max_p[2] - min_p[2]) * this->inverse_leaf_size_[2]) + 1;
-
-    // Check for negative dimensions (can happen with invalid leaf size or bounds)
-    if (dx < 0 || dy < 0 || dz < 0) {
-        PCL_ERROR("[%s::applyFilter] Invalid leaf size or cloud bounds resulting in negative grid dimensions.\n", getClassName().c_str());
-        output.width = output.height = 0; output.points.clear();
-        return;
+    // Check gradient increment validity before adding
+    if (!grad_inc.allFinite()){
+        // if (print_debug) { // Keep conditional
+        //     std::cerr << "      updateDeriv WARN: grad_inc is non-finite!" << std::endl;
+        // }
+        return 0.0; // Don't add invalid gradient and return zero score
     }
-
-    // Check for potential integer overflow when calculating 1D index
-    const int64_t max_total_voxels = static_cast<int64_t>(std::numeric_limits<int32_t>::max()); // Based on PCL's internal limits
-    if (dx > max_total_voxels || dy > max_total_voxels || dz > max_total_voxels || (dx*dy*dz) > max_total_voxels ) {
-        PCL_ERROR("[%s::applyFilter] Leaf size is too small for the input dataset. Integer indices would overflow.\n", getClassName().c_str());
-        output.width = output.height = 0; output.points.clear();
-        return;
-    }
+    score_gradient += grad_inc;
 
 
-    // Compute grid bounds in integer voxel indices (relative to world origin)
-    this->min_b_[0] = static_cast<int>(std::floor(min_p[0] * this->inverse_leaf_size_[0]));
-    this->max_b_[0] = static_cast<int>(std::floor(max_p[0] * this->inverse_leaf_size_[0]));
-    this->min_b_[1] = static_cast<int>(std::floor(min_p[1] * this->inverse_leaf_size_[1]));
-    this->max_b_[1] = static_cast<int>(std::floor(max_p[1] * this->inverse_leaf_size_[1]));
-    this->min_b_[2] = static_cast<int>(std::floor(min_p[2] * this->inverse_leaf_size_[2]));
-    this->max_b_[2] = static_cast<int>(std::floor(max_p[2] * this->inverse_leaf_size_[2]));
+    // --- Hessian Calculation (Equation 6.13 [Magnusson 2009], using approximation) ---
+    if (compute_hessian) {
+        Matrix6d hess_contrib = Matrix6d::Zero(); // Accumulate contribution for this point-voxel pair
+        Eigen::Matrix<double, 1, 6> grad_contrib_double = grad_contrib_float.cast<double>();
 
-    // Compute divisions and multipliers for 1D index calculation
-    this->div_b_ = this->max_b_ - this->min_b_ + Eigen::Vector4i::Ones();
-    this->div_b_[3] = 0; // W component not used
-    // divb_mul_ = [1, div_x, div_x*div_y, 0]
-    this->divb_mul_ = Eigen::Vector4i(1, this->div_b_[0], this->div_b_[0] * this->div_b_[1], 0);
+        // Term 1: -d2 * [(x-mu)^T * C^-1 * Jp]^T * [(x-mu)^T * C^-1 * Jp]
+        hess_contrib = -gauss_d2_ * (grad_contrib_double.transpose() * grad_contrib_double);
 
-    // Clear the map for the new computation
-    leaves_.clear();
+        // Term 2: Jp^T * C^-1 * Jp
+        hess_contrib += (point_gradient4.transpose() * temp_vec).cast<double>(); // temp_vec = C^-1 * Jp
 
-    // --- Determine Centroid Size and Field Mappings (Only if downsample_all_data_ is true) ---
-    using FieldList = typename pcl::traits::fieldList<PointT>::type;
-    int centroid_size = 3; // Default to x, y, z
-    std::vector<pcl::PCLPointField> fields;
-    int rgba_index = -1; // Used for color packing if downsample_all_data_ is true
-    if (this->downsample_all_data_) {
-        centroid_size = boost::mpl::size<FieldList>::value;
-        // Check for RGB/RGBA fields
-        rgba_index = pcl::getFieldIndex<PointT>("rgba", fields);
-        if (rgba_index == -1) {
-            rgba_index = pcl::getFieldIndex<PointT>("rgb", fields);
-        }
-        if (rgba_index >= 0) {
-            rgba_index = static_cast<int>(fields[rgba_index].offset);
-            // Size adjustment handled by NdCopyPointEigenFunctor/NdCopyEigenPointFunctor
-        }
-    }
-
-    // --- First Pass: Iterate through points, assign to voxels, and accumulate sums ---
-    if (!this->filter_field_name_.empty()) {
-        // --- Filtered Pass ---
-        std::vector<pcl::PCLPointField> filter_fields;
-        int filter_idx = pcl::getFieldIndex<PointT>(this->filter_field_name_, filter_fields);
-        if (filter_idx == -1) {
-             PCL_ERROR("[%s::applyFilter] Invalid filter field name '%s'.\n", getClassName().c_str(), this->filter_field_name_.c_str());
-             output.width = output.height = 0; output.points.clear(); return;
-        }
-        const auto& filter_field = filter_fields[filter_idx];
-        const float filter_min = static_cast<float>(this->filter_limit_min_);
-        const float filter_max = static_cast<float>(this->filter_limit_max_);
-
-        for (const auto& point : this->input_->points) {
-            if (!pcl::isFinite(point)) continue; // Skip invalid points (NaN, Inf)
-
-            // Check filter field value
-            const auto* pt_data = reinterpret_cast<const std::uint8_t*>(&point);
-            float field_value = 0;
-            memcpy(&field_value, pt_data + filter_field.offset, sizeof(float));
-            bool point_passes_filter = this->filter_limit_negative_ ?
-                                       (field_value < filter_max && field_value > filter_min) : // Keep points inside the interval
-                                       (field_value > filter_max || field_value < filter_min);  // Keep points outside the interval
-            if (!point_passes_filter) continue;
-
-            // Calculate voxel index
-            int ijk0 = static_cast<int>(std::floor(point.x * this->inverse_leaf_size_[0]) - this->min_b_[0]);
-            int ijk1 = static_cast<int>(std::floor(point.y * this->inverse_leaf_size_[1]) - this->min_b_[1]);
-            int ijk2 = static_cast<int>(std::floor(point.z * this->inverse_leaf_size_[2]) - this->min_b_[2]);
-            size_t idx = static_cast<size_t>(ijk0 * this->divb_mul_[0] + ijk1 * this->divb_mul_[1] + ijk2 * this->divb_mul_[2]);
-
-            // Get or create the leaf (operator[] creates if not present)
-            Leaf& leaf = leaves_[idx];
-
-            // Initialize Nd centroid if needed (first point in this leaf)
-            if (leaf.nr_points_ == 0 && this->downsample_all_data_) {
-                leaf.centroid_.resize(centroid_size);
-                leaf.centroid_.setZero();
+        // Term 3: (x-mu)^T * C^-1 * Hp
+        Eigen::Matrix<float, 1, 4> x_trans4_c_inv4 = x_trans4 * c_inv4; // Precompute (x-mu)^T * C^-1
+        Matrix6d term3 = Matrix6d::Zero();
+        for (int i = 0; i < 6; ++i) { // Row index of Hessian
+            for (int j = i; j < 6; ++j) { // Column index of Hessian (use symmetry)
+                 // Extract the (i,j) block (4x1 vector) from the flattened point Hessian Hp
+                 // This block represents d^2(Tp)/dp_i dp_j * x
+                 Eigen::Matrix<float, 4, 1> H_ij_x = point_hessian_.block<4, 1>(i * 4, j);
+                 // Calculate the scalar contribution (x-mu)^T * C^-1 * [d^2(Tp)/dp_i dp_j * x]
+                 term3(i, j) = x_trans4_c_inv4 * H_ij_x;
             }
-
-            // Accumulate sums for mean and covariance (single-pass method)
-            Eigen::Vector3d pt3d(point.x, point.y, point.z);
-            leaf.mean_ += pt3d; // Sum(xi)
-            leaf.cov_ += pt3d * pt3d.transpose(); // Sum(xi * xi^T)
-
-            // Accumulate Nd centroid if needed
-            if (this->downsample_all_data_) {
-                 Eigen::VectorXf pt_centroid = Eigen::VectorXf::Zero(centroid_size);
-                 pcl::for_each_type<FieldList>(pcl::NdCopyPointEigenFunctor<PointT>(point, pt_centroid));
-                 leaf.centroid_ += pt_centroid;
-            }
-            leaf.nr_points_++; // Increment point count for this leaf
         }
-    } else {
-        // --- Unfiltered Pass (Process all points) ---
-        for (const auto& point : this->input_->points) {
-            if (!pcl::isFinite(point)) continue;
+        // Fill the lower triangle using symmetry
+        term3.template triangularView<Eigen::Lower>() = term3.template triangularView<Eigen::Upper>().transpose();
+        hess_contrib += term3;
 
-            // Calculate voxel index
-            int ijk0 = static_cast<int>(std::floor(point.x * this->inverse_leaf_size_[0]) - this->min_b_[0]);
-            int ijk1 = static_cast<int>(std::floor(point.y * this->inverse_leaf_size_[1]) - this->min_b_[1]);
-            int ijk2 = static_cast<int>(std::floor(point.z * this->inverse_leaf_size_[2]) - this->min_b_[2]);
-            size_t idx = static_cast<size_t>(ijk0 * this->divb_mul_[0] + ijk1 * this->divb_mul_[1] + ijk2 * this->divb_mul_[2]);
+        // Scale total contribution by factor
+        hess_contrib *= factor;
 
-            // Get or create the leaf
-            Leaf& leaf = leaves_[idx];
-
-            // Initialize Nd centroid if needed
-            if (leaf.nr_points_ == 0 && this->downsample_all_data_) {
-                leaf.centroid_.resize(centroid_size);
-                leaf.centroid_.setZero();
-            }
-
-            // Accumulate sums
-            Eigen::Vector3d pt3d(point.x, point.y, point.z);
-            leaf.mean_ += pt3d;
-            leaf.cov_ += pt3d * pt3d.transpose();
-
-            // Accumulate Nd centroid if needed
-            if (this->downsample_all_data_) {
-                 Eigen::VectorXf pt_centroid = Eigen::VectorXf::Zero(centroid_size);
-                 pcl::for_each_type<FieldList>(pcl::NdCopyPointEigenFunctor<PointT>(point, pt_centroid));
-                 leaf.centroid_ += pt_centroid;
-            }
-            leaf.nr_points_++;
-        }
-    }
-
-    // --- Second Pass: Finalize calculations (mean, covariance, inverse, eigen decomposition) ---
-    output.points.reserve(leaves_.size()); // Reserve space roughly proportional to the number of populated leaves
-
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigensolver; // Reusable solver
-    bool numerical_error_detected = false; // Track if any leaves are discarded due to errors
-
-    // Create a list of keys to iterate over, allowing safe deletion from the map during iteration
-    std::vector<size_t> keys_to_process;
-    keys_to_process.reserve(leaves_.size());
-    for(const auto& pair : leaves_) {
-        keys_to_process.push_back(pair.first);
-    }
-
-    // Process each potentially valid leaf
-    for (const size_t index : keys_to_process) {
-        // Access the leaf directly using operator[]. Safe because we iterate existing keys.
-        Leaf& leaf = leaves_[index];
-
-        // --- Voxel Validity Check ---
-        if (leaf.nr_points_ < min_points_per_voxel_) {
-            leaves_.erase(index); // Erase leaf if it doesn't have enough points
-            continue; // Skip further processing for this leaf
-        }
-
-        // --- Calculate Mean ---
-        const double point_count = static_cast<double>(leaf.nr_points_);
-        const Eigen::Vector3d pt_sum = leaf.mean_; // Store sum before dividing
-        leaf.mean_ /= point_count; // E[x] = Sum(xi) / N
-
-        // --- Calculate Nd Centroid (if needed) ---
-        if (this->downsample_all_data_) {
-            leaf.centroid_ /= static_cast<float>(point_count);
-        }
-
-        // --- Calculate Covariance (using single-pass results) ---
-        // Cov = E[xx^T] - E[x]E[x]^T = (Sum(xi*xi^T) / N) - mean * mean^T
-        leaf.cov_ = (leaf.cov_ / point_count) - (leaf.mean_ * leaf.mean_.transpose());
-        // Apply Bessel's correction for sample covariance: multiply by N / (N-1)
-        if (point_count > 1) {
-             leaf.cov_ *= (point_count / (point_count - 1.0));
-        } else {
-             // Handle N=1 case: Covariance is undefined, set to small identity for numerical stability if needed
-             leaf.cov_.setIdentity();
-             leaf.cov_ *= 1e-9; // Or some other small value
-        }
-
-        // --- Eigen Decomposition and Regularization ---
-        eigensolver.compute(leaf.cov_);
-        Eigen::Vector3d eigen_values = eigensolver.eigenvalues(); // Eigenvalues are sorted ascending
-        leaf.evecs_ = eigensolver.eigenvectors(); // Eigenvectors form columns
-
-        // Check for numerical issues (non-positive semi-definite matrix)
-        const double min_eigenvalue_threshold = 1e-12; // Absolute minimum threshold
-        if (eigen_values(0) < 0 || eigen_values(1) < 0 || eigen_values(2) < min_eigenvalue_threshold) {
-            // PCL_DEBUG("[%s::applyFilter] Voxel %zu has non-positive definite covariance. Discarding.\n", getClassName().c_str(), index);
-            numerical_error_detected = true;
-            leaves_.erase(index);
-            continue;
-        }
-
-        // Apply regularization: Inflate small eigenvalues relative to the largest one
-        double max_eigenvalue = eigen_values(2); // Largest eigenvalue
-        double min_acceptable_eigenvalue = std::max(min_eigenvalue_threshold, max_eigenvalue * min_covar_eigvalue_mult_);
-
-        bool needs_recomposition = false;
-        if (eigen_values(0) < min_acceptable_eigenvalue) {
-            eigen_values(0) = min_acceptable_eigenvalue;
-            needs_recomposition = true;
-        }
-        if (eigen_values(1) < min_acceptable_eigenvalue) {
-            eigen_values(1) = min_acceptable_eigenvalue;
-            needs_recomposition = true;
-        }
-        // eigen_values(2) is implicitly handled if it was below min_eigenvalue_threshold earlier
-
-        leaf.evals_ = eigen_values; // Store the (potentially inflated) eigenvalues
-
-        // Reconstruct covariance matrix if eigenvalues were inflated
-        if (needs_recomposition) {
-            leaf.cov_ = leaf.evecs_ * leaf.evals_.asDiagonal() * leaf.evecs_.transpose();
-        }
-
-        // --- Calculate Inverse Covariance ---
-        leaf.icov_ = leaf.cov_.inverse();
-
-        // Check inverse stability
-        const double max_inverse_coeff = 1e12; // Heuristic threshold for instability
-        if (!leaf.icov_.allFinite() || leaf.icov_.cwiseAbs().maxCoeff() > max_inverse_coeff) {
-           // PCL_DEBUG("[%s::applyFilter] Voxel %zu inverse covariance is unstable. Discarding.\n", getClassName().c_str(), index);
-            numerical_error_detected = true;
-            leaves_.erase(index);
-            continue;
-        }
-
-        // --- Add Centroid to Output Cloud (Only if all checks passed) ---
-        PointT downsampled_pt;
-        if (this->downsample_all_data_) {
-            // Copy averaged Nd centroid vector into the point struct fields using PCL helper
-            pcl::for_each_type<FieldList>(pcl::NdCopyEigenPointFunctor<PointT>(leaf.centroid_, downsampled_pt));
-
-            // Manually handle RGB packing if necessary (based on PCL's VoxelGrid implementation)
-            if (rgba_index >= 0 && centroid_size >= 3) {
-                 float r = leaf.centroid_[centroid_size - 3];
-                 float g = leaf.centroid_[centroid_size - 2];
-                 float b = leaf.centroid_[centroid_size - 1];
-                 std::uint32_t rgb = (static_cast<std::uint32_t>(r) << 16 |
-                                      static_cast<std::uint32_t>(g) << 8  |
-                                      static_cast<std::uint32_t>(b));
-                 memcpy(reinterpret_cast<char*>(&downsampled_pt) + rgba_index, &rgb, sizeof(std::uint32_t));
-            }
-        } else {
-            // Standard NDT case: Output point is the 3D mean
-            downsampled_pt.x = static_cast<float>(leaf.mean_.x());
-            downsampled_pt.y = static_cast<float>(leaf.mean_.y());
-            downsampled_pt.z = static_cast<float>(leaf.mean_.z());
-
-            // --- OPTIONAL: Handle other fields like intensity ---
-            // Example for PointXYZI (requires modifications in First Pass as well):
-            // if constexpr (pcl::traits::has_field<PointT, pcl::fields::intensity>::value) {
-            //    // Assuming leaf has a 'sum_intensity_' member populated in First Pass
-            //    if (leaf.nr_points_ > 0) {
-            //        downsampled_pt.intensity = leaf.sum_intensity_ / static_cast<float>(leaf.nr_points_);
-            //    } else {
-            //        downsampled_pt.intensity = 0.0f;
-            //    }
+        // Check Hessian contribution validity before adding
+        if (!hess_contrib.allFinite()){
+            // if (print_debug) { // Keep conditional
+            //     std::cerr << "      updateDeriv WARN: hess_contrib is non-finite!" << std::endl;
             // }
-            // --- END OPTIONAL ---
-        }
-
-        output.points.push_back(downsampled_pt);
-
-    } // End loop through leaf keys
-
-    // Finalize output cloud properties
-    output.width = static_cast<std::uint32_t>(output.points.size());
-    output.is_dense = !numerical_error_detected; // Cloud is not dense if any voxels were discarded due to errors
-
-} // End applyFilter
-
-
-//////////////////////////////////////////////////////////////////////////////////////////
-// Helper function to build the cloud of valid centroids and the index map
-// used for KdTree searching.
-template <typename PointT>
-void VoxelGridCovariance<PointT>::buildCentroidCloudAndIndexMap()
-{
-    // Ensure the internal centroid cloud pointer is valid
-    if (!voxel_centroids_) {
-        voxel_centroids_.reset(new PointCloud());
-    }
-
-    // Clear previous data
-    voxel_centroids_->clear();
-    voxel_centroids_leaf_indices_.clear();
-
-    // If no valid leaves were found after filtering, initialize empty cloud and return
-    if (leaves_.empty()) {
-        voxel_centroids_->width = 0;
-        voxel_centroids_->height = 1;
-        voxel_centroids_->is_dense = true;
-        return;
-    }
-
-    // Reserve space for efficiency
-    voxel_centroids_->reserve(leaves_.size());
-    voxel_centroids_leaf_indices_.reserve(leaves_.size());
-
-    PointT temp_pt; // Reusable point for efficiency
-
-    // Iterate through the *filtered* leaves_ map (contains only valid voxels)
-    for (const auto& pair : leaves_) {
-        const size_t original_index = pair.first; // The key in the leaves_ map
-        const Leaf& leaf = pair.second;
-
-        // Note: The check leaf.getPointCount() >= min_points_per_voxel_ is implicitly
-        // satisfied here because applyFilter already removed invalid leaves from the map.
-
-        // Create the centroid point
-        temp_pt.x = static_cast<float>(leaf.getMean().x());
-        temp_pt.y = static_cast<float>(leaf.getMean().y());
-        temp_pt.z = static_cast<float>(leaf.getMean().z());
-        // --- OPTIONAL: Copy other fields (e.g., average intensity) ---
-        // if constexpr (...) { temp_pt.intensity = ...; }
-        // --- END OPTIONAL ---
-
-        // Add point to the cloud and store the original leaf index
-        voxel_centroids_->push_back(temp_pt);
-        voxel_centroids_leaf_indices_.push_back(original_index);
-    }
-
-    // Finalize centroid cloud properties
-    voxel_centroids_->width = static_cast<std::uint32_t>(voxel_centroids_->size());
-    voxel_centroids_->height = 1;
-    voxel_centroids_->is_dense = true; // Centroid cloud itself should always be dense
-}
-
-
-//////////////////////////////////////////////////////////////////////////////////////////
-// Neighbor search implementations
-
-// --- KdTree-based searches (require searchable_ == true) ---
-
-template <typename PointT>
-int VoxelGridCovariance<PointT>::nearestKSearch(
-    const PointT& point, int k,
-    std::vector<LeafConstPtr>& k_leaves,
-    std::vector<float>& k_sqr_distances) const
-{
-    k_leaves.clear();
-    k_sqr_distances.clear();
-
-    if (!searchable_) {
-        PCL_WARN("[%s::nearestKSearch] Grid not searchable. Call filter(true) or filter(output, true) first.\n", getClassName().c_str());
-        return 0;
-    }
-    if (!kdtree_.getInputCloud() || !voxel_centroids_ || voxel_centroids_->empty()) {
-         // PCL_DEBUG("[%s::nearestKSearch] KdTree not initialized or no valid centroids to search.\n", getClassName().c_str());
-         return 0; // No centroids to search
-    }
-    if (k <= 0) {
-        return 0; // Trivial case
-    }
-
-
-    std::vector<int> k_indices; // Indices relative to voxel_centroids_ cloud
-    k_indices.reserve(k);       // Reserve space
-    k_sqr_distances.reserve(k);
-
-    // Perform the KdTree search on the centroid cloud
-    int found_k = kdtree_.nearestKSearch(point, k, k_indices, k_sqr_distances);
-
-    k_leaves.reserve(found_k); // Reserve final size
-
-    // Map KdTree indices back to original Leaf indices and get Leaf pointers
-    for (int centroid_idx : k_indices) {
-        // Basic validity check on the index returned by KdTree
-        if (centroid_idx < 0 || static_cast<size_t>(centroid_idx) >= voxel_centroids_leaf_indices_.size()) {
-             PCL_ERROR("[%s::nearestKSearch] Invalid index %d received from KdTree search.\n", getClassName().c_str(), centroid_idx);
-             continue; // Skip this invalid index
-        }
-
-        // Look up the original leaf index using the mapping vector
-        size_t leaf_map_idx = voxel_centroids_leaf_indices_[centroid_idx];
-
-        // Retrieve the leaf using the safe getter (includes point count check)
-        LeafConstPtr leaf_ptr = getLeaf(leaf_map_idx);
-        if (leaf_ptr) {
-            k_leaves.push_back(leaf_ptr);
+            // If hessian is invalid, maybe just skip adding it? Or add only Term 2 scaled?
+            // Skipping seems safer if the source of NaN/Inf is Term 1 or 3.
         } else {
-             // This case should ideally not happen if buildCentroidCloudAndIndexMap is correct,
-             // but could occur if leaves_ was modified after building the map/kdtree.
-             // PCL_DEBUG("[%s::nearestKSearch] Consistency warning: Centroid index %d maps to leaf index %zu, but getLeaf returned null.\n",
-             //           getClassName().c_str(), centroid_idx, leaf_map_idx);
+            hessian += hess_contrib;
         }
+
+        // --- Optional Debug Print for Hessian ---
+        // if (print_debug) {
+        //     std::cout << "                     : hess_contr.n=" << hess_contrib.norm() << std::endl;
+        // }
+        // --- End Optional Debug Print ---
     }
 
-    // Ensure the distances vector matches the number of leaves actually added
-    // (in case some indices were invalid or getLeaf failed)
-    k_sqr_distances.resize(k_leaves.size());
-    return static_cast<int>(k_leaves.size());
+
+    return score_inc; // Return the score contribution of this point-voxel interaction
 }
 
 
-template <typename PointT>
-int VoxelGridCovariance<PointT>::radiusSearch(
-    const PointT& point, double radius,
-    std::vector<LeafConstPtr>& k_leaves,
-    std::vector<float>& k_sqr_distances,
-    unsigned int max_nn) const
+// --- computeParticleDerivatives ---
+// Computes the total NDT score, gradient, and Hessian for a given pose p=[x,y,z,r,p,y]
+template <typename PointSource, typename PointTarget>
+double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticleDerivatives(
+    Vector6d& score_gradient, // Output gradient
+    Matrix6d& hessian,        // Output Hessian
+    const PointCloudSource& trans_cloud, // Transformed source cloud
+    const Vector6d& p,        // Current pose estimate [x,y,z,r,p,y]
+    bool compute_hessian)
 {
-    k_leaves.clear();
-    k_sqr_distances.clear();
+    // --- Initializations ---
+    score_gradient.setZero();
+    hessian.setZero();
+    double total_score = 0.0;
+    bool first_point_processed_debug = false; // Flag for debug prints in updateDerivatives
 
-    if (!searchable_) {
-        PCL_WARN("[%s::radiusSearch] Grid not searchable. Call filter(true) or filter(output, true) first.\n", getClassName().c_str());
-        return 0;
-    }
-     if (!kdtree_.getInputCloud() || !voxel_centroids_ || voxel_centroids_->empty()) {
-         // PCL_DEBUG("[%s::radiusSearch] KdTree not initialized or no valid centroids to search.\n", getClassName().c_str());
-         return 0; // No centroids to search
-    }
-    if (radius <= 0.0) {
-        return 0; // Trivial case
-    }
+    // --- Precompute Angle Derivatives ---
+    // This depends on p=[x,y,z,r,p,y] and stores results in j_ang_ and h_ang_
+    computeAngleDerivatives(p, compute_hessian);
 
-    std::vector<int> k_indices; // Indices relative to voxel_centroids_ cloud
-    // Reserve estimated space? Difficult for radius search.
+    // --- Reusable Structures for inner loop ---
+    Eigen::Matrix<float, 4, 6> point_gradient4; // Jacobian of point transform
+    Eigen::Matrix<float, 24, 6> point_hessian24; // Hessian of point transform
+    std::vector<LeafConstPtr> neighborhood; // Voxel neighbors for a point
+    std::vector<float> distances; // Distances to neighbors (used by KDTREE search)
+    constexpr size_t reserve_size = 27; // Max neighbors for DIRECT26 (more than DIRECT7)
+    neighborhood.reserve(reserve_size);
+    distances.reserve(reserve_size);
 
-    // Perform the KdTree search on the centroid cloud
-    int found_k = kdtree_.radiusSearch(point, radius, k_indices, k_sqr_distances, max_nn);
+    // --- Loop Over Transformed Source Points ---
+    for (size_t idx = 0; idx < trans_cloud.points.size(); ++idx)
+    {
+        const PointSource& x_trans_pt = trans_cloud.points[idx]; // Point already transformed by pose p
+        // Skip invalid points
+        if (!pcl::isFinite(x_trans_pt)) continue;
 
-    k_leaves.reserve(found_k); // Reserve final size
+        // --- Neighbor Search ---
+        // Find valid NDT voxels (LeafConstPtr) near the transformed point
+        neighborhood.clear(); // Clear from previous point
+        distances.clear();    // Clear from previous point
+        int neighbors_found = 0;
+        switch (search_method_)
+        {
+            case NeighborSearchMethod::KDTREE:
+                // Use KdTree on voxel centroids (requires VoxelGridCovariance::filter(true))
+                neighbors_found = target_cells_.radiusSearch(x_trans_pt, resolution_, neighborhood, distances);
+                break;
+            case NeighborSearchMethod::DIRECT7:
+                // Check center + 6 face neighbors
+                neighbors_found = target_cells_.getNeighborhoodAtPoint7(x_trans_pt, neighborhood);
+                break;
+            case NeighborSearchMethod::DIRECT1:
+            default:
+                // Check only the voxel containing the point
+                neighbors_found = target_cells_.getNeighborhoodAtPoint1(x_trans_pt, neighborhood);
+                break;
+        }
+        // Skip point if no valid neighbors (voxels with enough points) are found
+        if (neighbors_found == 0) continue;
 
-    // Map KdTree indices back to original Leaf indices and get Leaf pointers
-    for (int centroid_idx : k_indices) {
-        if (centroid_idx < 0 || static_cast<size_t>(centroid_idx) >= voxel_centroids_leaf_indices_.size()) {
-             PCL_ERROR("[%s::radiusSearch] Invalid index %d received from KdTree search.\n", getClassName().c_str(), centroid_idx);
-             continue;
+        // --- Get Original Point Coordinates ---
+        // Need original coords for calculating derivatives w.r.t pose parameters
+        if (!input_ || idx >= input_->size()) {
+             PCL_ERROR("[SvnNdt::computeParticleDerivatives] Internal error: input_ cloud invalid or index out of bounds (%zu).\n", idx);
+             continue; // Skip this point if source cloud pointer is bad
+        }
+        const PointSource& x_pt = (*input_)[idx]; // Original point
+        Eigen::Vector3d x_orig(x_pt.x, x_pt.y, x_pt.z);
+
+        // --- Compute Point Derivatives (Jacobian/Hessian w.r.t. pose p) ---
+        // Uses x_orig and the precomputed j_ang_, h_ang_ (based on p)
+        computePointDerivatives(x_orig, point_gradient4, point_hessian24, compute_hessian);
+
+        // --- Accumulate Contributions from Neighbors ---
+        double point_score_contribution = 0.0;
+        Vector6d point_gradient_contribution = Vector6d::Zero();
+        Matrix6d point_hessian_contribution = Matrix6d::Zero();
+        bool is_first_point_for_debug = !first_point_processed_debug; // Flag for printing details only once
+
+        for (const LeafConstPtr& cell : neighborhood)
+        {
+            if (!cell) { // Should not happen if neighbor search returns valid pointers
+                 PCL_WARN("[SvnNdt::computeParticleDerivatives] Nullptr encountered in neighborhood.\n");
+                 continue;
+            }
+
+            // Calculate point relative to voxel mean: x_trans = point_transformed - voxel_mean
+            Eigen::Vector3d x_rel = Eigen::Vector3d(x_trans_pt.x, x_trans_pt.y, x_trans_pt.z) - cell->getMean();
+            // Get precomputed inverse covariance from the voxel leaf
+            const Eigen::Matrix3d& c_inv = cell->getInverseCov();
+
+            // --- Call UpdateDerivatives to get contribution of this point-voxel interaction ---
+            double score_inc = updateDerivatives(point_gradient_contribution, point_hessian_contribution,
+                                                 point_gradient4, point_hessian24,
+                                                 x_rel, c_inv, compute_hessian,
+                                                 is_first_point_for_debug && (cell == neighborhood[0]) ); // Print debug only for the first point & first neighbor
+            point_score_contribution += score_inc;
+
+        } // End loop over neighbors
+
+        // --- Update Debug Flag ---
+        if (is_first_point_for_debug) {
+             first_point_processed_debug = true;
         }
 
-        size_t leaf_map_idx = voxel_centroids_leaf_indices_[centroid_idx];
-        LeafConstPtr leaf_ptr = getLeaf(leaf_map_idx); // Use safe getter
-        if (leaf_ptr) {
-            k_leaves.push_back(leaf_ptr);
+        // --- Add Point's Total Contribution to Overall Gradient/Hessian ---
+        // Check for NaN/Inf before accumulating to prevent corrupting totals
+        if (std::isfinite(point_score_contribution) &&
+            point_gradient_contribution.allFinite() &&
+            (!compute_hessian || point_hessian_contribution.allFinite()))
+        {
+            total_score += point_score_contribution;
+            score_gradient += point_gradient_contribution;
+            if (compute_hessian) {
+                hessian += point_hessian_contribution;
+            }
         } else {
-             // PCL_DEBUG("[%s::radiusSearch] Consistency warning: Centroid index %d maps to leaf index %zu, but getLeaf returned null.\n",
-             //           getClassName().c_str(), centroid_idx, leaf_map_idx);
+             // Reduce verbosity, maybe print only once or count occurrences
+             // PCL_WARN("[SvnNdt::computeParticleDerivatives] NaN/Inf detected in contribution for point index %zu. Skipping contribution.\n", idx);
         }
+
+    } // End loop over points
+
+    // --- Hessian Regularization (Levenberg-Marquardt style) ---
+    // Add a small identity matrix scaled by lambda to the diagonal to improve conditioning
+    if (compute_hessian) {
+        constexpr double lambda = 1e-3; // Regularization strength (can be tuned)
+        hessian += lambda * Matrix6d::Identity();
     }
 
-    // Ensure the distances vector matches the number of leaves actually added
-    k_sqr_distances.resize(k_leaves.size());
-    return static_cast<int>(k_leaves.size());
-}
+    // --- Final Sanity Checks & Debug Print ---
+    if (!score_gradient.allFinite()) {
+        PCL_ERROR("[SvnNdt::computeParticleDerivatives] Final score_gradient contains NaN/Inf! Resetting to zero.\n");
+        score_gradient.setZero(); // Avoid propagating errors
+    }
+    if (compute_hessian && !hessian.allFinite()) {
+        PCL_ERROR("[SvnNdt::computeParticleDerivatives] Final hessian contains NaN/Inf! Resetting to identity.\n");
+        hessian = Matrix6d::Identity(); // Use identity if invalid
+    }
 
+    // --- Debug Print for Final Gradient Norm of this particle ---
+    // std::cout << std::fixed << std::setprecision(5);
+    // std::cout << "    computeParticleDeriv Final Grad Norm: " << score_gradient.norm() << std::endl;
+    // ---
 
-// --- Direct Neighbor Searches ---
+    // Return the total NDT score (sum of -d1*exp(...) terms)
+    return total_score;
 
-template <typename PointT>
-int VoxelGridCovariance<PointT>::getNeighborhoodAtPoint7(
-    const PointT& reference_point, std::vector<LeafConstPtr>& neighbors) const
+} // End computeParticleDerivatives
+
+//=================================================================================================
+// Main Alignment Function (SVN-NDT Implementation)
+//=================================================================================================
+template <typename PointSource, typename PointTarget>
+SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
+    const PointCloudSource& source_cloud,
+    const gtsam::Pose3& prior_mean)
 {
-    neighbors.clear();
-    neighbors.reserve(7); // Reserve space for center + 6 potential face neighbors
+    SvnNdtResult result; // Structure to store alignment results
 
-    // Get the leaf containing the reference point first
-    LeafConstPtr center_leaf = getLeaf(reference_point);
-    if (center_leaf) {
-        neighbors.push_back(center_leaf);
+    // --- Input Sanity Checks ---
+    if (!target_cells_.getInputCloud() || target_cells_.getAllLeaves().empty()) {
+        PCL_ERROR("[SvnNdt::align] Target NDT grid is not initialized. Call setInputTarget() first.\n");
+        result.converged = false;
+        return result;
+    }
+    if (source_cloud.empty()) {
+        PCL_ERROR("[SvnNdt::align] Input source cloud is empty.\n");
+        result.converged = false;
+        return result;
+    }
+    if (K_ <= 0) {
+        PCL_ERROR("[SvnNdt::align] Particle count (K_) must be positive.\n");
+        result.converged = false; // K_ is already clamped in setter, but double-check
+        return result;
     }
 
-    // Check the 6 face-adjacent neighbors
-    Eigen::Vector3f p = reference_point.getVector3fMap();
-    float wx = this->leaf_size_[0];
-    float wy = this->leaf_size_[1];
-    float wz = this->leaf_size_[2];
+    // --- Initialization ---
+    // Store a const shared pointer to the source cloud for access within derivative calculations
+    input_ = source_cloud.makeShared();
 
-    // Proceed only if leaf size is valid (non-zero)
-    if (wx <= 0 || wy <= 0 || wz <= 0) {
-        if (!center_leaf) { // Only warn if center wasn't found either AND leaf size is bad
-            PCL_WARN("[%s::getNeighborhoodAtPoint7] Leaf size is non-positive, cannot check neighbors.\n", getClassName().c_str());
+    // Initialize particle poses around the prior mean
+    std::vector<gtsam::Pose3> particles(K_);
+    // Define initial noise sigmas for particle spread (tune these if needed)
+    // Order: [roll, pitch, yaw, x, y, z] in radians and meters
+    Vector6d initial_sigmas; initial_sigmas << 0.02, 0.02, 0.05, 0.1, 0.1, 0.1; // Example values
+    auto prior_noise_model = gtsam::noiseModel::Diagonal::Sigmas(initial_sigmas);
+    gtsam::Sampler sampler(prior_noise_model, std::chrono::system_clock::now().time_since_epoch().count()); // Use time-based seed
+
+    for (int k = 0; k < K_; ++k) {
+        // Sample in the tangent space at prior_mean and retract to get a pose on the manifold
+        particles[k] = prior_mean.retract(sampler.sample());
+    }
+
+    // Allocate storage for intermediate results (use aligned allocators for Eigen types)
+    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> loss_gradients(K_); // Gradient of NDT score * (-1)
+    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> loss_hessians(K_);  // Hessian of NDT score * (-1)
+    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> particle_updates(K_); // Solved SVN update vectors
+    std::vector<PointCloudSource> transformed_clouds(K_); // Per-particle transformed clouds
+
+    Matrix6d I6 = Matrix6d::Identity(); // Reusable identity matrix
+
+    // --- SVN Iteration Loop ---
+    // ** FIX 2: Declare avg_update_norm outside the loop **
+    double avg_update_norm = std::numeric_limits<double>::max(); // Initialize with large value
+    for (int iter = 0; iter < max_iter_; ++iter)
+    {
+        auto iter_start_time = std::chrono::high_resolution_clock::now(); // For timing
+
+        // --- Stage 1: Compute NDT Derivatives for each particle (Parallel using TBB) ---
+        auto stage1_start_time = std::chrono::high_resolution_clock::now();
+        tbb::parallel_for(tbb::blocked_range<int>(0, K_),
+            [&](const tbb::blocked_range<int>& r) {
+
+            // Create a thread-local copy of 'this' to manage internal state like j_ang_, h_ang_ safely.
+            SvnNormalDistributionsTransform<PointSource, PointTarget> local_ndt = *this;
+            local_ndt.input_ = this->input_; // Ensure the local copy points to the same input cloud
+
+            Vector6d grad_k; // Per-particle gradient
+            Matrix6d hess_k; // Per-particle Hessian
+
+            for (int k = r.begin(); k < r.end(); ++k) {
+                // Transform the original source cloud by the current particle's pose
+                pcl::transformPointCloud(source_cloud, transformed_clouds[k], particles[k].matrix().cast<float>());
+
+                // Convert gtsam::Pose3 particle to NDT's expected [x,y,z,r,p,y] vector
+                Vector6d p_k_ndt;
+                gtsam::Vector3 rpy = particles[k].rotation().rpy(); // GTSAM default RPY
+                // ** FIX 1: Correctly get translation vector **
+                p_k_ndt.head<3>() = particles[k].translation(); // gtsam::Point3 is compatible
+                p_k_ndt.tail<3>() = rpy; // Assign roll, pitch, yaw
+
+                // Compute NDT score, gradient, and Hessian for this particle's pose
+                double score_k = local_ndt.computeParticleDerivatives(grad_k, hess_k, transformed_clouds[k], p_k_ndt, true);
+
+                // Store NEGATED gradient and Hessian
+                loss_gradients[k] = -grad_k;
+                loss_hessians[k] = -hess_k;
+
+                 // Sanity check the Hessian computed by NDT before storing
+                 if (!hess_k.allFinite() || hess_k.hasNaN()) {
+                     PCL_WARN("[SvnNdt::align Stage1] NaN/Inf in NDT Hessian for particle %d, iter %d. Using -Identity.\n", k, iter);
+                     loss_hessians[k] = -I6; // Store negative identity if invalid
+                 } else if (loss_hessians[k].hasNaN()) {
+                     // This check might be redundant now, but keep for safety
+                     PCL_WARN("[SvnNdt::align Stage1] Stored loss_hessian has NaN for particle %d, iter %d after negation. Using -Identity.\n", k, iter);
+                     loss_hessians[k] = -I6;
+                 }
+            }
+        }); // End TBB Stage 1
+        auto stage1_end_time = std::chrono::high_resolution_clock::now();
+
+        // --- Stage 2: Calculate SVN Updates (Parallel using TBB) ---
+        auto stage2_start_time = std::chrono::high_resolution_clock::now();
+        tbb::parallel_for(tbb::blocked_range<int>(0, K_),
+            [&](const tbb::blocked_range<int>& r) {
+
+            for (int k = r.begin(); k < r.end(); ++k) {
+                Vector6d phi_k_star = Vector6d::Zero(); // SVGD direction component
+                Matrix6d H_k_tilde = Matrix6d::Zero();  // SVN Hessian component
+
+                // Aggregate contributions from all particles (l) to particle k
+                for (int l = 0; l < K_; ++l) {
+                    // Kernel value and gradient (operate on gtsam::Pose3)
+                    double k_val = rbf_kernel(particles[l], particles[k]);
+                    Vector6d k_grad = rbf_kernel_gradient(particles[l], particles[k]); // Gradient w.r.t particles[l]
+
+                    // Check for numerical issues in kernel calculations
+                    if (!std::isfinite(k_val) || !k_grad.allFinite()) {
+                         PCL_WARN("[SvnNdt::align Stage2] NaN/Inf in kernel computation between particles %d and %d, iter %d.\n", l, k, iter);
+                         continue; // Skip contribution from this pair
+                     }
+
+                    // Accumulate SVGD direction term: k(l,k)*grad(loss_l) + grad_l(k(l,k))
+                    if (!loss_gradients[l].allFinite()) {
+                         PCL_WARN("[SvnNdt::align Stage2] NaN/Inf in loss_gradient for particle %d, iter %d. Skipping term in phi_k_star.\n", l, iter);
+                    } else {
+                         phi_k_star += k_val * loss_gradients[l];
+                    }
+                    phi_k_star += k_grad; // Always add kernel gradient
+
+
+                    // Accumulate SVN Hessian term: k(l,k)^2 * hess(loss_l) + grad_l(k(l,k)) * grad_l(k(l,k))^T
+                    if (loss_hessians[l].allFinite()) { // Use the stored (negated) NDT hessian
+                        H_k_tilde += (k_val * k_val) * loss_hessians[l];
+                    } else {
+                        // Optionally add a warning if Hessian was invalid
+                        // PCL_WARN("[SvnNdt::align Stage2] Skipping invalid loss_hessian contribution from l=%d for H_k_tilde.\n", l);
+                    }
+                    // Always add the kernel gradient term
+                    H_k_tilde += (k_grad * k_grad.transpose());
+                }
+
+                // Average over particles
+                if (K_ > 0) {
+                    phi_k_star /= static_cast<double>(K_);
+                    H_k_tilde /= static_cast<double>(K_);
+                }
+
+                // Add regularization to the SVN Hessian for stability before inversion
+                constexpr double svn_hess_lambda = 1e-4;
+                H_k_tilde += svn_hess_lambda * I6;
+
+                // Solve the linear system: H_k_tilde * update = phi_k_star
+                Eigen::LDLT<Matrix6d> solver(H_k_tilde);
+                if (solver.info() == Eigen::Success && H_k_tilde.allFinite()) {
+                     Vector6d update = solver.solve(phi_k_star);
+                     if (update.allFinite()) {
+                         particle_updates[k] = update; // Store the solved update direction
+                     } else {
+                         PCL_WARN("[SvnNdt::align Stage2] Solver produced NaN/Inf update for particle %d, iter %d. Setting update to zero.\n", k, iter);
+                         particle_updates[k].setZero();
+                     }
+                } else {
+                    PCL_ERROR("[SvnNdt::align Stage2] LDLT solver failed or H_tilde invalid for particle %d, iter %d (Info: %d). Setting update to zero.\n", k, iter, solver.info());
+                    // Optionally print H_k_tilde here for debugging
+                    // if (!H_k_tilde.allFinite()) std::cerr << "H_k_tilde contained NaN/Inf!" << std::endl;
+                    // else std::cerr << "H_k_tilde:\n" << H_k_tilde << std::endl;
+                    particle_updates[k].setZero();
+                }
+            }
+        }); // End TBB Stage 2
+        auto stage2_end_time = std::chrono::high_resolution_clock::now();
+
+        // --- Stage 3: Apply Updates to Particles (Serial) ---
+        double total_update_norm_sq = 0.0; // Use squared norm initially to avoid sqrt
+        for (int k = 0; k < K_; ++k) {
+            // Apply the update direction scaled by step size
+            // Following SVN paper Eq 16: xi <- xi + eps * H^-1 * phi*
+            Vector6d scaled_update = step_size_ * particle_updates[k]; // Use positive update
+
+             // Check for numerical issues in the final update vector
+             if (!scaled_update.allFinite()) {
+                 PCL_WARN("[SvnNdt::align Stage3] NaN/Inf in scaled update for particle %d, iter %d. Skipping update.\n", k, iter);
+                 continue; // Skip updating this particle
+             }
+
+            // Accumulate squared norm of the *unscaled* update for convergence check
+            total_update_norm_sq += particle_updates[k].squaredNorm();
+
+            // Apply the update on the manifold using gtsam::Pose3::retract
+            particles[k] = particles[k].retract(scaled_update);
         }
-        return static_cast<int>(neighbors.size());
+        auto stage3_end_time = std::chrono::high_resolution_clock::now();
+
+        // --- Check Convergence ---
+        result.iterations = iter + 1;
+        // Calculate the average norm here
+        avg_update_norm = (K_ > 0) ? std::sqrt(total_update_norm_sq / static_cast<double>(K_)) : 0.0;
+
+        auto iter_end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> stage1_ms = stage1_end_time - stage1_start_time;
+        std::chrono::duration<double, std::milli> stage2_ms = stage2_end_time - stage2_start_time;
+        std::chrono::duration<double, std::milli> stage3_ms = stage3_end_time - stage2_end_time; // Stage 3 starts after Stage 2 ends
+        std::chrono::duration<double, std::milli> iter_ms = iter_end_time - iter_start_time;
+
+        // Debug print for average update norm and timings
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "[SVN Iter " << std::setw(2) << iter << "] Avg Update Norm: " << avg_update_norm
+                  << " (T: " << std::setprecision(1) << iter_ms.count() << "ms = "
+                  << "S1:" << stage1_ms.count() << " + S2:" << stage2_ms.count() << " + S3:" << stage3_ms.count() << ")" << std::endl;
+
+        // Check if average update norm is below the threshold
+        if (avg_update_norm < stop_thresh_) {
+            result.converged = true;
+             std::cout << "[SvnNdt::align] Converged in " << result.iterations << " iterations (Avg Update Norm: " << avg_update_norm << " < " << stop_thresh_ << ")." << std::endl;
+            break; // Exit loop
+        }
+
+    } // End SVN iteration loop
+
+    // --- Finalization: Compute Mean Pose and Covariance from Particles ---
+    if (K_ > 0) {
+        // --- Calculate Mean Pose ---
+        // Use Frechet mean approximation: average in tangent space of initial prior, then retract.
+        Vector6d mean_xi_at_prior = Vector6d::Zero();
+        for(int k=0; k < K_; ++k) {
+            // Calculate tangent vector from prior_mean to particle k
+            mean_xi_at_prior += gtsam::Pose3::Logmap(prior_mean.between(particles[k]));
+        }
+        mean_xi_at_prior /= static_cast<double>(K_);
+        result.final_pose = prior_mean.retract(mean_xi_at_prior);
+
+        // --- Calculate Covariance ---
+        if (K_ > 1) {
+            result.final_covariance.setZero();
+            // Calculate tangent vectors relative to the *computed mean pose*
+            std::vector<Vector6d> tangent_vectors_at_mean(K_);
+             Vector6d mean_xi_at_mean = Vector6d::Zero(); // Should be near zero if mean is correct
+             for(int k=0; k < K_; ++k) {
+                 tangent_vectors_at_mean[k] = gtsam::Pose3::Logmap(result.final_pose.between(particles[k]));
+                 mean_xi_at_mean += tangent_vectors_at_mean[k];
+             }
+             mean_xi_at_mean /= static_cast<double>(K_); // Calculate mean in the final tangent space
+
+            // Compute sample covariance in the tangent space at the mean pose
+            for(int k=0; k < K_; ++k) {
+                Vector6d diff = tangent_vectors_at_mean[k] - mean_xi_at_mean; // Difference from mean tangent vector
+                result.final_covariance += diff * diff.transpose();
+            }
+            result.final_covariance /= static_cast<double>(K_ - 1); // Use N-1 for sample covariance
+        } else {
+            // If only one particle, covariance is undefined from samples, use prior's covariance
+            result.final_covariance = prior_noise_model->covariance(); // Or set to Identity/Zero? Prior seems reasonable.
+        }
+
+        // --- Final Covariance Regularization ---
+        // Ensure the final covariance is positive semi-definite and reasonably conditioned
+        Eigen::SelfAdjointEigenSolver<Matrix6d> final_eigensolver(result.final_covariance);
+        if (final_eigensolver.info() == Eigen::Success) {
+            Vector6d final_evals = final_eigensolver.eigenvalues();
+            // Check if smallest eigenvalue is too small or negative
+            if (final_evals(0) < 1e-9) { // Use a small threshold
+                 PCL_DEBUG("[SvnNdt::align] Final covariance has small/negative eigenvalues. Applying regularization.\n");
+                 // Inflate eigenvalues below threshold
+                 for(int i=0; i<6; ++i) final_evals(i) = std::max(final_evals(i), 1e-9);
+                 // Recompose
+                 result.final_covariance = final_eigensolver.eigenvectors() * final_evals.asDiagonal() * final_eigensolver.eigenvectors().transpose();
+            }
+        } else {
+             PCL_WARN("[SvnNdt::align] Eigendecomposition failed for final covariance. Matrix might be invalid. Using regularized identity.\n");
+             result.final_covariance = 1e-6 * I6; // Use a small regularized identity as fallback
+        }
+
+    } else { // Should not happen due to check at start, but handle defensively
+        result.final_pose = prior_mean;
+        result.final_covariance.setIdentity(); // Default to identity if K=0
     }
 
-    // Check neighbors using getLeaf(Vector3f), which handles bounds checking and validity
-    LeafConstPtr neighbor = nullptr;
-    neighbor = getLeaf(Eigen::Vector3f(p.x() + wx, p.y(),     p.z()));     if (neighbor) neighbors.push_back(neighbor);
-    neighbor = getLeaf(Eigen::Vector3f(p.x() - wx, p.y(),     p.z()));     if (neighbor) neighbors.push_back(neighbor);
-    neighbor = getLeaf(Eigen::Vector3f(p.x(),      p.y() + wy, p.z()));     if (neighbor) neighbors.push_back(neighbor);
-    neighbor = getLeaf(Eigen::Vector3f(p.x(),      p.y() - wy, p.z()));     if (neighbor) neighbors.push_back(neighbor);
-    neighbor = getLeaf(Eigen::Vector3f(p.x(),      p.y(),     p.z() + wz)); if (neighbor) neighbors.push_back(neighbor);
-    neighbor = getLeaf(Eigen::Vector3f(p.x(),      p.y(),     p.z() - wz)); if (neighbor) neighbors.push_back(neighbor);
+    // Clear the internal pointer to the source cloud
+    input_.reset();
 
-    // Optional: Remove duplicates if a point lies exactly on a boundary, causing
-    // multiple lookups (e.g., center and +wx) to potentially return the same leaf pointer.
-    // This is often unnecessary unless leaf sizes are extremely small relative to point precision.
-    // If needed:
-    // std::sort(neighbors.begin(), neighbors.end());
-    // neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
-
-    return static_cast<int>(neighbors.size());
-}
-
-
-template <typename PointT>
-int VoxelGridCovariance<PointT>::getNeighborhoodAtPoint1(
-    const PointT& reference_point, std::vector<LeafConstPtr>& neighbors) const
-{
-    neighbors.clear();
-    // Get only the single leaf containing the reference point
-    LeafConstPtr leaf = getLeaf(reference_point);
-    if (leaf) {
-        neighbors.push_back(leaf);
-        return 1;
+    // ** FIX 2: Correct access to avg_update_norm and use PCL_WARN_STREAM **
+    if (!result.converged && result.iterations >= max_iter_) {
+        // Use PCL_WARN_STREAM for safer, stream-based output
+        PCL_WARN_STREAM("[SvnNdt::align] Reached max iterations (" << max_iter_
+                      << ") without converging (Avg Update Norm: " << std::fixed << std::setprecision(6) << avg_update_norm
+                      << " >= " << stop_thresh_ << ").\n");
     }
-    return 0; // No valid leaf found containing the point
-}
 
+    return result;
+}
 
 } // namespace svn_ndt
 
-#endif // SVN_NDT_VOXEL_GRID_COVARIANCE_IMPL_HPP_
+#endif // SVN_NDT_SVN_NDT_IMPL_HPP_
