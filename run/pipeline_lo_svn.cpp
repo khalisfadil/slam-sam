@@ -148,7 +148,7 @@ int main() {
                 continue;
             }
             *lidar_latest_frame_id = frame_ptr->frame_id;
-            std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
+            // std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
             frameLidarQueue.push(std::move(frame_ptr));
         }
         std::cout << "Lidar processing thread stopped.\n";
@@ -388,35 +388,76 @@ int main() {
                 svn_ndt::SvnNdtResult result = svn_ndt_ptr->align(*pointsBody, predTb2m);
                 predTb2m = result.final_pose;
                 pcl::PointCloud<pcl::PointXYZI>::Ptr pointsMap(new pcl::PointCloud<pcl::PointXYZI>());
-                pcl::transformPointCloud(*pointsBody, *pointsMap, current_ins_state.pose().matrix());
+                pcl::transformPointCloud(*pointsBody, *pointsMap, predTb2m.matrix());
                 pointsArchive[id] = {pointsMap, timestamp};
                 insPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
-                loPoseArchive[id] = {current_ins_state.pose().matrix(), timestamp};
+                loPoseArchive[id] = {predTb2m.matrix(), timestamp};
                 targetID.push_back(id);
                 if (targetID.size() > targetWinSize) {
                     targetID.pop_front();
                 }
 
-                std::cout << "\nStarting SVN-NDT alignment..." << std::endl;
-                std::cout << "\n--- SVN-NDT Results ---" << std::endl;
-                std::cout << "Converged: " << (result.converged ? "Yes" : "No") << std::endl;
-                std::cout << "Iterations: " << result.iterations << std::endl;
-                std::cout << "Final Mean Pose (GTSAM format):" << std::endl;
-                result.final_pose.print("  "); // GTSAM's print function
-                gtsam::Vector3 rpy = result.final_pose.rotation().rpy(); // Roll, Pitch, Yaw
-                gtsam::Point3 xyz = result.final_pose.translation();
-                std::cout << "Final Mean Pose (RPY deg / XYZ m):" << std::endl;
-                std::cout << "  RPY(deg): [" << rpy.x() * 180.0 / M_PI << ", "
-                        << rpy.y() * 180.0 / M_PI << ", " << rpy.z() * 180.0 / M_PI << "]" << std::endl;
-                std::cout << "  XYZ(m):   [" << xyz.x() << ", " << xyz.y() << ", " << xyz.z() << "]" << std::endl;
-                std::cout << "Final Covariance Matrix (r,p,y,x,y,z):" << std::endl;
-                std::cout << result.final_covariance << std::endl;
+                // =========================================================================
+                // --- START: POSE COMPARISON & RESULTS ---
+                // =========================================================================
+                
+                // --- 1. Get Poses ---
+                gtsam::Pose3 ins_pose = current_ins_state.pose();
+                gtsam::Pose3 lo_pose = result.final_pose; // This is predTb2m
+
+                // --- 2. Calculate Error ---
+                // error_pose = lo_pose_inverse * ins_pose
+                // This tells us "what transform takes the LO pose to the INS pose"
+                gtsam::Pose3 error_pose = lo_pose.between(ins_pose); 
+                gtsam::Point3 trans_error_xyz = error_pose.translation();
+                gtsam::Vector3 rot_error_rpy_rad = error_pose.rotation().rpy(); // in radians
+                double trans_rmse = trans_error_xyz.norm();
+
+                // --- 3. Get Components for Printing ---
+                gtsam::Vector3 ins_rpy_rad = ins_pose.rotation().rpy();
+                gtsam::Point3 ins_xyz = ins_pose.translation();
+                gtsam::Vector3 lo_rpy_rad = lo_pose.rotation().rpy();
+                gtsam::Point3 lo_xyz = lo_pose.translation();
+
+                // --- 4. Print Comparison Table ---
+                std::cout << "\n--- INS vs. LO Comparison (Frame " << id << ") ---" << std::endl;
+                std::cout << std::fixed << std::setprecision(6);
+                std::cout << "           [Roll(deg), Pitch(deg), Yaw(deg),   X(m),      Y(m),      Z(m)]" << std::endl;
+                
+                std::cout << "  INS Pose:  [" << std::setw(10) << ins_rpy_rad.x() * 180.0 / M_PI << ", "
+                          << std::setw(10) << ins_rpy_rad.y() * 180.0 / M_PI << ", "
+                          << std::setw(10) << ins_rpy_rad.z() * 180.0 / M_PI << ", "
+                          << std::setw(10) << ins_xyz.x() << ", "
+                          << std::setw(10) << ins_xyz.y() << ", "
+                          << std::setw(10) << ins_xyz.z() << "]" << std::endl;
+
+                std::cout << "  LO Pose:   [" << std::setw(10) << lo_rpy_rad.x() * 180.0 / M_PI << ", "
+                          << std::setw(10) << lo_rpy_rad.y() * 180.0 / M_PI << ", "
+                          << std::setw(10) << lo_rpy_rad.z() * 180.0 / M_PI << ", "
+                          << std::setw(10) << lo_xyz.x() << ", "
+                          << std::setw(10) << lo_xyz.y() << ", "
+                          << std::setw(10) << lo_xyz.z() << "]" << std::endl;
+
+                std::cout << "  Abs Error: [" << std::setw(10) << rot_error_rpy_rad.x() * 180.0 / M_PI << ", "
+                          << std::setw(10) << rot_error_rpy_rad.y() * 180.0 / M_PI << ", "
+                          << std::setw(10) << rot_error_rpy_rad.z() * 180.0 / M_PI << ", "
+                          << std::setw(10) << trans_error_xyz.x() << ", "
+                          << std::setw(10) << trans_error_xyz.y() << ", "
+                          << std::setw(10) << trans_error_xyz.z() << "]" << std::endl;
+
+                std::cout << "\n  Translation RMSE (m): " << trans_rmse << std::endl;
+
+                // --- 5. Print SVN-NDT Specifics ---
+                std::cout << "\n--- SVN-NDT Result Details ---" << std::endl;
+                std::cout << "Converged: " << (result.converged ? "Yes" : "No") << " in " << result.iterations << " iterations." << std::endl;
                 Eigen::Matrix<double, 6, 1> variances = result.final_covariance.diagonal();
                 Eigen::Matrix<double, 6, 1> stddevs = variances.array().sqrt(); // Standard deviations
-                std::cout << "Standard Deviations (r,p,y,x,y,z):" << std::endl;
-                std::cout << "  Rotation (rad): [" << stddevs(0) << ", " << stddevs(1) << ", " << stddevs(2) << "]" << std::endl;
-                std::cout << "  Translation (m): [" << stddevs(3) << ", " << stddevs(4) << ", " << stddevs(5) << "]" << std::endl;
-                std::cout << "\nFinished SVN-NDT alignment..." << std::endl;
+                std::cout << "Std Deviations (r,p,y,x,y,z):" << std::endl;
+                std::cout << "  Rotation (deg): [" << stddevs(0) * 180.0 / M_PI << ", " << stddevs(1) * 180.0 / M_PI << ", " << stddevs(2) * 180.0 / M_PI << "]" << std::endl;
+                std::cout << "  Translation (m): [" << stddevs(3) << ", " << stddevs(4) << ", " << std::setprecision(8) << stddevs(5) << "]" << std::endl;
+                // =========================================================================
+                // --- END: POSE COMPARISON & RESULTS ---
+                // =========================================================================
             }
             // if(!pointsArchive.empty() || !insPoseArchive.empty() || !loPoseArchive.empty()) {
             //     auto vis_data_ptr = vis_data_pool.Get();
