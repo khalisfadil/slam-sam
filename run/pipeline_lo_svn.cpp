@@ -148,7 +148,7 @@ int main() {
                 continue;
             }
             *lidar_latest_frame_id = frame_ptr->frame_id;
-            // std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
+            std::cout << "Decoded frame " << frame_ptr->frame_id << " with " << frame_ptr->numberpoints << " points\n";
             frameLidarQueue.push(std::move(frame_ptr));
         }
         std::cout << "Lidar processing thread stopped.\n";
