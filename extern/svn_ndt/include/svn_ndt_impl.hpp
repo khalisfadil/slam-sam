@@ -593,9 +593,11 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
                     phi_k_star += k_val * loss_gradients[l] + k_grad;
 
-                    // --- Use ONLY kernel gradient term for H_k_tilde ---
-                    H_k_tilde += (k_grad * k_grad.transpose());
-                    // ---
+                    if (loss_hessians[l].allFinite()) {
+                        H_k_tilde += (k_val * k_val) * loss_hessians[l] + (k_grad * k_grad.transpose());
+                    } else {
+                        H_k_tilde += (k_grad * k_grad.transpose()); // Fallback
+                    }
                 }
 
                 phi_k_star /= static_cast<double>(K_);
