@@ -419,33 +419,33 @@ int main() {
                 gtsam::Vector3 lo_rpy_rad = lo_pose.rotation().rpy();
                 gtsam::Point3 lo_xyz = lo_pose.translation();
 
-                // --- 4. Print Comparison Table ---
-                std::cout << "\n--- INS vs. LO Comparison (Frame " << id << ") ---" << std::endl;
-                std::cout << std::fixed << std::setprecision(6);
-                std::cout << "           [Roll(deg), Pitch(deg), Yaw(deg),   X(m),      Y(m),      Z(m)]" << std::endl;
+                // // --- 4. Print Comparison Table ---
+                // std::cout << "\n--- INS vs. LO Comparison (Frame " << id << ") ---" << std::endl;
+                // std::cout << std::fixed << std::setprecision(6);
+                // std::cout << "           [Roll(deg), Pitch(deg), Yaw(deg),   X(m),      Y(m),      Z(m)]" << std::endl;
                 
-                std::cout << "  INS Pose:  [" << std::setw(10) << ins_rpy_rad.x() * 180.0 / M_PI << ", "
-                          << std::setw(10) << ins_rpy_rad.y() * 180.0 / M_PI << ", "
-                          << std::setw(10) << ins_rpy_rad.z() * 180.0 / M_PI << ", "
-                          << std::setw(10) << ins_xyz.x() << ", "
-                          << std::setw(10) << ins_xyz.y() << ", "
-                          << std::setw(10) << ins_xyz.z() << "]" << std::endl;
+                // std::cout << "  INS Pose:  [" << std::setw(10) << ins_rpy_rad.x() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << ins_rpy_rad.y() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << ins_rpy_rad.z() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << ins_xyz.x() << ", "
+                //           << std::setw(10) << ins_xyz.y() << ", "
+                //           << std::setw(10) << ins_xyz.z() << "]" << std::endl;
 
-                std::cout << "  LO Pose:   [" << std::setw(10) << lo_rpy_rad.x() * 180.0 / M_PI << ", "
-                          << std::setw(10) << lo_rpy_rad.y() * 180.0 / M_PI << ", "
-                          << std::setw(10) << lo_rpy_rad.z() * 180.0 / M_PI << ", "
-                          << std::setw(10) << lo_xyz.x() << ", "
-                          << std::setw(10) << lo_xyz.y() << ", "
-                          << std::setw(10) << lo_xyz.z() << "]" << std::endl;
+                // std::cout << "  LO Pose:   [" << std::setw(10) << lo_rpy_rad.x() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << lo_rpy_rad.y() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << lo_rpy_rad.z() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << lo_xyz.x() << ", "
+                //           << std::setw(10) << lo_xyz.y() << ", "
+                //           << std::setw(10) << lo_xyz.z() << "]" << std::endl;
 
-                std::cout << "  Abs Error: [" << std::setw(10) << rot_error_rpy_rad.x() * 180.0 / M_PI << ", "
-                          << std::setw(10) << rot_error_rpy_rad.y() * 180.0 / M_PI << ", "
-                          << std::setw(10) << rot_error_rpy_rad.z() * 180.0 / M_PI << ", "
-                          << std::setw(10) << trans_error_xyz.x() << ", "
-                          << std::setw(10) << trans_error_xyz.y() << ", "
-                          << std::setw(10) << trans_error_xyz.z() << "]" << std::endl;
+                // std::cout << "  Abs Error: [" << std::setw(10) << rot_error_rpy_rad.x() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << rot_error_rpy_rad.y() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << rot_error_rpy_rad.z() * 180.0 / M_PI << ", "
+                //           << std::setw(10) << trans_error_xyz.x() << ", "
+                //           << std::setw(10) << trans_error_xyz.y() << ", "
+                //           << std::setw(10) << trans_error_xyz.z() << "]" << std::endl;
 
-                std::cout << "\n  Translation RMSE (m): " << trans_rmse << std::endl;
+                // std::cout << "\n  Translation RMSE (m): " << trans_rmse << std::endl;
 
                 // --- 5. Print SVN-NDT Specifics ---
                 std::cout << "\n--- SVN-NDT Result Details ---" << std::endl;

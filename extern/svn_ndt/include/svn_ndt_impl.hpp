@@ -587,7 +587,10 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         result.iterations = iter + 1;
         double avg_update_norm = (K_ > 0) ? (total_update_norm / static_cast<double>(K_)) : 0.0;
 
-        // std::cout << "Iter: " << iter << ", Avg Update Norm: " << avg_update_norm << std::endl; // Debug
+        // --- ADD THIS LINE ---
+        std::cout << "[SVN Iter " << iter << "] Avg Update Norm: " << avg_update_norm << std::endl; 
+        // ---
+
         if (avg_update_norm < stop_thresh_) {
             result.converged = true;
             break;
