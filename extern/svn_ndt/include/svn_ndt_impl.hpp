@@ -461,7 +461,7 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
 
     // --- >>> ADD HESSIAN REGULARIZATION (Levenberg-Marquardt style) <<< ---
     if (compute_hessian) {
-        double lambda = 0.1; // Regularization strength (tune if needed)
+        double lambda = 1e-4; // Regularization strength (tune if needed)
         hessian += lambda * Matrix6d::Identity();
     }
     // --- >>> END REGULARIZATION <<< ---
