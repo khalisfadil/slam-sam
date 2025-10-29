@@ -105,6 +105,13 @@ public:
      */
     void setResolution(float resolution);
 
+    /**
+     * @brief Sets the minimum number of points required for a voxel to be valid.
+     * @details This is passed to the internal VoxelGridCovariance. Must be >= 3.
+     * @param min_points Minimum number of points.
+     */
+    void setMinPointPerVoxel(int min_points);
+
     /** @brief Gets the current resolution used for the NDT voxel grid. */
     float getResolution() const { return resolution_; }
 
@@ -159,7 +166,12 @@ public:
         const gtsam::Pose3& prior_mean
     ); // Implementation in .hpp file
 
-protected: // --- Internal Methods and Data (Implementations expected in svn_ndt_impl.hpp) ---
+// Make internal methods public temporarily for testing, if necessary
+// #ifdef SVN_NDT_TESTING
+public:
+// #else
+// protected: // Keep these protected for normal use
+// #endif
 
     // --- Core NDT Math Functions (Adapted for SVN-NDT context) ---
 
@@ -190,7 +202,7 @@ protected: // --- Internal Methods and Data (Implementations expected in svn_ndt
      * @param[in] x_trans Transformed point relative to the voxel mean (point - mean).
      * @param[in] c_inv Inverse covariance matrix of the voxel.
      * @param[in] compute_hessian Flag to enable/disable Hessian update.
-     * @param[in] print_debug Flag for optional debug output.
+     * @param[in] use_gauss_newton_hessian Flag to use Gauss-Newton approximation for Hessian.
      * @return The score contribution of this point-voxel interaction.
      */
     double updateDerivatives(
@@ -201,16 +213,16 @@ protected: // --- Internal Methods and Data (Implementations expected in svn_ndt
         const Eigen::Vector3d& x_trans,
         const Eigen::Matrix3d& c_inv,
         bool compute_hessian = true,
-        bool print_debug = false); // Default print_debug to false
+        bool use_gauss_newton_hessian = true) const; // <<< ADDED CONST
 
 
     /**
      * @brief Precomputes the angular portions of the Jacobian and Hessian matrices.
      * @param p The pose vector in **[x, y, z, roll, pitch, yaw]** format.
      * @param compute_hessian Flag to enable/disable Hessian precomputation.
-     * @warning Expects pose 'p' in [x,y,z,r,p,y] order.
+     * @warning Expects pose 'p' in [x,y,z,r,p,y] order. Modifies member variables j_ang_ and h_ang_.
      */
-    void computeAngleDerivatives(const Vector6d& p, bool compute_hessian = true);
+    void computeAngleDerivatives(const Vector6d& p, bool compute_hessian = true); // Remains non-const
 
     /**
      * @brief Computes the Jacobian and Hessian of a single point's transformation w.r.t. the pose parameters.
@@ -224,7 +236,7 @@ protected: // --- Internal Methods and Data (Implementations expected in svn_ndt
         const Eigen::Vector3d& x,                     // Original point
         Eigen::Matrix<float, 4, 6>& point_gradient, // Output Jacobian for [x,y,z,r,p,y]
         Eigen::Matrix<float, 24, 6>& point_hessian, // Output Hessian for [x,y,z,r,p,y]
-        bool compute_hessian = true);
+        bool compute_hessian = true) const; // <<< ADDED CONST
 
 
     // --- SVN Helper Functions ---
@@ -236,7 +248,7 @@ protected: // --- Internal Methods and Data (Implementations expected in svn_ndt
      * @param pose_k Second pose (gtsam::Pose3).
      * @return Kernel value (scalar, typically between 0 and 1).
      */
-    double rbf_kernel(const gtsam::Pose3& pose_l, const gtsam::Pose3& pose_k) const;
+    double rbf_kernel(const gtsam::Pose3& pose_l, const gtsam::Pose3& pose_k) const; // Already const
 
     /**
      * @brief Computes the gradient of the RBF kernel with respect to the *first* pose argument.
@@ -245,7 +257,7 @@ protected: // --- Internal Methods and Data (Implementations expected in svn_ndt
      * @param pose_k Second pose (gtsam::Pose3).
      * @return Gradient vector (6x1) in the tangent space at pose_l.
      */
-    Vector6d rbf_kernel_gradient(const gtsam::Pose3& pose_l, const gtsam::Pose3& pose_k) const;
+    Vector6d rbf_kernel_gradient(const gtsam::Pose3& pose_l, const gtsam::Pose3& pose_k) const; // Already const
 
     // --- Utility ---
     /** @brief Helper function to recalculate NDT constants (gauss_d1_, d2_, d3_) based on resolution and outlier_ratio_. */
