@@ -2,6 +2,7 @@
 #include <iostream>
 #include <random> // For adding noise
 #include <chrono> // For timing
+#include <memory> // Include for std::make_shared
 
 // --- Include your SVN-NDT header ---
 #include "svn_ndt.h"
@@ -107,8 +108,8 @@ namespace {
         std::cout << "Initial Guess Pose:\n" << g_initial_guess_pose << std::endl;
 
         // 3. Generate Clouds
-        g_source_cloud = boost::make_shared<PointCloud>();
-        g_target_cloud = boost::make_shared<PointCloud>();
+        g_source_cloud = std::make_shared<PointCloud>(); // FIX: Use std::make_shared
+        g_target_cloud = std::make_shared<PointCloud>(); // FIX: Use std::make_shared
         double noise_stddev = 0.02; // 2cm noise
         create_test_clouds(g_ground_truth_pose, noise_stddev, *g_source_cloud, *g_target_cloud);
 
