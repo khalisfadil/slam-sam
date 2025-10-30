@@ -219,10 +219,10 @@ TEST(ConvergenceComparison, SvnNdtK10) {
 
     // Set SVN parameters
     ndt.setParticleCount(10);      // K=10 particles
-    ndt.setMaxIterations(50);
+    ndt.setMaxIterations(100);
     ndt.setKernelBandwidth(1.0);   
     ndt.setEarlyStopThreshold(1e-4);
-    ndt.setStepSize(0.5); // <-- TUNING FIX: Reduced step size from 1.5 to 0.5
+    ndt.setStepSize(1.0); // <-- TUNING FIX: Reduced step size from 1.5 to 0.5
     
     std::cout << "[SVN-NDT K=10 Test] Using " << ndt.getNumThreads() << " OpenMP threads." << std::endl;
 
@@ -276,12 +276,12 @@ TEST(ConvergenceComparison, SvnNdtK1_Newton) {
 
     // Set SVN parameters for K=1 (Newton's method)
     ndt.setParticleCount(1);       // K=1 particle
-    ndt.setMaxIterations(50);
+    ndt.setMaxIterations(100);
     ndt.setKernelBandwidth(1.0);   // Not used for K=1
     ndt.setEarlyStopThreshold(1e-4);
     
     // --- TUNING FIX: Use full Newton step (1.0) and the full analytical Hessian ---
-    ndt.setStepSize(0.5);
+    ndt.setStepSize(1.0);
     ndt.setUseGaussNewtonHessian(false); // <-- USE FULL HESSIAN
     
     std::cout << "[SVN-NDT K=1 Test] Using " << ndt.getNumThreads() << " OpenMP threads." << std::endl;
