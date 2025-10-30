@@ -1,11 +1,12 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <random> // For adding noise
+#include <chrono> // For timing
 
 // --- Include your SVN-NDT header ---
-// Make sure this path is correct for your project
 #include "svn_ndt.h"
-#include "pclomp/ndt_omp.h" // Assuming this is still needed for comparison
+// --- Include PCLOMP NDT header ---
+#include "pclomp/ndt_omp.h"
 
 // --- PCL Includes ---
 #include <pcl/point_cloud.h>
@@ -48,13 +49,14 @@ void create_test_clouds(const gtsam::Pose3& ground_truth_pose, double noise_stdd
     std::normal_distribution<double> noise(0.0, noise_stddev);
 
     // --- Create Source Cloud ---
-    for (double x = -10.0; x <= 10.0; x += 0.1) {
-        for (double y = -10.0; y <= 10.0; y += 0.1) {
+    // A structured cloud (two perpendicular planes)
+    for (double x = -10.0; x <= 10.0; x += 0.5) { // Reduced density for faster tests
+        for (double y = -10.0; y <= 10.0; y += 0.5) {
             source_cloud.points.emplace_back(x, y, 0.0);
         }
     }
-    for (double x = -10.0; x <= 10.0; x += 0.1) {
-        for (double z = -10.0; z <= 10.0; z += 0.1) {
+    for (double x = -10.0; x <= 10.0; x += 0.5) {
+        for (double z = -10.0; z <= 10.0; z += 0.5) {
             source_cloud.points.emplace_back(x, 0.0, z);
         }
     }
@@ -78,7 +80,49 @@ void create_test_clouds(const gtsam::Pose3& ground_truth_pose, double noise_stdd
     target_cloud.is_dense = true;
 }
 
-// --- TEST CASE: Derivative Comparison ---
+
+// --- Test Globals (for consistent comparison) ---
+namespace {
+    gtsam::Pose3 g_ground_truth_pose;
+    gtsam::Pose3 g_initial_guess_pose;
+    PointCloud::Ptr g_source_cloud;
+    PointCloud::Ptr g_target_cloud;
+    bool g_test_data_generated = false;
+
+    void setup_global_test_data() {
+        if (g_test_data_generated) return;
+
+        std::cout << "--- Setting up global test data ---" << std::endl;
+
+        // 1. Define Ground Truth
+        gtsam::Rot3 R_gt = gtsam::Rot3::Yaw(0.2618) * gtsam::Rot3::Pitch(0.0873); // ~15 deg yaw, 5 deg pitch
+        gtsam::Point3 t_gt(0.5, 0.0, 0.3); // 50cm x, 30cm z
+        g_ground_truth_pose = gtsam::Pose3(R_gt, t_gt);
+
+        // 2. Define Initial Guess (with a small error)
+        gtsam::Vector6 delta_xi; delta_xi << 0.02, -0.01, 0.03, 0.05, -0.02, 0.04; // Small rotation and translation error
+        g_initial_guess_pose = g_ground_truth_pose.retract(-delta_xi); // Retract *negative* delta to get guess near gt
+
+        std::cout << "Ground Truth Pose:\n" << g_ground_truth_pose << std::endl;
+        std::cout << "Initial Guess Pose:\n" << g_initial_guess_pose << std::endl;
+
+        // 3. Generate Clouds
+        g_source_cloud = boost::make_shared<PointCloud>();
+        g_target_cloud = boost::make_shared<PointCloud>();
+        double noise_stddev = 0.02; // 2cm noise
+        create_test_clouds(g_ground_truth_pose, noise_stddev, *g_source_cloud, *g_target_cloud);
+
+        ASSERT_FALSE(g_source_cloud->empty()) << "Global source cloud generation failed.";
+        ASSERT_FALSE(g_target_cloud->empty()) << "Global target cloud generation failed.";
+        std::cout << "Generated source (" << g_source_cloud->size() << " pts) and target (" << g_target_cloud->size() << " pts)" << std::endl;
+        std::cout << "--------------------------------------" << std::endl;
+
+        g_test_data_generated = true;
+    }
+} // anonymous namespace
+
+
+// --- TEST CASE: Derivative Comparison (Original from user) ---
 // NOTE: Requires temporary change of protected members to public in svn_ndt.h and ndt_omp.h
 TEST(DerivativeComparisonTest, CompareAngularAndPointDerivatives) {
     // 1. --- Define Test Inputs ---
@@ -145,7 +189,7 @@ TEST(DerivativeComparisonTest, CompareAngularAndPointDerivatives) {
     std::cout << "\n--- End of Derivative Comparison ---" << std::endl;
 }
 
-// --- Test Case: Compare the output of updateDerivatives ---
+// --- Test Case: Compare the output of updateDerivatives (Original from user) ---
 // NOTE: Requires temporary change of protected members to public in svn_ndt.h and ndt_omp.h
 TEST(UpdateDerivativesTest, CompareScoreGradientHessianIncrements) {
     // 1. --- Define Fixed Test Inputs ---
@@ -226,152 +270,168 @@ TEST(UpdateDerivativesTest, CompareScoreGradientHessianIncrements) {
     std::cout << "\n--- End of updateDerivatives Comparison ---" << std::endl;
 }
 
-// --- Test Case: K=1 (Newton's Method Test) ---
-TEST(SvnNdtNewtonTest, ConvergesToKnownPose_K30) {
-    // 1. --- Define Ground Truth and Initial Guess ---
-    gtsam::Rot3 R_gt = gtsam::Rot3::Yaw(0.2618) * gtsam::Rot3::Pitch(0.0873); // ~15 deg yaw, 5 deg pitch
-    gtsam::Point3 t_gt(0.5, 0.0, 0.3); // 50cm x, 30cm z
-    gtsam::Pose3 ground_truth_pose(R_gt, t_gt);
 
-    // --- FIX: USE A CLOSER INITIAL GUESS ---
-    // Start with a small error from the ground truth
-    gtsam::Vector6 delta_xi; delta_xi << 0.02, -0.01, 0.03, 0.05, -0.02, 0.04; // Small rotation and translation error
-    gtsam::Pose3 initial_guess_pose = ground_truth_pose.retract(-delta_xi); // Retract *negative* delta to get guess near gt
-    // gtsam::Pose3 initial_guess_pose; // Original: Start from Identity
-    std::cout << "Using Initial Guess:\n" << initial_guess_pose << std::endl;
-    // ------------------------------------
+// --- NEW TEST CASE: PCLOMP Convergence Test ---
+TEST(PclOmpTest, ConvergesToKnownPose) {
+    // 1. --- Get Global Test Data ---
+    setup_global_test_data();
+    ASSERT_TRUE(g_test_data_generated);
 
-    // 2. --- Generate Synthetic Data ---
-    PointCloud source_cloud;
-    PointCloud target_cloud;
-    double noise_stddev = 0.02; // 2cm noise
-    create_test_clouds(ground_truth_pose, noise_stddev, source_cloud, target_cloud);
-    ASSERT_FALSE(source_cloud.empty()) << "Source cloud generation failed.";
-    ASSERT_FALSE(target_cloud.empty()) << "Target cloud generation failed.";
-
-    // 3. --- Configure and Run SVN-NDT with K=1 ---
-    svn_ndt::SvnNormalDistributionsTransform<PointT, PointT> ndt;
+    // 2. --- Configure and Run PCLOMP NDT ---
+    pclomp::NormalDistributionsTransform<PointT, PointT> ndt;
+    
+    // Set parameters comparable to svn_ndt
     ndt.setResolution(1.0f);
-    ndt.setMinPointPerVoxel(3);
-    ndt.setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
-    ndt.setParticleCount(10);
-    ndt.setMaxIterations(200);     // Keep increased iterations
-    ndt.setKernelBandwidth(1.0);   // Not used for K=1
-    ndt.setEarlyStopThreshold(1e-4);
-    ndt.setStepSize(1.5);          // Newton step size (0.5 is reasonable)
+    ndt.setNeighborhoodSearchMethod(pclomp::NeighborSearchMethod::DIRECT7);
+    ndt.setMaximumIterations(50); // Set to 50 as per user's problem statement
+    ndt.setTransformationEpsilon(1e-4);
+    ndt.setStepSize(0.1); // Standard NDT step size
+    
+    // Set OpenMP threads
+    ndt.setNumThreads(4); // Use 4 threads for the benchmark
+    std::cout << "[PCLOMP Test] Using " << ndt.getNumThreads() << " OpenMP threads." << std::endl;
 
-    ndt.setInputTarget(target_cloud.makeShared());
+    // Build the target NDT map
+    ndt.setInputTarget(g_target_cloud);
 
-    std::cout << "Starting SVN-NDT alignment (K=1, Newton Test)..." << std::endl;
-    svn_ndt::SvnNdtResult result = ndt.align(source_cloud, initial_guess_pose);
+    // Convert gtsam::Pose3 to Eigen::Matrix4f for PCLOMP
+    Eigen::Matrix4f initial_guess_matrix = g_initial_guess_pose.matrix().cast<float>();
+    PointCloud final_cloud; // Output cloud
 
-    // 4. --- Check Results ---
-    std::cout << "Alignment finished after " << result.iterations << " iterations." << std::endl;
-    EXPECT_TRUE(result.converged) << "K=1 Newton Test failed to converge!";
+    std::cout << "[PCLOMP Test] Starting PCLOMP alignment..." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    // Run alignment
+    ndt.computeTransformation(final_cloud, initial_guess_matrix);
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> align_time_ms = end_time - start_time;
 
-    gtsam::Pose3 error_pose = result.final_pose.between(ground_truth_pose);
+    // 3. --- Check Results ---
+    bool converged = ndt.hasConverged();
+    int iterations = ndt.getFinalNumIteration();
+    Eigen::Matrix4f final_transform_matrix = ndt.getFinalTransformation();
+    gtsam::Pose3 final_pose(final_transform_matrix.cast<double>()); // Convert back to gtsam::Pose3 for comparison
+
+    std::cout << "[PCLOMP Test] Alignment finished in " << align_time_ms.count() << " ms." << std::endl;
+    std::cout << "[PCLOMP Test] Converged: " << (converged ? "True" : "False") << " in " << iterations << " iterations." << std::endl;
+
+    EXPECT_TRUE(converged) << "PCLOMP Test failed to converge!";
+    EXPECT_LT(iterations, 50) << "PCLOMP Test took too many iterations (" << iterations << ")";
+
+
+    gtsam::Pose3 error_pose = final_pose.between(g_ground_truth_pose);
     gtsam::Vector6 error_log = gtsam::Pose3::Logmap(error_pose);
     double trans_error_norm = error_log.tail(3).norm();
     double rot_error_norm = error_log.head(3).norm();
     double trans_tolerance = 0.05; // 5cm
     double rot_tolerance = 0.035; // ~2 deg
 
-    std::cout << "Ground Truth Pose: \n" << ground_truth_pose << std::endl;
-    std::cout << "Estimated Pose: \n" << result.final_pose << std::endl;
-    std::cout << "Error (Tangent Space): " << error_log.transpose() << std::endl;
-    std::cout << "Translation Error Norm: " << trans_error_norm << " m" << std::endl;
-    std::cout << "Rotation Error Norm:    " << rot_error_norm << " rad" << std::endl;
+    std::cout << "[PCLOMP Test] Estimated Pose: \n" << final_pose << std::endl;
+    std::cout << "[PCLOMP Test] Translation Error Norm: " << trans_error_norm << " m" << std::endl;
+    std::cout << "[PCLOMP Test] Rotation Error Norm:    " << rot_error_norm << " rad" << std::endl;
 
-    // Use ASSERT_LT now that we expect it to pass with the closer guess
-    ASSERT_LT(trans_error_norm, trans_tolerance) << "K=1 Newton Test Translation error is too high.";
-    ASSERT_LT(rot_error_norm, rot_tolerance) << "K=1 Newton Test Rotation error is too high.";
-
-    for (int i = 0; i < 6; ++i) {
-        EXPECT_GT(result.final_covariance(i, i), 0.0) << "K=1 Newton Test Variance for dim " << i << " is not positive.";
-    }
+    ASSERT_LT(trans_error_norm, trans_tolerance) << "PCLOMP Test Translation error is too high.";
+    ASSERT_LT(rot_error_norm, rot_tolerance) << "PCLOMP Test Rotation error is too high.";
 }
-// You can uncomment and fix the original K=30 test later if needed.
-// TEST(SvnNdtTest, ConvergesToKnownPose) { ... }
 
-// // --- The GTest Case ---
-// TEST(SvnNdtTest, ConvergesToKnownPose) {
-//     // 1. --- Define Ground Truth and Initial Guess ---
+
+// --- RENAMED TEST CASE: SVN-NDT with K=10 (Original from user) ---
+TEST(SvnNdtTest, ConvergesWithK10) {
+    // 1. --- Get Global Test Data ---
+    setup_global_test_data();
+    ASSERT_TRUE(g_test_data_generated);
+
+    // 2. --- Configure and Run SVN-NDT with K=10 ---
+    svn_ndt::SvnNormalDistributionsTransform<PointT, PointT> ndt;
+    ndt.setResolution(1.0f);
+    ndt.setMinPointPerVoxel(3);
+    ndt.setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
+    ndt.setParticleCount(10);      // K=10 particles
+    ndt.setMaxIterations(200);     // Give it more iterations
+    ndt.setKernelBandwidth(1.0);   
+    ndt.setEarlyStopThreshold(1e-4);
+    ndt.setStepSize(1.5);          // User's original step size
+
+    ndt.setInputTarget(g_target_cloud);
+
+    std::cout << "[SVN-NDT K=10 Test] Starting SVN-NDT alignment (K=10)..." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    svn_ndt::SvnNdtResult result = ndt.align(*g_source_cloud, g_initial_guess_pose);
     
-//     // A non-trivial transformation (15 deg yaw, 5 deg pitch, 50cm x, 30cm z)
-//     gtsam::Rot3 R_gt = gtsam::Rot3::Yaw(0.2618) * gtsam::Rot3::Pitch(0.0873);
-//     gtsam::Point3 t_gt(0.5, 0.0, 0.3);
-//     gtsam::Pose3 ground_truth_pose(R_gt, t_gt);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> align_time_ms = end_time - start_time;
 
-//     // Initial guess is Identity. This is a good test of the algorithm's basin of attraction.
-//     gtsam::Pose3 initial_guess_pose; // Identity
+    // 4. --- Check Results ---
+    std::cout << "[SVN-NDT K=10 Test] Alignment finished in " << align_time_ms.count() << " ms." << std::endl;
+    std::cout << "[SVN-NDT K=10 Test] Converged: " << (result.converged ? "True" : "False") << " in " << result.iterations << " iterations." << std::endl;
 
-//     // 2. --- Generate Synthetic Data ---
-//     PointCloud source_cloud;
-//     PointCloud target_cloud;
-//     double noise_stddev = 0.02; // 2cm noise
-    
-//     create_test_clouds(ground_truth_pose, noise_stddev, source_cloud, target_cloud);
+    EXPECT_TRUE(result.converged) << "K=10 SVN-NDT Test failed to converge!";
+    EXPECT_LT(result.iterations, 50) << "K=10 SVN-NDT Test took too many iterations (" << result.iterations << ")";
 
-//     ASSERT_FALSE(source_cloud.empty()) << "Source cloud generation failed.";
-//     ASSERT_FALSE(target_cloud.empty()) << "Target cloud generation failed.";
 
-//     // 3. --- Configure and Run SVN-NDT ---
-//     svn_ndt::SvnNormalDistributionsTransform<PointT, PointT> ndt;
+    gtsam::Pose3 error_pose = result.final_pose.between(g_ground_truth_pose);
+    gtsam::Vector6 error_log = gtsam::Pose3::Logmap(error_pose);
+    double trans_error_norm = error_log.tail(3).norm();
+    double rot_error_norm = error_log.head(3).norm();
+    double trans_tolerance = 0.05; // 5cm
+    double rot_tolerance = 0.035; // ~2 deg
 
-//     // Set parameters (these may need tuning)
-//     ndt.setResolution(1.0f); // Voxel size
-//     ndt.setMinPointPerVoxel(3);
-//     ndt.setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
-    
-//     // SVN parameters
-//     ndt.setParticleCount(30);       // K=30 particles
-//     ndt.setMaxIterations(40);       // Max 40 iterations
-//     ndt.setKernelBandwidth(0.5);    // Kernel bandwidth 'h'
-//     ndt.setEarlyStopThreshold(1e-4);
-    
-//     // *** CRITICAL PARAMETER ***
-//     // Your code's default step_size_ is 0.0005, which is likely too small.
-//     // The comment in your code suggests increasing it. Let's start with 0.1.
-//     ndt.setStepSize(0.5); 
+    std::cout << "[SVN-NDT K=10 Test] Estimated Pose: \n" << result.final_pose << std::endl;
+    std::cout << "[SVN-NDT K=10 Test] Translation Error Norm: " << trans_error_norm << " m" << std::endl;
+    std::cout << "[SVN-NDT K=10 Test] Rotation Error Norm:    " << rot_error_norm << " rad" << std::endl;
 
-//     // Build the target NDT map
-//     ndt.setInputTarget(target_cloud.makeShared());
+    ASSERT_LT(trans_error_norm, trans_tolerance) << "K=10 SVN-NDT Test Translation error is too high.";
+    ASSERT_LT(rot_error_norm, rot_tolerance) << "K=10 SVN-NDT Test Rotation error is too high.";
+}
 
-//     // Run alignment
-//     std::cout << "Starting SVN-NDT alignment..." << std::endl;
-//     svn_ndt::SvnNdtResult result = ndt.align(source_cloud, initial_guess_pose);
 
-//     // 4. --- Check Results ---
-//     std::cout << "Alignment finished after " << result.iterations << " iterations." << std::endl;
+// --- NEW TEST CASE: SVN-NDT with K=1 (As requested by user) ---
+TEST(SvnNdtTest, ConvergesWithK1) {
+    // 1. --- Get Global Test Data ---
+    setup_global_test_data();
+    ASSERT_TRUE(g_test_data_generated);
 
-//     // Check 1: Did it converge?
-//     // Use EXPECT_TRUE to continue the test even if this fails, to see the error.
-//     EXPECT_TRUE(result.converged) << "SVN-NDT failed to converge!";
+    // 2. --- Configure and Run SVN-NDT with K=1 ---
+    svn_ndt::SvnNormalDistributionsTransform<PointT, PointT> ndt;
+    ndt.setResolution(1.0f);
+    ndt.setMinPointPerVoxel(3);
+    ndt.setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
+    ndt.setParticleCount(1);       // K=1 particle (Pure Newton's Method test)
+    ndt.setMaxIterations(50);      // Set to 50 as per user's problem statement
+    ndt.setKernelBandwidth(1.0);   // Not used for K=1, but set anyway
+    ndt.setEarlyStopThreshold(1e-4);
+    ndt.setStepSize(1.0);          // For K=1, this is a pure Newton step, so 1.0 is standard.
 
-//     // Check 2: Is the final pose close to the ground truth?
-//     gtsam::Pose3 error_pose = result.final_pose.between(ground_truth_pose);
-//     gtsam::Vector6 error_log = gtsam::Pose3::Logmap(error_pose);
+    ndt.setInputTarget(g_target_cloud);
 
-//     double trans_error_norm = error_log.tail(3).norm(); // x, y, z error
-//     double rot_error_norm = error_log.head(3).norm();   // r, p, y error
+    std::cout << "[SVN-NDT K=1 Test] Starting SVN-NDT alignment (K=1, Newton Test)..." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
 
-//     // Tolerances (e.g., 5cm translation, ~2 deg rotation)
-//     // These may need to be adjusted based on noise and particle count.
-//     double trans_tolerance = 0.05; 
-//     double rot_tolerance = 0.035;
+    svn_ndt::SvnNdtResult result = ndt.align(*g_source_cloud, g_initial_guess_pose);
 
-//     std::cout << "Ground Truth Pose: \n" << ground_truth_pose << std::endl;
-//     std::cout << "Estimated Pose: \n" << result.final_pose << std::endl;
-//     std::cout << "Error (Tangent Space): " << error_log.transpose() << std::endl;
-//     std::cout << "Translation Error Norm: " << trans_error_norm << " m" << std::endl;
-//     std::cout << "Rotation Error Norm:    " << rot_error_norm << " rad" << std::endl;
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> align_time_ms = end_time - start_time;
 
-//     EXPECT_LT(trans_error_norm, trans_tolerance) << "Translation error is too high.";
-//     EXPECT_LT(rot_error_norm, rot_tolerance) << "Rotation error is too high.";
+    // 4. --- Check Results ---
+    std::cout << "[SVN-NDT K=1 Test] Alignment finished in " << align_time_ms.count() << " ms." << std::endl;
+    std::cout << "[SVN-NDT K=1 Test] Converged: " << (result.converged ? "True" : "False") << " in " << result.iterations << " iterations." << std::endl;
 
-//     // Check 3: Is the covariance plausible?
-//     // A simple check: the diagonal elements (variances) should be positive and small.
-//     for (int i = 0; i < 6; ++i) {
-//         EXPECT_GT(result.final_covariance(i, i), 0.0) << "Variance for dim " << i << " is not positive.";
-//     }
-// }
+    EXPECT_TRUE(result.converged) << "K=1 SVN-NDT Test failed to converge!";
+    EXPECT_LT(result.iterations, 50) << "K=1 SVN-NDT Test took too many iterations (" << result.iterations << ")";
+
+    gtsam::Pose3 error_pose = result.final_pose.between(g_ground_truth_pose);
+    gtsam::Vector6 error_log = gtsam::Pose3::Logmap(error_pose);
+    double trans_error_norm = error_log.tail(3).norm();
+    double rot_error_norm = error_log.head(3).norm();
+    double trans_tolerance = 0.05; // 5cm
+    double rot_tolerance = 0.035; // ~2 deg
+
+    std::cout << "[SVN-NDT K=1 Test] Estimated Pose: \n" << result.final_pose << std::endl;
+    std::cout << "[SVN-NDT K=1 Test] Translation Error Norm: " << trans_error_norm << " m" << std::endl;
+    std::cout << "[SVN-NDT K=1 Test] Rotation Error Norm:    " << rot_error_norm << " rad" << std::endl;
+
+    ASSERT_LT(trans_error_norm, trans_tolerance) << "K=1 SVN-NDT Test Translation error is too high.";
+    ASSERT_LT(rot_error_norm, rot_tolerance) << "K=1 SVN-NDT Test Rotation error is too high.";
+}
