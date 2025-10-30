@@ -52,13 +52,13 @@ void create_test_clouds(const gtsam::Pose3& ground_truth_pose, double noise_stdd
 
     // --- Create Source Cloud ---
     // A structured cloud (two perpendicular planes)
-    for (double x = -10.0; x <= 10.0; x += 0.1) {
-        for (double y = -10.0; y <= 10.0; y += 0.1) {
+    for (double x = -10.0; x <= 10.0; x += 0.2) {
+        for (double y = -10.0; y <= 10.0; y += 0.2) {
             source_cloud.points.emplace_back(x, y, 0.0);
         }
     }
-    for (double x = -10.0; x <= 10.0; x += 0.1) {
-        for (double z = -10.0; z <= 10.0; z += 0.1) {
+    for (double x = -10.0; x <= 10.0; x += 0.2) {
+        for (double z = -10.0; z <= 10.0; z += 0.2) {
             source_cloud.points.emplace_back(x, 0.0, z);
         }
     }
