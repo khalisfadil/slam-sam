@@ -5,12 +5,13 @@ project(SvnNdtTest)
 cmake_policy(SET CMP0144 NEW)
 
 # Add this hint to point to your custom TBB installation directory.
-set(TBB_ROOT "/usr/local")
+set(TBB_ROOT "/usr/local") 
 
 find_package(PCL 1.8 REQUIRED)
 find_package(GTSAM 4.0 REQUIRED)
 find_package(GTest REQUIRED)
 find_package(TBB REQUIRED) # Your svn_ndt_impl.hpp uses TBB
+find_package(OpenMP REQUIRED) # <<< 1. ADD THIS LINE TO FIND OPENMP
 
 # Add the directory containing your svn_ndt.h and voxel_grid_covariance.h
 # e.g., include_directories(path/to/your/include)
@@ -33,8 +34,9 @@ test/test_svn_ndt.cpp
 target_link_libraries(run_svn_ndt_test
     GTest::gtest_main
     ${PCL_LIBRARIES}
-    gtsam # <--- THE FIX IS HERE
+    gtsam 
     TBB::tbb # Link TBB
+    OpenMP::OpenMP_CXX # <<< 2. ADD THIS LINE TO LINK OPENMP
 )
 
 # Enable C++17 (gtsam, tsl::robin_map, etc. often need it)

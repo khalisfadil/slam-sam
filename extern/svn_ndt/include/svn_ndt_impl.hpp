@@ -13,11 +13,23 @@
 #include <chrono>   // For timing
 #include <iomanip> // For std::fixed, std::setprecision in debug output
 
-// TBB for parallelism
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_reduce.h> // <-- Include for parallel_reduce
-#include <tbb/blocked_range.h>
-// #include <tbb/spin_mutex.h> // Avoid if possible, design for lock-free
+// --- ADDED: OpenMP Fallback Functions (like in ndt_omp_impl.hpp) ---
+// If OpenMP is not enabled by the compiler, _OPENMP will not be defined.
+// We provide dummy functions that return 1 (for max threads) and 0 (for thread num)
+// so the code compiles and runs in serial (single-threaded) mode.
+#ifndef _OPENMP
+#include <omp.h> // Include omp.h even if not enabled, for the stubs
+int omp_get_max_threads()
+{
+    return 1;
+}
+int omp_get_thread_num()
+{
+    return 0;
+}
+#endif
+// --- End of ADDED block ---
+
 
 // Eigen for linear algebra
 #include <Eigen/Core>
@@ -49,9 +61,14 @@ template <typename PointSource, typename PointTarget>
 SvnNormalDistributionsTransform<PointSource, PointTarget>::SvnNormalDistributionsTransform()
     : target_cells_(), resolution_(1.0f), outlier_ratio_(0.55),
       search_method_(NeighborSearchMethod::DIRECT7), // Default search method to DIRECT7
+      num_threads_(omp_get_max_threads()), // Initialize thread count using OpenMP
       K_(30), max_iter_(50), kernel_h_(1.0),
-      step_size_(0.1), // Keep 0.1 for now, might need tuning later
-      stop_thresh_(1e-4)
+      // *****************************************************************
+      // *** FIX 1: Changed default step size from 0.1 to 1.0 ***
+      // *****************************************************************
+      step_size_(1.0), 
+      stop_thresh_(1e-4),
+      use_gauss_newton_hessian_(true) // Default to true
 {
     updateNdtConstants(); // Initialize gauss_d* constants based on defaults
     // Zero out precomputed matrices initially
@@ -496,11 +513,11 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::updateDerivati
 }
 
 
-// --- computeParticleDerivatives (NESTED PARALLEL VERSION using TBB) ---
+// --- computeParticleDerivatives (Now SERIAL, to be called in parallel) ---
 template <typename PointSource, typename PointTarget>
 double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticleDerivatives(
     Vector6d& final_score_gradient, // Output gradient [x,y,z,r,p,y]
-    Matrix6d& final_hessian,        // Output Hessian [x,y,z,r,p,y] - USES GAUSS-NEWTON APPROXIMATION
+    Matrix6d& final_hessian,        // Output Hessian [x,y,z,r,p,y]
     const PointCloudSource& trans_cloud, // Transformed source cloud
     const Vector6d& p,        // Current pose estimate [x,y,z,r,p,y]
     bool compute_hessian) // Flag remains, but controls GN Hessian calculation
@@ -509,137 +526,125 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
     // These populate the member variables j_ang_ and h_ang_
     computeAngleDerivatives(p, compute_hessian);
 
-    // --- Define the structure/class for parallel reduction ---
-    struct NdtPointAccumulator {
-        EIGEN_MAKE_ALIGNED_OPERATOR_NEW // Needed for Eigen members
+    // --- Allocate Per-Point Accumulator Vectors (like pclomp) ---
+    const size_t num_points = trans_cloud.points.size();
+    if (num_points == 0) {
+        PCL_WARN("[SvnNdt::computeParticleDerivatives] Transformed cloud is empty.\n");
+        final_score_gradient.setZero();
+        final_hessian.setZero();
+        return 0.0;
+    }
 
-        // Thread-local accumulators
-        double score = 0.0;
-        Vector6d gradient = Vector6d::Zero();
-        Matrix6d hessian = Matrix6d::Zero();
-        // Pointer to the parent NDT object to access members (j_ang_, etc.) and methods
-        const SvnNormalDistributionsTransform* parent_ndt;
-        // Pointers to input data needed by the loop body (const access is safe)
-        const PointCloudSource* input_cloud_ptr;
-        const PointCloudSource* trans_cloud_ptr;
-        bool compute_hessian_flag;
+    std::vector<double> scores(num_points, 0.0);
+    std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> score_gradients(num_points, Vector6d::Zero());
+    std::vector<Matrix6d, Eigen::aligned_allocator<Matrix6d>> hessians(num_points, Matrix6d::Zero());
 
-        // Constructor to initialize pointers
-        NdtPointAccumulator(const SvnNormalDistributionsTransform* ndt,
-                            const PointCloudSource* input,
-                            const PointCloudSource* trans,
-                            bool compute_hess) :
-            parent_ndt(ndt), input_cloud_ptr(input), trans_cloud_ptr(trans),
-            compute_hessian_flag(compute_hess) {}
 
-        // Splitting constructor for TBB (required for parallel_reduce)
-        NdtPointAccumulator(NdtPointAccumulator& other, tbb::split) :
-            score(0.0), gradient(Vector6d::Zero()), hessian(Matrix6d::Zero()),
-            parent_ndt(other.parent_ndt), // Copy pointers
-            input_cloud_ptr(other.input_cloud_ptr),
-            trans_cloud_ptr(other.trans_cloud_ptr),
-            compute_hessian_flag(other.compute_hessian_flag) {}
+    // *****************************************************************
+    // *** FIX 2: Removed thread-local buffer pre-allocation ***
+    // *****************************************************************
 
-        // Operator() - Processes a sub-range of points (this is the parallel workhorse)
-        void operator()(const tbb::blocked_range<size_t>& r) {
-            // --- Thread-local variables for calculations within this range ---
-            Eigen::Matrix<float, 4, 6> point_gradient4;
-            Eigen::Matrix<float, 24, 6> point_hessian24; // Only computed if flag is true
-            std::vector<LeafConstPtr> neighborhood;
-            std::vector<float> distances;
-            constexpr size_t reserve_size = 27; // Max neighbors for DIRECT26/KDTREE radius
-            neighborhood.reserve(reserve_size);
-            distances.reserve(reserve_size);
 
-            // Access parent members needed inside the loop (const access is safe)
-            const auto& target_cells = parent_ndt->target_cells_;
-            float resolution = parent_ndt->resolution_;
-            auto search_method = parent_ndt->search_method_;
+    // *****************************************************************
+    // *** FIX 2: Removed OpenMP pragma from this inner loop ***
+    // *****************************************************************
+    for (size_t idx = 0; idx < num_points; ++idx) {
 
-            // --- Loop over the assigned range of points ---
-            for (size_t idx = r.begin(); idx != r.end(); ++idx) {
-                const PointSource& x_trans_pt = (*trans_cloud_ptr)[idx];
-                if (!pcl::isFinite(x_trans_pt)) continue; // Skip invalid points
+        // --- Thread-local variables for calculations within this loop ---
+        Eigen::Matrix<float, 4, 6> point_gradient4;
+        Eigen::Matrix<float, 24, 6> point_hessian24; // Only computed if flag is true
+        
+        // *****************************************************************
+        // *** FIX 2: Declare neighbor buffers locally inside the loop ***
+        // *****************************************************************
+        std::vector<LeafConstPtr> neighborhood;
+        std::vector<float> distances;
+        constexpr size_t reserve_size = 27; // Max neighbors for DIRECT26/KDTREE radius
+        neighborhood.reserve(reserve_size);
+        distances.reserve(reserve_size); 
 
-                // --- Neighbor Search ---
-                neighborhood.clear(); // Reuse vectors
-                distances.clear();
-                int neighbors_found = 0;
-                switch (search_method) {
-                     case NeighborSearchMethod::KDTREE:
-                         neighbors_found = target_cells.radiusSearch(x_trans_pt, resolution, neighborhood, distances);
-                         break;
-                     // case NeighborSearchMethod::DIRECT26: // Needs VoxelGridCovariance implementation
-                     //     neighbors_found = target_cells.getNeighborhoodAtPoint26(x_trans_pt, neighborhood);
-                     //     break;
-                     case NeighborSearchMethod::DIRECT7:
-                         neighbors_found = target_cells.getNeighborhoodAtPoint7(x_trans_pt, neighborhood);
-                         break;
-                     case NeighborSearchMethod::DIRECT1:
-                     default:
-                         neighbors_found = target_cells.getNeighborhoodAtPoint1(x_trans_pt, neighborhood);
-                         break;
-                }
-                if (neighbors_found == 0) continue; // Skip points with no valid neighbors
+        // Access parent members needed inside the loop (const access is safe)
+        const auto& target_cells = this->target_cells_;
+        float resolution = this->resolution_;
+        auto search_method = this->search_method_;
 
-                // --- Get Original Point ---
-                // Basic bounds check (should be safe if indices match)
-                if (idx >= input_cloud_ptr->size()){
-                    PCL_ERROR("[SvnNdt::Accumulator] Index out of bounds (%zu).\n", idx);
-                    continue;
-                }
-                const PointSource& x_pt = (*input_cloud_ptr)[idx];
-                Eigen::Vector3d x_orig(x_pt.x, x_pt.y, x_pt.z);
+        // --- Get Transformed Point ---
+        const PointSource& x_trans_pt = trans_cloud[idx];
+        if (!pcl::isFinite(x_trans_pt)) continue; // Skip invalid points
 
-                // --- Initialize Point Gradient (Jacobian) for this point ---
-                point_gradient4.setZero();
-                point_gradient4.block<3, 3>(0, 0).setIdentity();
-
-                // --- Compute Point Derivatives (fills angular part using parent's j_ang_, h_ang_) ---
-                // Note: computePointDerivatives accesses parent_ndt->j_ang_ and parent_ndt->h_ang_
-                parent_ndt->computePointDerivatives(x_orig, point_gradient4, point_hessian24, compute_hessian_flag);
-
-                // --- Accumulate Contributions from Neighbors ---
-                for (const LeafConstPtr& cell : neighborhood) {
-                    if (!cell) continue; // Skip nullptrs
-
-                    Eigen::Vector3d x_rel = Eigen::Vector3d(x_trans_pt.x, x_trans_pt.y, x_trans_pt.z) - cell->getMean();
-                    const Eigen::Matrix3d& c_inv = cell->getInverseCov();
-
-                    // --- Call updateDerivatives using parent's constants (gauss_d1_, etc.) ---
-                    // --- Accumulate results directly into the *thread-local* members ---
-                    score += parent_ndt->updateDerivatives(gradient, hessian, // Accumulate here
-                                                       point_gradient4, point_hessian24,
-                                                       x_rel, c_inv,
-                                                       compute_hessian_flag,
-                                                       true); // Use Gauss-Newton Hessian
-                } // End loop over neighbors
-            } // End loop over points in range 'r'
-        } // End operator()
-
-        // Join method - Combines results from another thread/task into this one
-        void join(NdtPointAccumulator& other) {
-            score += other.score;
-            gradient += other.gradient;
-            hessian += other.hessian;
+        // --- Neighbor Search ---
+        int neighbors_found = 0;
+        switch (search_method) {
+             case NeighborSearchMethod::KDTREE:
+                 neighbors_found = target_cells.radiusSearch(x_trans_pt, resolution, neighborhood, distances);
+                 break;
+             // case NeighborSearchMethod::DIRECT26: // Needs VoxelGridCovariance implementation
+             //     neighbors_found = target_cells.getNeighborhoodAtPoint26(x_trans_pt, neighborhood);
+             //     break;
+             case NeighborSearchMethod::DIRECT7:
+                 neighbors_found = target_cells.getNeighborhoodAtPoint7(x_trans_pt, neighborhood);
+                 break;
+             case NeighborSearchMethod::DIRECT1:
+             default:
+                 neighbors_found = target_cells.getNeighborhoodAtPoint1(x_trans_pt, neighborhood);
+                 break;
         }
-    }; // End struct NdtPointAccumulator
+        if (neighbors_found == 0) continue; // Skip points with no valid neighbors
 
-    // --- Perform the parallel reduction over the points ---
-    // Initialize the accumulator object for this particle's computation
-    NdtPointAccumulator accumulator(this, input_.get(), &trans_cloud, compute_hessian);
+        // --- Get Original Point ---
+        if (idx >= input_->size()){
+            // This should not happen if trans_cloud is from input_
+            continue; 
+        }
+        const PointSource& x_pt = (*input_)[idx];
+        Eigen::Vector3d x_orig(x_pt.x, x_pt.y, x_pt.z);
 
-    // Execute TBB's parallel_reduce algorithm
-    tbb::parallel_reduce(
-        tbb::blocked_range<size_t>(0, trans_cloud.points.size()), // Range of points to process
-        accumulator                                               // The reduction object
-        // Optional 3rd argument: partitioner (e.g., tbb::auto_partitioner())
-    );
+        // --- Initialize Point Gradient (Jacobian) for this point ---
+        point_gradient4.setZero();
+        point_gradient4.block<3, 3>(0, 0).setIdentity();
 
-    // --- Final results are now accumulated in the 'accumulator' object ---
-    final_score_gradient = accumulator.gradient;
-    final_hessian = accumulator.hessian;
-    double final_total_score = accumulator.score;
+        // --- Compute Point Derivatives (fills angular part using member j_ang_, h_ang_) ---
+        // This is thread-safe as it only *reads* member variables
+        this->computePointDerivatives(x_orig, point_gradient4, point_hessian24, compute_hessian);
+
+        // --- Create local accumulators for *this point* ---
+        double point_score_acc = 0.0;
+        Vector6d point_grad_acc = Vector6d::Zero();
+        Matrix6d point_hess_acc = Matrix6d::Zero();
+
+        // --- Accumulate Contributions from Neighbors ---
+        for (const LeafConstPtr& cell : neighborhood) {
+            if (!cell) continue; // Skip nullptrs
+
+            Eigen::Vector3d x_rel = Eigen::Vector3d(x_trans_pt.x, x_trans_pt.y, x_trans_pt.z) - cell->getMean();
+            const Eigen::Matrix3d& c_inv = cell->getInverseCov();
+
+            // --- Call updateDerivatives using parent's constants (gauss_d1_, etc.) ---
+            // --- Accumulate results into the *point-local* variables ---
+            point_score_acc += this->updateDerivatives(point_grad_acc, point_hess_acc, // Accumulate here
+                                               point_gradient4, point_hessian24,
+                                               x_rel, c_inv,
+                                               compute_hessian,
+                                               this->use_gauss_newton_hessian_);
+        } // End loop over neighbors
+
+        // --- Write accumulated results to the per-point vectors (thread-safe) ---
+        scores[idx] = point_score_acc;
+        score_gradients[idx] = point_grad_acc;
+        hessians[idx] = point_hess_acc;
+
+    } // End SERIAL for loop over points
+
+
+    // --- Final Serial Reduction (Summing up the per-point results) ---
+    final_score_gradient.setZero();
+    final_hessian.setZero();
+    double final_total_score = 0.0;
+    for (size_t i = 0; i < num_points; ++i) {
+        final_total_score += scores[i];
+        final_score_gradient += score_gradients[i];
+        final_hessian += hessians[i];
+    }
 
     // --- Hessian Regularization (Applied once per particle after reduction) ---
     if (compute_hessian) {
@@ -653,18 +658,18 @@ double SvnNormalDistributionsTransform<PointSource, PointTarget>::computeParticl
         final_score_gradient.setZero(); // Prevent optimizer failure
     }
     if (compute_hessian && !final_hessian.allFinite()) {
-        PCL_ERROR("[SvnNdt::computeParticleDerivatives] Final hessian (GN) contains NaN/Inf! Resetting to identity.\n");
+        PCL_ERROR("[SvnNdt::computeParticleDerivatives] Final hessian (GN=%d) contains NaN/Inf! Resetting to identity.\n", use_gauss_newton_hessian_);
         final_hessian = Matrix6d::Identity(); // Prevent solver failure
     }
 
     // Return the total accumulated score for this particle
     return final_total_score;
 
-} // End computeParticleDerivatives (Nested Parallel Version)
+} // End computeParticleDerivatives (Serial Version)
 
 
 //=================================================================================================
-// Main Alignment Function (SVN-NDT Implementation) - Remains Largely Unchanged
+// Main Alignment Function (SVN-NDT Implementation) - Using OpenMP
 //=================================================================================================
 template <typename PointSource, typename PointTarget>
 SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
@@ -709,6 +714,11 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
     for (int k = 0; k < K_; ++k) {
         particles[k] = prior_mean.retract(sampler.sample());
     }
+    
+    // --- MODIFICATION: Initialize mean pose tracking ---
+    gtsam::Pose3 mean_pose_current = prior_mean; // Initialize with prior
+    gtsam::Pose3 mean_pose_last_iter;
+    // --- END MODIFICATION ---
 
     // Pre-allocate vectors
     std::vector<Vector6d, Eigen::aligned_allocator<Vector6d>> loss_gradients(K_);
@@ -726,123 +736,146 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
 
 
     // --- SVN Iteration Loop ---
-    double avg_update_norm = std::numeric_limits<double>::max();
+    // double avg_update_norm = std::numeric_limits<double>::max(); // No longer used for convergence
     for (int iter = 0; iter < max_iter_; ++iter)
     {
         auto iter_start_time = std::chrono::high_resolution_clock::now();
+        
+        // --- MODIFICATION: Store mean pose from previous iteration ---
+        mean_pose_last_iter = mean_pose_current;
+        // --- END MODIFICATION ---
 
-        // --- Stage 1: Compute NDT Derivatives (Outer Parallel Loop over Particles) ---
-        // The inner loop (over points) is now handled by the nested parallel_reduce
-        // within computeParticleDerivatives.
+        // --- Stage 1: Compute NDT Derivatives (Outer loop is SERIAL) ---
         auto stage1_start_time = std::chrono::high_resolution_clock::now();
-        tbb::parallel_for(tbb::blocked_range<int>(0, K_),
-            [&](const tbb::blocked_range<int>& r) {
+        
+        Vector6d grad_k_ndt; // NDT order [x,y,z,r,p,y], Gradient of Cost
+        Matrix6d hess_k_ndt; // NDT order [x,y,z,r,p,y], Hessian of Cost
 
-            // --- No thread-local copy of the NDT object needed here anymore, ---
-            // --- as computeParticleDerivatives handles its own parallelism. ---
-            // --- However, we still need thread-local storage for outputs ---
-            // --- if we were reducing here, but we store per-particle results. ---
+        // *****************************************************************
+        // *** FIX 2: Added OpenMP pragma to this outer loop ***
+        // *** Made grad_k_ndt and hess_k_ndt private       ***
+        // *****************************************************************
+        #pragma omp parallel for num_threads(num_threads_) schedule(dynamic, 1) private(grad_k_ndt, hess_k_ndt)
+        for (int k = 0; k < K_; ++k) {
+            // Transform point cloud using current particle pose
+            pcl::transformPointCloud(source_cloud, transformed_clouds[k], particles[k].matrix().cast<float>());
 
-            Vector6d grad_k_ndt; // NDT order [x,y,z,r,p,y], Gradient of Cost
-            Matrix6d hess_k_ndt; // NDT order [x,y,z,r,p,y], GN Hessian of Cost
+            // Convert particle's gtsam::Pose3 to NDT's expected [x,y,z,r,p,y] vector
+            Vector6d p_k_ndt;
+            gtsam::Vector3 rpy = particles[k].rotation().rpy();
+            p_k_ndt.head<3>() = particles[k].translation();
+            p_k_ndt.tail<3>() = rpy;
 
-            for (int k = r.begin(); k < r.end(); ++k) {
-                // Transform point cloud using current particle pose
-                // Note: transformed_clouds vector is accessed concurrently but written to unique indices.
-                pcl::transformPointCloud(source_cloud, transformed_clouds[k], particles[k].matrix().cast<float>());
+            // --- Call the (now serial) computeParticleDerivatives ---
+            double score_k = this->computeParticleDerivatives(grad_k_ndt, hess_k_ndt,
+                                                               transformed_clouds[k], p_k_ndt,
+                                                               true); // compute_hessian = true
 
-                // Convert particle's gtsam::Pose3 to NDT's expected [x,y,z,r,p,y] vector
-                Vector6d p_k_ndt;
-                gtsam::Vector3 rpy = particles[k].rotation().rpy();
-                p_k_ndt.head<3>() = particles[k].translation();
-                p_k_ndt.tail<3>() = rpy;
+            // Store results
+            loss_gradients[k] = grad_k_ndt;
+            loss_hessians[k] = hess_k_ndt;
 
-                // --- Call the (now nested-parallel) computeParticleDerivatives ---
-                // This function accesses the main 'this' object's members (target_cells_, etc.)
-                // in a read-only manner within its parallel region, which is safe.
-                double score_k = this->computeParticleDerivatives(grad_k_ndt, hess_k_ndt,
-                                                                   transformed_clouds[k], p_k_ndt,
-                                                                   true); // compute_hessian = true
-
-                // Store results (concurrent write to unique indices is safe)
-                loss_gradients[k] = grad_k_ndt;
-                loss_hessians[k] = hess_k_ndt;
-
-                 // Sanity checks remain the same
-                 if (!loss_gradients[k].allFinite()) { /* Warn/Reset */ loss_gradients[k].setZero(); }
-                 if (!loss_hessians[k].allFinite()) { /* Warn/Reset */ loss_hessians[k] = I6; }
-            }
-        }); // End TBB Stage 1 (Outer loop)
+             // Sanity checks remain the same
+             if (!loss_gradients[k].allFinite()) { /* Warn/Reset */ loss_gradients[k].setZero(); }
+             if (!loss_hessians[k].allFinite()) { /* Warn/Reset */ loss_hessians[k] = I6; }
+        }
         auto stage1_end_time = std::chrono::high_resolution_clock::now();
 
 
-        // --- Stage 2: Calculate SVN Updates (Parallel using TBB) ---
-        // (Remains unchanged - parallel over particles k, inner serial loop over l)
+        // --- Stage 2: Calculate SVN Updates (Parallel using OpenMP) ---
         auto stage2_start_time = std::chrono::high_resolution_clock::now();
-        tbb::parallel_for(tbb::blocked_range<int>(0, K_),
-            [&](const tbb::blocked_range<int>& r) {
+        
+        // This pragma will be *ignored* if OpenMP is not enabled.
+        #pragma omp parallel for num_threads(num_threads_) schedule(dynamic)
+        for (int k = 0; k < K_; ++k) {
+            
+            Vector6d phi_k_star_gtsam = Vector6d::Zero();
+            Matrix6d H_k_tilde_gtsam = Matrix6d::Zero();
 
-            for (int k = r.begin(); k < r.end(); ++k) {
-                Vector6d phi_k_star_gtsam = Vector6d::Zero();
-                Matrix6d H_k_tilde_gtsam = Matrix6d::Zero();
+            for (int l = 0; l < K_; ++l) {
+                double k_val = rbf_kernel(particles[l], particles[k]);
+                Vector6d k_grad_l = rbf_kernel_gradient(particles[l], particles[k]);
+                if (!std::isfinite(k_val) || !k_grad_l.allFinite()) { continue; }
 
-                for (int l = 0; l < K_; ++l) {
-                    double k_val = rbf_kernel(particles[l], particles[k]);
-                    Vector6d k_grad_l = rbf_kernel_gradient(particles[l], particles[k]);
-                    if (!std::isfinite(k_val) || !k_grad_l.allFinite()) { continue; }
+                Vector6d grad_l_gtsam = P_gtsam_from_ndt * loss_gradients[l];
+                Matrix6d hess_l_gtsam = P_gtsam_from_ndt * loss_hessians[l] * P_gtsam_from_ndt;
 
-                    Vector6d grad_l_gtsam = P_gtsam_from_ndt * loss_gradients[l];
-                    Matrix6d hess_l_gtsam = P_gtsam_from_ndt * loss_hessians[l] * P_gtsam_from_ndt;
+                if (grad_l_gtsam.allFinite()) { phi_k_star_gtsam += k_val * grad_l_gtsam; }
+                phi_k_star_gtsam += k_grad_l;
 
-                    if (grad_l_gtsam.allFinite()) { phi_k_star_gtsam += k_val * grad_l_gtsam; }
-                    phi_k_star_gtsam += k_grad_l;
-
-                    if (hess_l_gtsam.allFinite()) { H_k_tilde_gtsam += (k_val * k_val) * hess_l_gtsam; }
-                    H_k_tilde_gtsam += (k_grad_l * k_grad_l.transpose());
-                }
-
-                if (K_ > 0) {
-                    phi_k_star_gtsam /= static_cast<double>(K_);
-                    H_k_tilde_gtsam /= static_cast<double>(K_);
-                }
-                constexpr double svn_hess_lambda = 1e-6;
-                H_k_tilde_gtsam += svn_hess_lambda * I6;
-
-                 // Condition number calculation (Optional)
-                 Eigen::JacobiSVD<Matrix6d> svd(H_k_tilde_gtsam);
-                 double cond = std::numeric_limits<double>::infinity();
-                 if (svd.singularValues()(svd.singularValues().size() - 1) > 1e-9) {
-                     cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
-                 }
-                 std::cout << "  Iter " << iter << ", k=" << k << ": H_tilde Cond. Num: " << cond << std::endl;
-
-                // Solve linear system (remains the same)
-                Eigen::LDLT<Matrix6d> solver(H_k_tilde_gtsam);
-                if (solver.info() == Eigen::Success && H_k_tilde_gtsam.allFinite()) {
-                     Vector6d update = solver.solve(-phi_k_star_gtsam);
-                     if (update.allFinite()) { particle_updates[k] = update; }
-                     else { /* Warn/Reset */ particle_updates[k].setZero(); }
-                } else { /* Error/Reset */ particle_updates[k].setZero(); }
+                if (hess_l_gtsam.allFinite()) { H_k_tilde_gtsam += (k_val * k_val) * hess_l_gtsam; }
+                H_k_tilde_gtsam += (k_grad_l * k_grad_l.transpose());
             }
-        }); // End TBB Stage 2
+
+            if (K_ > 0) {
+                phi_k_star_gtsam /= static_cast<double>(K_);
+                H_k_tilde_gtsam /= static_cast<double>(K_);
+            }
+            constexpr double svn_hess_lambda = 1e-6;
+            H_k_tilde_gtsam += svn_hess_lambda * I6;
+
+             // Condition number calculation (Optional)
+             // Note: std::cout inside a parallel loop can jumble output.
+             // Consider removing or protecting this for non-debug runs.
+             /*
+             Eigen::JacobiSVD<Matrix6d> svd(H_k_tilde_gtsam);
+             double cond = std::numeric_limits<double>::infinity();
+             if (svd.singularValues()(svd.singularValues().size() - 1) > 1e-9) {
+                 cond = svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size() - 1);
+             }
+             #pragma omp critical
+             {
+                std::cout << "  Iter " << iter << ", k=" << k << ": H_tilde Cond. Num: " << cond << std::endl;
+             }
+             */
+
+            // Solve linear system (remains the same)
+            Eigen::LDLT<Matrix6d> solver(H_k_tilde_gtsam);
+            if (solver.info() == Eigen::Success && H_k_tilde_gtsam.allFinite()) {
+                 Vector6d update = solver.solve(-phi_k_star_gtsam);
+                 if (update.allFinite()) { particle_updates[k] = update; }
+                 else { /* Warn/Reset */ particle_updates[k].setZero(); }
+            } else { /* Error/Reset */ particle_updates[k].setZero(); }
+        } // End OpenMP Stage 2
         auto stage2_end_time = std::chrono::high_resolution_clock::now();
 
         // --- Stage 3: Apply Updates to Particles (Serial) ---
         // (Remains unchanged)
         auto stage3_start_time = std::chrono::high_resolution_clock::now();
+        // --- MODIFICATION: Keep track of old update norm for logging ---
         double total_update_norm_sq = 0.0;
+        // --- END MODIFICATION ---
         for (int k = 0; k < K_; ++k) {
             Vector6d scaled_update = step_size_ * particle_updates[k];
             if (!scaled_update.allFinite()) { continue; } // Skip NaN/Inf updates
+            // --- MODIFICATION: Keep track of old update norm for logging ---
             total_update_norm_sq += particle_updates[k].squaredNorm();
+            // --- END MODIFICATION ---
             particles[k] = particles[k].retract(scaled_update);
         }
         auto stage3_end_time = std::chrono::high_resolution_clock::now();
+        // --- MODIFICATION: Keep track of old update norm for logging ---
+        double avg_particle_update_norm = (K_ > 0) ? std::sqrt(total_update_norm_sq / static_cast<double>(K_)) : 0.0;
+        // --- END MODIFICATION ---
 
-        // --- Check Convergence & Timing ---
-        // (Remains unchanged)
+
+        // --- MODIFICATION: Compute new mean pose ---
+        // We use the simple Euclidean average in the tangent space at the *prior*
+        // as it's a consistent reference point across iterations.
+        Vector6d mean_xi_at_prior_current = Vector6d::Zero();
+        for(int k=0; k < K_; ++k) {
+            mean_xi_at_prior_current += gtsam::Pose3::Logmap(prior_mean.between(particles[k]));
+        }
+        if (K_ > 0) mean_xi_at_prior_current /= static_cast<double>(K_);
+        mean_pose_current = prior_mean.retract(mean_xi_at_prior_current);
+        // --- END MODIFICATION ---
+
+
+        // --- MODIFICATION: Check Convergence & Timing ---
         result.iterations = iter + 1;
-        avg_update_norm = (K_ > 0) ? std::sqrt(total_update_norm_sq / static_cast<double>(K_)) : 0.0;
+        
+        // Calculate the norm of the update to the *mean pose* in its tangent space
+        double mean_pose_update_norm = gtsam::Pose3::Logmap(mean_pose_last_iter.between(mean_pose_current)).norm();
 
         auto iter_end_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> stage1_ms = stage1_end_time - stage1_start_time;
@@ -851,80 +884,80 @@ SvnNdtResult SvnNormalDistributionsTransform<PointSource, PointTarget>::align(
         std::chrono::duration<double, std::milli> iter_ms = iter_end_time - iter_start_time;
 
         std::cout << std::fixed << std::setprecision(6);
-        std::cout << "[SVN Iter " << std::setw(2) << iter << "] Avg Update Norm: " << avg_update_norm
+        // Log both metrics
+        std::cout << "[SVN Iter " << std::setw(2) << iter << "] Mean Pose Update: " << mean_pose_update_norm
+                  << " | Avg Particle Update: " << avg_particle_update_norm
                   << " (T: " << std::setprecision(1) << iter_ms.count() << "ms = "
                   << "S1:" << stage1_ms.count() << " + S2:" << stage2_ms.count() << " + S3:" << stage3_ms.count() << ")" << std::endl;
 
-        if (avg_update_norm < stop_thresh_) {
+        // Use the *new* norm for the check
+        if (mean_pose_update_norm < stop_thresh_) {
             result.converged = true;
-            std::cout << "[SvnNdt::align] Converged in " << result.iterations << " iterations (Avg Update Norm: " << avg_update_norm << " < " << stop_thresh_ << ")." << std::endl;
+            std::cout << "[SvnNdt::align] Converged in " << result.iterations << " iterations (Mean Pose Update: " << mean_pose_update_norm << " < " << stop_thresh_ << ")." << std::endl;
             break;
         }
+        // --- END MODIFICATION ---
 
     } // End SVN iteration loop
 
     // --- Finalization: Compute Mean Pose and Covariance ---
-    // (Remains unchanged)
-    if (K_ > 0) {
-        Vector6d mean_xi_at_prior = Vector6d::Zero();
+    // --- MODIFICATION: Use the already-computed mean pose ---
+    result.final_pose = mean_pose_current;
+    // --- END MODIFICATION ---
+
+    if (K_ > 1) {
+        result.final_covariance.setZero();
+        // Recalculate tangent vectors at the *new final mean*
+        std::vector<Vector6d> tangent_vectors_at_mean(K_);
+         Vector6d mean_xi_at_mean = Vector6d::Zero();
+         for(int k=0; k < K_; ++k) {
+             tangent_vectors_at_mean[k] = gtsam::Pose3::Logmap(result.final_pose.between(particles[k]));
+             mean_xi_at_mean += tangent_vectors_at_mean[k];
+         }
+         mean_xi_at_mean /= static_cast<double>(K_); // This should be near zero
+        // Compute covariance
         for(int k=0; k < K_; ++k) {
-            mean_xi_at_prior += gtsam::Pose3::Logmap(prior_mean.between(particles[k]));
+            Vector6d diff = tangent_vectors_at_mean[k] - mean_xi_at_mean;
+            result.final_covariance += diff * diff.transpose();
         }
-        mean_xi_at_prior /= static_cast<double>(K_);
-        result.final_pose = prior_mean.retract(mean_xi_at_prior);
-
-        if (K_ > 1) {
-            result.final_covariance.setZero();
-            std::vector<Vector6d> tangent_vectors_at_mean(K_);
-             Vector6d mean_xi_at_mean = Vector6d::Zero();
-             for(int k=0; k < K_; ++k) {
-                 tangent_vectors_at_mean[k] = gtsam::Pose3::Logmap(result.final_pose.between(particles[k]));
-                 mean_xi_at_mean += tangent_vectors_at_mean[k];
-             }
-             mean_xi_at_mean /= static_cast<double>(K_);
-            for(int k=0; k < K_; ++k) {
-                Vector6d diff = tangent_vectors_at_mean[k] - mean_xi_at_mean;
-                result.final_covariance += diff * diff.transpose();
-            }
-            result.final_covariance /= static_cast<double>(K_ - 1);
-        } else {
-             PCL_WARN("[SvnNdt::align] K=1, cannot compute sample covariance. Returning small diagonal covariance.\n");
-             Vector6d initial_sigmas; initial_sigmas << 0.01, 0.01, 0.02, 0.05, 0.05, 0.05; // Re-declare for scope
-             result.final_covariance = (1e-6 * initial_sigmas.array().square()).matrix().asDiagonal(); // Use square for variance
-        }
-
-        // Final Covariance Regularization (remains the same)
-        Eigen::SelfAdjointEigenSolver<Matrix6d> final_eigensolver(result.final_covariance);
-        if (final_eigensolver.info() == Eigen::Success) {
-            Vector6d final_evals = final_eigensolver.eigenvalues();
-            double min_eigenvalue = 1e-9;
-            bool needs_regularization = false;
-            for(int i=0; i<6; ++i) {
-                if (final_evals(i) < min_eigenvalue) {
-                    final_evals(i) = min_eigenvalue;
-                    needs_regularization = true;
-                }
-            }
-            if (needs_regularization) {
-                 result.final_covariance = final_eigensolver.eigenvectors() * final_evals.asDiagonal() * final_eigensolver.eigenvectors().transpose();
-            }
-        } else {
-             PCL_WARN("[SVNNdt::align] Eigendecomposition failed for final covariance. Using regularized identity.\n");
-             result.final_covariance = 1e-6 * I6;
-        }
-
-    } else {
-        result.final_pose = prior_mean;
-        result.final_covariance.setIdentity();
+        result.final_covariance /= static_cast<double>(K_ - 1);
+    } else { // K_ == 1
+         PCL_WARN("[SvnNdt::align] K=1, cannot compute sample covariance. Returning small diagonal covariance.\n");
+         // Vector6d initial_sigmas; // Re-declare for scope (Already in original)
+         initial_sigmas << 0.01, 0.01, 0.02, 0.05, 0.05, 0.05; 
+         result.final_covariance = (1e-6 * initial_sigmas.array().square()).matrix().asDiagonal(); // Use square for variance
     }
+
+    // Final Covariance Regularization (remains the same)
+    Eigen::SelfAdjointEigenSolver<Matrix6d> final_eigensolver(result.final_covariance);
+    if (final_eigensolver.info() == Eigen::Success) {
+        Vector6d final_evals = final_eigensolver.eigenvalues();
+        double min_eigenvalue = 1e-9;
+        bool needs_regularization = false;
+        for(int i=0; i<6; ++i) {
+            if (final_evals(i) < min_eigenvalue) {
+                final_evals(i) = min_eigenvalue;
+                needs_regularization = true;
+            }
+        }
+        if (needs_regularization) {
+             result.final_covariance = final_eigensolver.eigenvectors() * final_evals.asDiagonal() * final_eigensolver.eigenvectors().transpose();
+        }
+    } else {
+         PCL_WARN("[SVNNdt::align] Eigendecomposition failed for final covariance. Using regularized identity.\Vn");
+         result.final_covariance = 1e-6 * I6;
+    }
+
 
     input_.reset(); // Release shared pointer
 
     // Report if max iterations reached (remains the same)
     if (!result.converged && result.iterations >= max_iter_) {
+        // --- MODIFICATION: Update log message ---
         std::cout << "[SvnNdt::align] Reached max iterations (" << max_iter_
-                      << ") without converging (Last Avg Update Norm: " << std::fixed << std::setprecision(6) << avg_update_norm
+                      << ") without converging (Last Mean Pose Update: " << std::fixed << std::setprecision(6) << gtsam::Pose3::Logmap(mean_pose_last_iter.between(mean_pose_current)).norm()
                       << " >= " << stop_thresh_ << ")." << std::endl;
+        // --- END MODIFICATION ---
     }
 
     return result;

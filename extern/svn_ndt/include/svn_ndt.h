@@ -5,6 +5,7 @@
 #include <vector>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+// #include <omp.h> // <-- REMOVED: No direct include needed
 
 // --- GTSAM Includes ---
 #include <gtsam/geometry/Pose3.h> // For representing poses on SE(3) manifold
@@ -56,7 +57,7 @@ struct SvnNdtResult
  * This class aligns a source point cloud to a target NDT map (represented by VoxelGridCovariance).
  * It approximates the posterior pose distribution using a set of particles, optimizing their
  * positions using SVN, which leverages the gradient and Hessian of the NDT score function.
- * Designed with potential for TBB parallelism in the implementation (.hpp file).
+ * Now uses OpenMP for parallelism, with a fallback to serial.
  *
  * @tparam PointSource The PCL point type for the input (source) cloud.
  * @tparam PointTarget The PCL point type used to build the target NDT map.
@@ -121,6 +122,12 @@ public:
     /** @brief Gets the currently selected neighbor search method. */
     NeighborSearchMethod getNeighborhoodSearchMethod() const { return search_method_; }
 
+    // --- Parallelism Control ---
+    /** @brief Sets the number of OpenMP threads to use for derivative calculations. */
+    void setNumThreads(int threads) { num_threads_ = (threads > 0) ? threads : 1; }
+    /** @brief Gets the number of OpenMP threads. */
+    int getNumThreads() const { return num_threads_; }
+
     // --- SVN Hyperparameters ---
     /** @brief Sets the number of particles used to approximate the posterior distribution. */
     void setParticleCount(int k) { K_ = (k > 0) ? k : 1; } // Ensure at least 1 particle
@@ -153,6 +160,14 @@ public:
     /** @brief Gets the outlier ratio. */
     double getOutlierRatio() const { return outlier_ratio_; }
 
+
+
+    /** @brief Sets whether to use the Gauss-Newton approximation for the Hessian.
+     * @details (Default: true). SVN (K>1) is more stable with Gauss-Newton.
+     * For K=1 (pure Newton), set this to false to use the full analytical Hessian.
+     */
+    void setUseGaussNewtonHessian(bool use_gn) { use_gauss_newton_hessian_ = use_gn; }
+
     // --- Main Alignment Function ---
     /**
      * @brief Aligns the source point cloud to the target NDT map using SVN-NDT.
@@ -176,7 +191,7 @@ public:
     // --- Core NDT Math Functions (Adapted for SVN-NDT context) ---
 
     /**
-     * @brief Computes the NDT score, its gradient, and Hessian for a single particle's pose.
+     * @brief Computes the NDT score, its gradient, and Hessian for a single particle's pose. (Now serial)
      * @param[out] score_gradient Gradient of the NDT score w.r.t. the pose parameters.
      * @param[out] hessian Hessian of the NDT score w.r.t. the pose parameters.
      * @param[in] trans_cloud The source cloud transformed by the current particle's pose.
@@ -264,6 +279,7 @@ public:
     void updateNdtConstants();
 
     // --- Member Variables ---
+protected: // Changed from public
 
     // NDT specific
     VoxelGridCovariance<PointTarget> target_cells_; //!< The internal NDT map representation.
@@ -279,15 +295,23 @@ public:
     // Search Method
     NeighborSearchMethod search_method_ = NeighborSearchMethod::DIRECT7; //!< Voxel neighbor search strategy.
 
+    // Parallelism
+    int num_threads_ = 1;                           //!< Number of OpenMP threads to use.
+
     // SVN specific
     int K_ = 30;                 //!< Number of particles.
     int max_iter_ = 50;          //!< Maximum SVN iterations.
     double kernel_h_ = 0.1;      //!< RBF kernel bandwidth.
-    double step_size_ = 0.1;     //!< SVN particle update step size scaling factor.
+    // *****************************************************************
+    // *** FIX 1: Changed default step size from 0.1 to 1.0 ***
+    // *****************************************************************
+    double step_size_ = 1.0;     //!< SVN particle update step size scaling factor.
     double stop_thresh_ = 1e-4;  //!< Convergence threshold for average particle update norm.
 
     // Internal pointer to the source cloud during alignment (used by derivative functions)
     PointCloudSourceConstPtr input_; //!< Const pointer to the current source cloud being aligned.
+    
+    bool use_gauss_newton_hessian_ = true; //!< Flag to use Gauss-Newton Hessian (default)
 
 }; // End class SvnNormalDistributionsTransform
 
