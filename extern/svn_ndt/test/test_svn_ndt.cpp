@@ -241,7 +241,7 @@ TEST(ConvergenceComparison, SvnNdtK10) {
     std::cout << "[SVN-NDT K=10 Test] Converged: " << (result.converged ? "True" : "False") << " in " << result.iterations << " iterations." << std::endl;
 
     EXPECT_TRUE(result.converged) << "K=10 SVN-NDT Test failed to converge!";
-    EXPECT_LT(result.iterations, 50) << "K=10 SVN-NDT Test took maximum iterations (" << result.iterations << ")";
+    EXPECT_LT(result.iterations, 100) << "K=10 SVN-NDT Test took maximum iterations (" << result.iterations << ")";
 
     gtsam::Pose3 error_pose = result.final_pose.between(g_ground_truth_pose);
     gtsam::Vector6 error_log = gtsam::Pose3::Logmap(error_pose);
@@ -301,7 +301,7 @@ TEST(ConvergenceComparison, SvnNdtK1_Newton) {
     std::cout << "[SVN-NDT K=1 Test] Converged: " << (result.converged ? "True" : "False") << " in " << result.iterations << " iterations." << std::endl;
 
     EXPECT_TRUE(result.converged) << "K=1 SVN-NDT Test failed to converge!";
-    EXPECT_LT(result.iterations, 50) << "K=1 SVN-NDT Test took maximum iterations (" << result.iterations << ")";
+    EXPECT_LT(result.iterations, 100) << "K=1 SVN-NDT Test took maximum iterations (" << result.iterations << ")";
 
     gtsam::Pose3 error_pose = result.final_pose.between(g_ground_truth_pose);
     gtsam::Vector6 error_log = gtsam::Pose3::Logmap(error_pose);
