@@ -254,7 +254,7 @@ TEST(SvnNdtNewtonTest, ConvergesToKnownPose_K30) {
     ndt.setResolution(1.0f);
     ndt.setMinPointPerVoxel(3);
     ndt.setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
-    ndt.setParticleCount(1);
+    ndt.setParticleCount(10);
     ndt.setMaxIterations(200);     // Keep increased iterations
     ndt.setKernelBandwidth(1.0);   // Not used for K=1
     ndt.setEarlyStopThreshold(1e-4);
