@@ -52,13 +52,13 @@ void create_test_clouds(const gtsam::Pose3& ground_truth_pose, double noise_stdd
 
     // --- Create Source Cloud ---
     // A structured cloud (two perpendicular planes)
-    for (double x = -10.0; x <= 10.0; x += 0.2) {
-        for (double y = -10.0; y <= 10.0; y += 0.2) {
+    for (double x = -10.0; x <= 10.0; x += 0.15) {
+        for (double y = -10.0; y <= 10.0; y += 0.15) {
             source_cloud.points.emplace_back(x, y, 0.0);
         }
     }
-    for (double x = -10.0; x <= 10.0; x += 0.2) {
-        for (double z = -10.0; z <= 10.0; z += 0.2) {
+    for (double x = -10.0; x <= 10.0; x += 0.15) {
+        for (double z = -10.0; z <= 10.0; z += 0.15) {
             source_cloud.points.emplace_back(x, 0.0, z);
         }
     }
@@ -149,7 +149,7 @@ TEST(ConvergenceComparison, PclOmp) {
     ndt.setMaximumIterations(50);
     ndt.setTransformationEpsilon(1e-4);
     ndt.setStepSize(0.1); // Standard NDT step size
-    ndt.setNumThreads(10); // Use 4 threads for comparison
+    ndt.setNumThreads(20); // Use 4 threads for comparison
     
     std::cout << "[PCLOMP Test] Using " << ndt.getNumThreads() << " OpenMP threads." << std::endl;
 
@@ -214,7 +214,7 @@ TEST(ConvergenceComparison, SvnNdtK10) {
     ndt.setResolution(1.0f);
     ndt.setMinPointPerVoxel(3);
     ndt.setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
-    ndt.setNumThreads(10); // Use 4 threads for comparison
+    ndt.setNumThreads(20); // Use 4 threads for comparison
     // ndt.setUseGaussNewtonHessian(true); // (true is default, good for SVN)
 
     // Set SVN parameters
@@ -272,7 +272,7 @@ TEST(ConvergenceComparison, SvnNdtK1_Newton) {
     ndt.setResolution(1.0f);
     ndt.setMinPointPerVoxel(3);
     ndt.setNeighborhoodSearchMethod(svn_ndt::NeighborSearchMethod::DIRECT7);
-    ndt.setNumThreads(10); // Use 4 threads for comparison
+    ndt.setNumThreads(20); // Use 4 threads for comparison
 
     // Set SVN parameters for K=1 (Newton's method)
     ndt.setParticleCount(1);       // K=1 particle
